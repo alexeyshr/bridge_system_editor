@@ -10,3 +10,5 @@ env/
 .env
 .idea/
 .vscode/
+k7-export.yaml
+k7-standard-export.yaml

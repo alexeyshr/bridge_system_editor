@@ -1,6 +1,0 @@
-<svg width="400" height="120" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-<text x="10" y="90" font-family="Arial, sans-serif" font-size="100" font-weight="bold" fill="#1D3557">Bridge</text>
-<circle cx="160" cy="30" r="12" fill="#D22B2B"/>
-<path d="M222 65 C 222 50 200 50 200 65 C 200 80 222 100 222 100 C 222 100 244 80 244 65 C 244 50 222 50 222 65 Z" fill="#D22B2B" transform="translate(-15, -15)"/>
-<path d="M320 60 L 335 85 L 320 110 L 305 85 Z" fill="#D22B2B" transform="translate(-5, -10)"/>
-</svg>

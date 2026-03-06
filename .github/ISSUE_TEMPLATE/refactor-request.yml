@@ -1,0 +1,36 @@
+name: Refactor Request
+description: Propose structural improvements without changing product behavior
+title: "[REFACTOR] "
+labels: ["type:refactor", "status:triage"]
+body:
+  - type: input
+    id: target
+    attributes:
+      label: Target Area
+      placeholder: "store/useBiddingStore.ts, components/..."
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why this refactor is needed now.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Proposed Plan
+      description: Implementation approach, phased if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: guardrails
+    attributes:
+      label: Regression Guardrails
+      description: What should not change functionally.
+      placeholder: |
+        - UI behavior unchanged for ...
+        - Import/export compatibility preserved
+    validations:
+      required: true

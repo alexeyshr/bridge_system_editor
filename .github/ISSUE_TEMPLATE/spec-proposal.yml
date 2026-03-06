@@ -1,0 +1,48 @@
+name: Spec Proposal
+description: Propose a new spec before implementation
+title: "[SPEC] "
+labels: ["type:spec", "status:needs-refinement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to define changes before coding (SDD flow).
+  - type: input
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What user/system problem are we solving?
+      placeholder: "Current behavior..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the expected behavior and UX.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: One criterion per line.
+      placeholder: |
+        - Given ..., when ..., then ...
+        - Given ..., when ..., then ...
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of Scope
+      description: Explicitly list what will not be included.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Dependencies
+      description: Technical risks, migration impact, external dependencies.
+    validations:
+      required: false

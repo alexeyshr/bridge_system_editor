@@ -53,10 +53,11 @@ npm run dev
 ```bash
 npm run dev        # локальная разработка
 npm run lint       # ESLint
+npm run test       # smoke tests (node:test)
 npm run typecheck  # TypeScript check (no emit)
 npm run build      # production build
 npm run start      # запуск production-сборки
-npm run clean      # очистка .next (через next clean)
+npm run clean      # очистка .next и tsbuildinfo
 ```
 
 ## Формат данных (текущий)

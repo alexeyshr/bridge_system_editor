@@ -1,0 +1,5 @@
+{
+  "name": "Bridge Bidding IDE",
+  "description": "IDE-style editor for bridge bidding systems with YAML import/export.",
+  "requestFramePermissions": []
+}

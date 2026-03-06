@@ -53,6 +53,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   const { selectedNodeId, selectNode, toggleExpand, toggleBookmark, addNode, deleteNode, nodes } = useBiddingStore();
   const [isHovered, setIsHovered] = useState(false);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [continuationCall, setContinuationCall] = useState('');
   const [continuationError, setContinuationError] = useState('');
 
@@ -72,6 +73,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   const prefix = node.id + " ";
   const childrenCount = Object.keys(nodes).filter(key => key.startsWith(prefix) && key.split(" ").length === seq.length + 1).length;
   const hasChildren = childrenCount > 0;
+  const descendantsCount = Object.keys(nodes).filter((key) => key === node.id || key.startsWith(prefix)).length - 1;
 
   const isCallAvailable = (call: string) => {
     const newNodeId = [...seq, call].join(' ');
@@ -136,9 +138,18 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this call and all its continuations?")) {
-      deleteNode(node.id);
-    }
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteNode(node.id);
+    setIsDeleteDialogOpen(false);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDeleteDialogOpen(false);
   };
 
   return (
@@ -445,6 +456,53 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
           className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
         />
       </div>
+
+      {isDeleteDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4"
+          onClick={() => setIsDeleteDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delete sequence confirmation"
+            className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-900">Delete sequence?</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {seq.map((call, i) => (
+                  <span key={`${node.id}-delete-${i}`} className="inline-flex items-center">
+                    <span className={getSuitColor(call)}>{formatCall(call)}</span>
+                    {i < seq.length - 1 && <span className="mx-1 text-slate-400">-</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="px-4 py-3 text-sm text-slate-600">
+              This will permanently remove this call
+              {descendantsCount > 0 ? ` and ${descendantsCount} continuation${descendantsCount > 1 ? 's' : ''}` : ''}.
+            </div>
+            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelDelete}
+                className="h-8 px-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="h-8 px-3 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

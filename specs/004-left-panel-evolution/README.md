@@ -37,7 +37,7 @@ Scope: expand the left panel into a flexible navigation and organization area wi
 - [x] F01 Sections data model
 - [x] F02 Sections CRUD UI
 - [x] F03 Node assignment to sections
-- [ ] F04 Smart views
+- [x] F04 Smart views
 - [ ] F05 Primary filter integration
 - [ ] F06 Import/export migration
 - [ ] F07 Store method mapping

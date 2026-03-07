@@ -7,10 +7,27 @@ import { ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 type TreeViewMode = 'classic' | 'compact';
 
 export function CenterPanel() {
-  const { nodes, selectedNodeId, searchQuery, expandAll, collapseAll, selectNode } = useBiddingStore();
+  const {
+    nodes,
+    selectedNodeId,
+    searchQuery,
+    leftPrimaryMode,
+    activeSmartViewId,
+    expandAll,
+    collapseAll,
+    selectNode,
+    evalSmartView,
+    getSmartViews,
+    setLeftPrimaryMode,
+    setActiveSmartViewId,
+  } = useBiddingStore();
   const selectedNode = selectedNodeId ? nodes[selectedNodeId] : null;
   const selectedSequence = selectedNode?.context.sequence || [];
   const [viewMode, setViewMode] = useState<TreeViewMode>('classic');
+  const smartViews = getSmartViews();
+  const activeSmartView = leftPrimaryMode === 'smartViews' && activeSmartViewId
+    ? smartViews.find((smartView) => smartView.id === activeSmartViewId) ?? null
+    : null;
   
   const sortedNodes = useMemo(() => {
     return Object.values(nodes).sort((a, b) => compareSequences(a.context.sequence, b.context.sequence));
@@ -39,13 +56,17 @@ export function CenterPanel() {
           }
         }
         
-        if (isDescendant) {
-          // It's a descendant, but if there's a search query, we might want to show it anyway
-          if (!searchQuery) continue;
-        } else {
-          // No longer a descendant, clear hidden prefix
-          hiddenPrefix = null;
+          if (isDescendant) {
+            // It's a descendant, but if there's a search query, we might want to show it anyway
+            if (!searchQuery && !activeSmartViewId) continue;
+          } else {
+            // No longer a descendant, clear hidden prefix
+            hiddenPrefix = null;
+          }
         }
+
+      if (activeSmartView && !evalSmartView(node.id, activeSmartView.id)) {
+        continue;
       }
 
       // Search filtering
@@ -60,12 +81,12 @@ export function CenterPanel() {
       visible.push(node);
 
       // If this node is collapsed and we are not searching, hide its descendants
-      if (!node.isExpanded && !searchQuery) {
+      if (!node.isExpanded && !searchQuery && !activeSmartViewId) {
         hiddenPrefix = seq;
       }
     }
     return visible;
-  }, [sortedNodes, searchQuery]);
+  }, [sortedNodes, searchQuery, activeSmartView, activeSmartViewId, evalSmartView]);
 
   return (
     <div className="h-full w-full flex flex-col bg-white overflow-hidden">
@@ -87,6 +108,21 @@ export function CenterPanel() {
           <ChevronsDownUp className="w-3.5 h-3.5" />
           <span>Collapse All</span>
         </button>
+        {activeSmartView && (
+          <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
+            <span className="text-xs font-medium text-blue-800">Smart: {activeSmartView.name}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setLeftPrimaryMode('roots');
+                setActiveSmartViewId(null);
+              }}
+              className="text-[11px] text-blue-700 hover:text-blue-900"
+            >
+              Clear
+            </button>
+          </div>
+        )}
         <div className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5">
           <button
             type="button"

@@ -75,6 +75,42 @@ interface AssignmentMutationResult {
   error?: string;
 }
 
+export type BuiltInSmartViewId =
+  | 'sv_unassigned'
+  | 'sv_bookmarked'
+  | 'sv_no_notes'
+  | 'sv_unaccepted'
+  | 'sv_recently_edited';
+
+export type CustomSmartViewField = 'all' | 'sequence' | 'notes' | 'shows';
+
+export interface CustomSmartViewRecord {
+  id: string;
+  name: string;
+  query: string;
+  field: CustomSmartViewField;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SmartViewDescriptor {
+  id: string;
+  name: string;
+  isBuiltIn: boolean;
+  builtInId?: BuiltInSmartViewId;
+  query?: string;
+  field?: CustomSmartViewField;
+  isPinned: boolean;
+  order: number;
+}
+
+export interface SmartViewMutationResult {
+  ok: boolean;
+  smartViewId?: string;
+  error?: string;
+}
+
 interface DraftPayload {
   version: number;
   savedAt: string;
@@ -84,6 +120,10 @@ interface DraftPayload {
   sectionRootOrder?: string[];
   nodeSectionIds?: Record<string, string[]>;
   subtreeRulesById?: Record<string, SubtreeRuleRecord>;
+  customSmartViewsById?: Record<string, CustomSmartViewRecord>;
+  customSmartViewOrder?: string[];
+  smartViewPinnedById?: Record<string, boolean>;
+  nodeTouchedAtById?: Record<string, string>;
   leftPrimaryMode?: LeftPrimaryMode;
   activeSectionId?: string | null;
   activeSmartViewId?: string | null;
@@ -96,6 +136,10 @@ interface BiddingState {
   sectionRootOrder: string[];
   nodeSectionIds: Record<string, string[]>;
   subtreeRulesById: Record<string, SubtreeRuleRecord>;
+  customSmartViewsById: Record<string, CustomSmartViewRecord>;
+  customSmartViewOrder: string[];
+  smartViewPinnedById: Record<string, boolean>;
+  nodeTouchedAtById: Record<string, string>;
   sectionExpandedById: Record<string, boolean>;
   leftPrimaryMode: LeftPrimaryMode;
   activeSectionId: string | null;
@@ -153,6 +197,17 @@ interface BiddingState {
     includeFutureDescendants?: boolean,
   ) => AssignmentMutationResult;
   deleteSubtreeRule: (ruleId: string) => AssignmentMutationResult;
+  createCustomSmartView: (
+    name: string,
+    query: string,
+    field?: CustomSmartViewField,
+  ) => SmartViewMutationResult;
+  updateCustomSmartView: (
+    smartViewId: string,
+    input: { name?: string; query?: string; field?: CustomSmartViewField },
+  ) => SmartViewMutationResult;
+  deleteCustomSmartView: (smartViewId: string) => SmartViewMutationResult;
+  toggleSmartViewPinned: (smartViewId: string) => SmartViewMutationResult;
   setLeftPrimaryMode: (mode: LeftPrimaryMode) => void;
   setActiveSectionId: (sectionId: string | null) => void;
   setActiveSmartViewId: (smartViewId: string | null) => void;
@@ -163,6 +218,9 @@ interface BiddingState {
   getSectionPath: (sectionId: string) => SectionRecord[];
   getEffectiveSectionIds: (nodeId: string) => string[];
   getSubtreeRulesForNode: (nodeId: string) => SubtreeRuleRecord[];
+  getSmartViews: () => SmartViewDescriptor[];
+  evalSmartView: (nodeId: string, smartViewId: string) => boolean;
+  getSmartViewCount: (smartViewId: string) => number;
   flushDraftSave: () => void;
   clearDraft: () => void;
 }
@@ -171,7 +229,18 @@ const DRAFT_STORAGE_KEY = 'bridge-system-editor:draft:v1';
 const DRAFT_VERSION = 1;
 const DRAFT_SAVE_DEBOUNCE_MS = 900;
 const SECTION_NAME_MAX_LENGTH = 64;
+const SMART_VIEW_NAME_MAX_LENGTH = 64;
+const SMART_VIEW_QUERY_MAX_LENGTH = 160;
+const RECENTLY_EDITED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: number }> = [
+  { id: 'sv_unassigned', name: 'Unassigned', order: 0 },
+  { id: 'sv_bookmarked', name: 'Bookmarked', order: 1 },
+  { id: 'sv_no_notes', name: 'No notes', order: 2 },
+  { id: 'sv_unaccepted', name: 'Unaccepted', order: 3 },
+  { id: 'sv_recently_edited', name: 'Recently edited', order: 4 },
+];
 
 function clampIndex(index: number, max: number): number {
   if (!Number.isFinite(index)) return max;
@@ -326,6 +395,141 @@ function remapNodeIdMapForRename<T>(
     nextMap[nodeId] = value;
   });
   return nextMap;
+}
+
+function normalizeSmartViewName(input: string): string {
+  return input.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeSmartViewQuery(input: string): string {
+  return input.trim();
+}
+
+function nextCustomSmartViewId(customSmartViewsById: Record<string, CustomSmartViewRecord>): string {
+  let id = '';
+  do {
+    id = `sv_custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  } while (customSmartViewsById[id]);
+  return id;
+}
+
+function buildNodeTextForSmartQuery(node: BiddingNode, field: CustomSmartViewField): string {
+  const sequenceText = node.context.sequence.join(' ');
+  const notesText = node.meaning?.notes || '';
+  const showsText = node.meaning?.shows?.join(' ') || '';
+  switch (field) {
+    case 'sequence':
+      return sequenceText;
+    case 'notes':
+      return notesText;
+    case 'shows':
+      return showsText;
+    default:
+      return `${sequenceText} ${notesText} ${showsText}`.trim();
+  }
+}
+
+function matchesCustomSmartViewQuery(node: BiddingNode, query: string, field: CustomSmartViewField): boolean {
+  const normalizedQuery = normalizeSmartViewQuery(query).toLocaleLowerCase();
+  if (!normalizedQuery) return false;
+  const haystack = buildNodeTextForSmartQuery(node, field).toLocaleLowerCase();
+  return haystack.includes(normalizedQuery);
+}
+
+function isBuiltInSmartViewId(value: string): value is BuiltInSmartViewId {
+  return BUILTIN_SMART_VIEWS.some((item) => item.id === value);
+}
+
+function getEffectiveSectionIdsForNode(
+  nodeId: string,
+  nodeSectionIds: Record<string, string[]>,
+  subtreeRulesById: Record<string, SubtreeRuleRecord>,
+): string[] {
+  const direct = nodeSectionIds[nodeId] ?? [];
+  const fromRules = Object.values(subtreeRulesById)
+    .filter((rule) => isNodeWithinSubtree(nodeId, rule.rootNodeId))
+    .map((rule) => rule.sectionId);
+  return normalizeSectionIdList([...direct, ...fromRules]);
+}
+
+function buildSmartViews(
+  customSmartViewsById: Record<string, CustomSmartViewRecord>,
+  customSmartViewOrder: string[],
+  smartViewPinnedById: Record<string, boolean>,
+): SmartViewDescriptor[] {
+  const builtIns = BUILTIN_SMART_VIEWS.map((item) => ({
+    id: item.id,
+    name: item.name,
+    isBuiltIn: true,
+    builtInId: item.id,
+    isPinned: !!smartViewPinnedById[item.id],
+    order: item.order,
+  })) satisfies SmartViewDescriptor[];
+
+  const customIds = customSmartViewOrder.filter((id) => !!customSmartViewsById[id]);
+  const customDescriptors = customIds.map((smartViewId, index) => {
+    const item = customSmartViewsById[smartViewId];
+    return {
+      id: item.id,
+      name: item.name,
+      isBuiltIn: false,
+      query: item.query,
+      field: item.field,
+      isPinned: !!smartViewPinnedById[item.id],
+      order: Number.isFinite(item.order) ? item.order : index,
+    } satisfies SmartViewDescriptor;
+  });
+
+  return [...builtIns, ...customDescriptors].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+    if (a.isBuiltIn !== b.isBuiltIn) return a.isBuiltIn ? -1 : 1;
+    if (a.order !== b.order) return a.order - b.order;
+    return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+  });
+}
+
+function evalSmartViewById(
+  nodeId: string,
+  smartViewId: string,
+  state: Pick<
+    BiddingState,
+    'nodes'
+    | 'nodeSectionIds'
+    | 'subtreeRulesById'
+    | 'nodeTouchedAtById'
+    | 'customSmartViewsById'
+  >,
+): boolean {
+  const node = state.nodes[nodeId];
+  if (!node) return false;
+
+  if (isBuiltInSmartViewId(smartViewId)) {
+    if (smartViewId === 'sv_unassigned') {
+      return getEffectiveSectionIdsForNode(nodeId, state.nodeSectionIds, state.subtreeRulesById).length === 0;
+    }
+    if (smartViewId === 'sv_bookmarked') {
+      return !!node.isBookmarked;
+    }
+    if (smartViewId === 'sv_no_notes') {
+      const notes = node.meaning?.notes ?? '';
+      return !notes.trim();
+    }
+    if (smartViewId === 'sv_unaccepted') {
+      return !node.meaning?.accepted;
+    }
+    if (smartViewId === 'sv_recently_edited') {
+      const touchedAt = state.nodeTouchedAtById[nodeId];
+      if (!touchedAt) return false;
+      const touchedMs = new Date(touchedAt).getTime();
+      if (Number.isNaN(touchedMs)) return false;
+      return Date.now() - touchedMs <= RECENTLY_EDITED_WINDOW_MS;
+    }
+    return false;
+  }
+
+  const custom = state.customSmartViewsById[smartViewId];
+  if (!custom) return false;
+  return matchesCustomSmartViewQuery(node, custom.query, custom.field);
 }
 
 const defaultSystem = `
@@ -517,14 +721,71 @@ Object.entries(initialSubtreeRulesRaw).forEach(([ruleId, maybeRule]) => {
     updatedAt: typeof rule.updatedAt === 'string' && rule.updatedAt ? rule.updatedAt : timestamp,
   };
 });
+const initialCustomSmartViewsRaw = initialDraft?.customSmartViewsById && typeof initialDraft.customSmartViewsById === 'object'
+  ? initialDraft.customSmartViewsById
+  : {};
+const initialCustomSmartViewsById: Record<string, CustomSmartViewRecord> = {};
+Object.entries(initialCustomSmartViewsRaw).forEach(([smartViewId, maybeSmartView]) => {
+  const smartView = maybeSmartView as Partial<CustomSmartViewRecord>;
+  if (!smartView || typeof smartView !== 'object') return;
+  const name = normalizeSmartViewName(String(smartView.name || ''));
+  const query = normalizeSmartViewQuery(String(smartView.query || ''));
+  const field: CustomSmartViewField = smartView.field === 'sequence' || smartView.field === 'notes' || smartView.field === 'shows'
+    ? smartView.field
+    : 'all';
+  if (!name || !query) return;
+  const createdAt = typeof smartView.createdAt === 'string' && smartView.createdAt ? smartView.createdAt : new Date().toISOString();
+  initialCustomSmartViewsById[smartViewId] = {
+    id: smartViewId,
+    name,
+    query,
+    field,
+    order: Number.isFinite(smartView.order) ? Number(smartView.order) : 0,
+    createdAt,
+    updatedAt: typeof smartView.updatedAt === 'string' && smartView.updatedAt ? smartView.updatedAt : createdAt,
+  };
+});
+const initialCustomSmartViewOrder = initialDraft?.customSmartViewOrder && Array.isArray(initialDraft.customSmartViewOrder)
+  ? initialDraft.customSmartViewOrder.filter((smartViewId) => !!initialCustomSmartViewsById[smartViewId])
+  : Object.values(initialCustomSmartViewsById)
+    .sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .map((item) => item.id);
+const builtInSmartViewIdSet = new Set(BUILTIN_SMART_VIEWS.map((item) => item.id));
+const initialSmartViewPinnedRaw = initialDraft?.smartViewPinnedById && typeof initialDraft.smartViewPinnedById === 'object'
+  ? initialDraft.smartViewPinnedById
+  : {};
+const initialSmartViewPinnedById: Record<string, boolean> = {};
+Object.entries(initialSmartViewPinnedRaw).forEach(([smartViewId, pinned]) => {
+  if (typeof pinned !== 'boolean') return;
+  if (!builtInSmartViewIdSet.has(smartViewId as BuiltInSmartViewId) && !initialCustomSmartViewsById[smartViewId]) return;
+  initialSmartViewPinnedById[smartViewId] = pinned;
+});
+const initialNodeTouchedRaw = initialDraft?.nodeTouchedAtById && typeof initialDraft.nodeTouchedAtById === 'object'
+  ? initialDraft.nodeTouchedAtById
+  : {};
+const initialNodeTouchedAtById: Record<string, string> = {};
+Object.entries(initialNodeTouchedRaw).forEach(([nodeId, touchedAt]) => {
+  if (!initialNodes[nodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
+  initialNodeTouchedAtById[nodeId] = touchedAt;
+});
 const initialSectionRootOrder = initialDraft?.sectionRootOrder && Array.isArray(initialDraft.sectionRootOrder)
   ? initialDraft.sectionRootOrder.filter((sectionId) => !!initialSectionsById[sectionId])
   : getSectionRootOrder(initialSectionsById);
-const initialLeftPrimaryMode: LeftPrimaryMode = initialDraft?.leftPrimaryMode ?? 'roots';
+const initialLeftPrimaryModeRaw: LeftPrimaryMode = initialDraft?.leftPrimaryMode ?? 'roots';
 const initialActiveSectionId = initialDraft?.activeSectionId && initialSectionsById[initialDraft.activeSectionId]
   ? initialDraft.activeSectionId
   : null;
-const initialActiveSmartViewId = initialDraft?.activeSmartViewId ?? null;
+const initialActiveSmartViewId = initialDraft?.activeSmartViewId
+  && (builtInSmartViewIdSet.has(initialDraft.activeSmartViewId as BuiltInSmartViewId)
+    || initialCustomSmartViewsById[initialDraft.activeSmartViewId])
+  ? initialDraft.activeSmartViewId
+  : null;
+const initialLeftPrimaryMode: LeftPrimaryMode =
+  initialLeftPrimaryModeRaw === 'sections' && !initialActiveSectionId
+    ? 'roots'
+    : initialLeftPrimaryModeRaw === 'smartViews' && !initialActiveSmartViewId
+      ? 'roots'
+      : initialLeftPrimaryModeRaw;
 const initialSectionExpandedById: Record<string, boolean> = Object.fromEntries(
   Object.keys(initialSectionsById).map((sectionId) => [sectionId, true]),
 );
@@ -551,6 +812,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         sectionRootOrder: state.sectionRootOrder,
         nodeSectionIds: state.nodeSectionIds,
         subtreeRulesById: state.subtreeRulesById,
+        customSmartViewsById: state.customSmartViewsById,
+        customSmartViewOrder: state.customSmartViewOrder,
+        smartViewPinnedById: state.smartViewPinnedById,
+        nodeTouchedAtById: state.nodeTouchedAtById,
         leftPrimaryMode: state.leftPrimaryMode,
         activeSectionId: state.activeSectionId,
         activeSmartViewId: state.activeSmartViewId,
@@ -579,6 +844,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       sectionRootOrder: state.sectionRootOrder,
       nodeSectionIds: state.nodeSectionIds,
       subtreeRulesById: state.subtreeRulesById,
+      customSmartViewsById: state.customSmartViewsById,
+      customSmartViewOrder: state.customSmartViewOrder,
+      smartViewPinnedById: state.smartViewPinnedById,
+      nodeTouchedAtById: state.nodeTouchedAtById,
       leftPrimaryMode: state.leftPrimaryMode,
       activeSectionId: state.activeSectionId,
       activeSmartViewId: state.activeSmartViewId,
@@ -593,6 +862,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     sectionRootOrder: initialSectionRootOrder,
     nodeSectionIds: initialNodeSectionIds,
     subtreeRulesById: initialSubtreeRulesById,
+    customSmartViewsById: initialCustomSmartViewsById,
+    customSmartViewOrder: initialCustomSmartViewOrder,
+    smartViewPinnedById: initialSmartViewPinnedById,
+    nodeTouchedAtById: initialNodeTouchedAtById,
     sectionExpandedById: initialSectionExpandedById,
     leftPrimaryMode: initialLeftPrimaryMode,
     activeSectionId: initialActiveSectionId,
@@ -630,6 +903,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           sectionRootOrder: [],
           nodeSectionIds: {},
           subtreeRulesById: {},
+          customSmartViewsById: {},
+          customSmartViewOrder: [],
+          smartViewPinnedById: {},
+          nodeTouchedAtById: {},
           sectionExpandedById: {},
           activeSectionId: null,
           activeSmartViewId: null,
@@ -685,9 +962,19 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         if (parentId && updatedNodes[parentId]) {
           updatedNodes[parentId] = { ...updatedNodes[parentId], isExpanded: true };
         }
+        const touchedAt = new Date().toISOString();
 
         didAdd = true;
-        return { nodes: updatedNodes, selectedNodeId: id, hasUnsavedChanges: true, serverSyncError: null };
+        return {
+          nodes: updatedNodes,
+          nodeTouchedAtById: {
+            ...state.nodeTouchedAtById,
+            [id]: touchedAt,
+          },
+          selectedNodeId: id,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
       });
 
       if (didAdd) queueDraftSave();
@@ -699,11 +986,16 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       set((state) => {
         if (!state.nodes[id]) return state;
         didUpdate = true;
+        const touchedAt = new Date().toISOString();
 
         return {
           nodes: {
             ...state.nodes,
             [id]: { ...state.nodes[id], ...updates },
+          },
+          nodeTouchedAtById: {
+            ...state.nodeTouchedAtById,
+            [id]: touchedAt,
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
@@ -768,6 +1060,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         });
 
         const nextNodeSectionIds = remapNodeIdMapForRename(state.nodeSectionIds, id, newId);
+        const nextNodeTouchedAtById = remapNodeIdMapForRename(state.nodeTouchedAtById, id, newId);
         const nextSubtreeRulesById = Object.fromEntries(
           Object.entries(state.subtreeRulesById).map(([ruleId, rule]) => {
             if (rule.rootNodeId === id) {
@@ -785,6 +1078,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         return {
           nodes: newNodes,
           nodeSectionIds: nextNodeSectionIds,
+          nodeTouchedAtById: nextNodeTouchedAtById,
           subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
@@ -822,10 +1116,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextSubtreeRulesById = Object.fromEntries(
           Object.entries(state.subtreeRulesById).filter(([, rule]) => !isNodeWithinSubtree(rule.rootNodeId, id)),
         ) as Record<string, SubtreeRuleRecord>;
+        const nextNodeTouchedAtById = Object.fromEntries(
+          Object.entries(state.nodeTouchedAtById).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, id)),
+        ) as Record<string, string>;
 
         return {
           nodes: newNodes,
           nodeSectionIds: nextNodeSectionIds,
+          nodeTouchedAtById: nextNodeTouchedAtById,
           subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
@@ -913,6 +1211,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           sectionRootOrder: [],
           nodeSectionIds: {},
           subtreeRulesById: {},
+          customSmartViewsById: {},
+          customSmartViewOrder: [],
+          smartViewPinnedById: {},
+          nodeTouchedAtById: {},
           sectionExpandedById: {},
           leftPrimaryMode: 'roots',
           activeSectionId: null,
@@ -1370,6 +1672,195 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return result;
     },
 
+    createCustomSmartView: (name: string, query: string, field: CustomSmartViewField = 'all') => {
+      let result: SmartViewMutationResult = { ok: false, error: 'Failed to create smart view.' };
+      let didCreate = false;
+
+      set((state) => {
+        const normalizedName = normalizeSmartViewName(name);
+        const normalizedQuery = normalizeSmartViewQuery(query);
+        if (!normalizedName) {
+          result = { ok: false, error: 'Smart view name is required.' };
+          return state;
+        }
+        if (normalizedName.length > SMART_VIEW_NAME_MAX_LENGTH) {
+          result = { ok: false, error: `Name must be ${SMART_VIEW_NAME_MAX_LENGTH} characters or less.` };
+          return state;
+        }
+        if (!normalizedQuery) {
+          result = { ok: false, error: 'Query is required for custom smart view.' };
+          return state;
+        }
+        if (normalizedQuery.length > SMART_VIEW_QUERY_MAX_LENGTH) {
+          result = { ok: false, error: `Query must be ${SMART_VIEW_QUERY_MAX_LENGTH} characters or less.` };
+          return state;
+        }
+        const hasDuplicateName = Object.values(state.customSmartViewsById)
+          .some((item) => item.name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase());
+        if (hasDuplicateName) {
+          result = { ok: false, error: 'Custom smart view with this name already exists.' };
+          return state;
+        }
+
+        const smartViewId = nextCustomSmartViewId(state.customSmartViewsById);
+        const timestamp = new Date().toISOString();
+        const order = state.customSmartViewOrder.length;
+        didCreate = true;
+        result = { ok: true, smartViewId };
+
+        return {
+          customSmartViewsById: {
+            ...state.customSmartViewsById,
+            [smartViewId]: {
+              id: smartViewId,
+              name: normalizedName,
+              query: normalizedQuery,
+              field,
+              order,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          },
+          customSmartViewOrder: [...state.customSmartViewOrder, smartViewId],
+          leftPrimaryMode: 'smartViews' as LeftPrimaryMode,
+          activeSmartViewId: smartViewId,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didCreate) queueDraftSave();
+      return result;
+    },
+
+    updateCustomSmartView: (smartViewId: string, input) => {
+      let result: SmartViewMutationResult = { ok: false, error: 'Failed to update smart view.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const current = state.customSmartViewsById[smartViewId];
+        if (!current) {
+          result = { ok: false, error: 'Custom smart view not found.' };
+          return state;
+        }
+
+        const nextName = input.name === undefined ? current.name : normalizeSmartViewName(input.name);
+        const nextQuery = input.query === undefined ? current.query : normalizeSmartViewQuery(input.query);
+        const nextField = input.field ?? current.field;
+
+        if (!nextName) {
+          result = { ok: false, error: 'Smart view name is required.' };
+          return state;
+        }
+        if (nextName.length > SMART_VIEW_NAME_MAX_LENGTH) {
+          result = { ok: false, error: `Name must be ${SMART_VIEW_NAME_MAX_LENGTH} characters or less.` };
+          return state;
+        }
+        if (!nextQuery) {
+          result = { ok: false, error: 'Query is required for custom smart view.' };
+          return state;
+        }
+        if (nextQuery.length > SMART_VIEW_QUERY_MAX_LENGTH) {
+          result = { ok: false, error: `Query must be ${SMART_VIEW_QUERY_MAX_LENGTH} characters or less.` };
+          return state;
+        }
+        const hasDuplicateName = Object.values(state.customSmartViewsById).some((item) =>
+          item.id !== smartViewId && item.name.toLocaleLowerCase() === nextName.toLocaleLowerCase(),
+        );
+        if (hasDuplicateName) {
+          result = { ok: false, error: 'Custom smart view with this name already exists.' };
+          return state;
+        }
+
+        if (nextName === current.name && nextQuery === current.query && nextField === current.field) {
+          result = { ok: true, smartViewId };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, smartViewId };
+        return {
+          customSmartViewsById: {
+            ...state.customSmartViewsById,
+            [smartViewId]: {
+              ...current,
+              name: nextName,
+              query: nextQuery,
+              field: nextField,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    deleteCustomSmartView: (smartViewId: string) => {
+      let result: SmartViewMutationResult = { ok: false, error: 'Failed to delete smart view.' };
+      let didDelete = false;
+
+      set((state) => {
+        if (!state.customSmartViewsById[smartViewId]) {
+          result = { ok: false, error: 'Custom smart view not found.' };
+          return state;
+        }
+
+        const nextById = { ...state.customSmartViewsById };
+        delete nextById[smartViewId];
+        const nextOrder = state.customSmartViewOrder.filter((id) => id !== smartViewId);
+        const { [smartViewId]: _removedPinState, ...nextPinnedById } = state.smartViewPinnedById;
+
+        didDelete = true;
+        result = { ok: true, smartViewId };
+        return {
+          customSmartViewsById: nextById,
+          customSmartViewOrder: nextOrder,
+          smartViewPinnedById: nextPinnedById,
+          activeSmartViewId: state.activeSmartViewId === smartViewId ? null : state.activeSmartViewId,
+          leftPrimaryMode:
+            state.leftPrimaryMode === 'smartViews' && state.activeSmartViewId === smartViewId
+              ? 'roots'
+              : state.leftPrimaryMode,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didDelete) queueDraftSave();
+      return result;
+    },
+
+    toggleSmartViewPinned: (smartViewId: string) => {
+      let result: SmartViewMutationResult = { ok: false, error: 'Smart view not found.' };
+      let didToggle = false;
+
+      set((state) => {
+        const knownSmartView = isBuiltInSmartViewId(smartViewId) || !!state.customSmartViewsById[smartViewId];
+        if (!knownSmartView) {
+          result = { ok: false, error: 'Smart view not found.' };
+          return state;
+        }
+        const nextPinned = !state.smartViewPinnedById[smartViewId];
+        didToggle = true;
+        result = { ok: true, smartViewId };
+        return {
+          smartViewPinnedById: {
+            ...state.smartViewPinnedById,
+            [smartViewId]: nextPinned,
+          },
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didToggle) queueDraftSave();
+      return result;
+    },
+
     setLeftPrimaryMode: (mode: LeftPrimaryMode) => set({ leftPrimaryMode: mode }),
 
     setActiveSectionId: (sectionId: string | null) => set((state) => {
@@ -1377,7 +1868,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return { activeSectionId: sectionId };
     }),
 
-    setActiveSmartViewId: (smartViewId: string | null) => set({ activeSmartViewId: smartViewId }),
+    setActiveSmartViewId: (smartViewId: string | null) => set((state) => {
+      if (!smartViewId) return { activeSmartViewId: null };
+      const knownSmartView = isBuiltInSmartViewId(smartViewId) || !!state.customSmartViewsById[smartViewId];
+      if (!knownSmartView) return state;
+      return { activeSmartViewId: smartViewId };
+    }),
 
     toggleSectionExpanded: (sectionId: string) => set((state) => {
       if (!state.sectionsById[sectionId]) return state;
@@ -1418,11 +1914,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     getEffectiveSectionIds: (nodeId: string) => {
       const { sectionsById, nodeSectionIds, subtreeRulesById } = get();
       if (!nodeId) return [];
-      const direct = nodeSectionIds[nodeId] ?? [];
-      const fromRules = Object.values(subtreeRulesById)
-        .filter((rule) => isNodeWithinSubtree(nodeId, rule.rootNodeId))
-        .map((rule) => rule.sectionId);
-      const merged = normalizeSectionIdList([...direct, ...fromRules]);
+      const merged = getEffectiveSectionIdsForNode(nodeId, nodeSectionIds, subtreeRulesById);
       return merged.filter((sectionId) => !!sectionsById[sectionId]);
     },
 
@@ -1431,6 +1923,23 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return Object.values(subtreeRulesById)
         .filter((rule) => rule.rootNodeId === nodeId && !!sectionsById[rule.sectionId])
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    },
+
+    getSmartViews: () => {
+      const { customSmartViewsById, customSmartViewOrder, smartViewPinnedById } = get();
+      return buildSmartViews(customSmartViewsById, customSmartViewOrder, smartViewPinnedById);
+    },
+
+    evalSmartView: (nodeId: string, smartViewId: string) => {
+      const state = get();
+      return evalSmartViewById(nodeId, smartViewId, state);
+    },
+
+    getSmartViewCount: (smartViewId: string) => {
+      const state = get();
+      return Object.keys(state.nodes).reduce((count, nodeId) => (
+        evalSmartViewById(nodeId, smartViewId, state) ? count + 1 : count
+      ), 0);
     },
 
     flushDraftSave,

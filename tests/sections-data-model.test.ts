@@ -18,6 +18,10 @@ function resetStoreState(): void {
       sectionRootOrder: [],
       nodeSectionIds: {},
       subtreeRulesById: {},
+      customSmartViewsById: {},
+      customSmartViewOrder: [],
+      smartViewPinnedById: {},
+      nodeTouchedAtById: {},
       sectionExpandedById: {},
       leftPrimaryMode: 'roots',
       activeSectionId: null,
@@ -224,4 +228,58 @@ test('renaming node remaps direct assignment and subtree rule roots', () => {
     Object.values(state.subtreeRulesById).some((rule) => rule.rootNodeId === '1C 1H'),
     true,
   );
+});
+
+test('built-in smart views are available and counts are computed', () => {
+  const smartViews = useBiddingStore.getState().getSmartViews();
+  const builtInIds = new Set(smartViews.filter((item) => item.isBuiltIn).map((item) => item.id));
+  assert.equal(builtInIds.has('sv_unassigned'), true);
+  assert.equal(builtInIds.has('sv_bookmarked'), true);
+  assert.equal(builtInIds.has('sv_no_notes'), true);
+  assert.equal(builtInIds.has('sv_unaccepted'), true);
+  assert.equal(builtInIds.has('sv_recently_edited'), true);
+
+  const section = useBiddingStore.getState().createSection('Test');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+  useBiddingStore.getState().assignNodeToSection('1C', sectionId);
+
+  const unassignedCount = useBiddingStore.getState().getSmartViewCount('sv_unassigned');
+  const bookmarkedCount = useBiddingStore.getState().getSmartViewCount('sv_bookmarked');
+  assert.equal(unassignedCount >= 1, true);
+  assert.equal(bookmarkedCount, 0);
+});
+
+test('custom smart view supports create, eval, pin and delete', () => {
+  const create = useBiddingStore.getState().createCustomSmartView('Weak NT', 'weak', 'all');
+  assert.equal(create.ok, true);
+  const smartViewId = create.smartViewId as string;
+
+  const match1 = useBiddingStore.getState().evalSmartView('1C 1D 1H 1NT', smartViewId);
+  const match2 = useBiddingStore.getState().evalSmartView('1C 1D', smartViewId);
+  assert.equal(match1, true);
+  assert.equal(match2, false);
+
+  const pinResult = useBiddingStore.getState().toggleSmartViewPinned(smartViewId);
+  assert.equal(pinResult.ok, true);
+  assert.equal(useBiddingStore.getState().smartViewPinnedById[smartViewId], true);
+
+  const remove = useBiddingStore.getState().deleteCustomSmartView(smartViewId);
+  assert.equal(remove.ok, true);
+  assert.equal(useBiddingStore.getState().customSmartViewsById[smartViewId], undefined);
+});
+
+test('recently edited smart view reacts to node changes', () => {
+  const beforeUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
+  assert.equal(beforeUpdate, false);
+
+  useBiddingStore.getState().updateNode('1C', {
+    meaning: {
+      ...(useBiddingStore.getState().nodes['1C'].meaning || {}),
+      notes: 'Updated now',
+    },
+  });
+
+  const afterUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
+  assert.equal(afterUpdate, true);
 });

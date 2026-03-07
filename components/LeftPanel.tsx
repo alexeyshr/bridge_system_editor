@@ -1,16 +1,24 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useBiddingStore, type SectionMutationResult, type SectionTreeNode } from '@/store/useBiddingStore';
+import {
+  useBiddingStore,
+  type CustomSmartViewField,
+  type SectionMutationResult,
+  type SmartViewMutationResult,
+  type SectionTreeNode,
+} from '@/store/useBiddingStore';
 import { formatCall, getSuitColor } from '@/lib/utils';
 import {
   Bookmark,
   ChevronDown,
   ChevronRight,
-  Eye,
   FolderPlus,
   FolderTree,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 
@@ -19,7 +27,17 @@ type SectionModalState =
   | { mode: 'rename'; sectionId: string; title: string; confirmText: string; initialValue: string }
   | { mode: 'delete'; sectionId: string; title: string; confirmText: string; initialValue: '' };
 
+type SmartViewModalState =
+  | { mode: 'create'; smartViewId?: string; title: string; confirmText: string }
+  | { mode: 'edit'; smartViewId: string; title: string; confirmText: string }
+  | { mode: 'delete'; smartViewId: string; title: string; confirmText: string };
+
 function toErrorMessage(result: SectionMutationResult): string {
+  if (result.ok) return '';
+  return result.error || 'Operation failed.';
+}
+
+function toSmartViewErrorMessage(result: SmartViewMutationResult): string {
   if (result.ok) return '';
   return result.error || 'Operation failed.';
 }
@@ -31,24 +49,40 @@ export function LeftPanel() {
     selectedNodeId,
     leftPrimaryMode,
     activeSectionId,
+    activeSmartViewId,
     sectionExpandedById,
     createSection,
     renameSection,
     deleteSection,
+    createCustomSmartView,
+    updateCustomSmartView,
+    deleteCustomSmartView,
+    toggleSmartViewPinned,
     setLeftPrimaryMode,
     setActiveSectionId,
+    setActiveSmartViewId,
     toggleSectionExpanded,
     getSectionTree,
+    getSmartViews,
+    getSmartViewCount,
+    customSmartViewsById,
   } = useBiddingStore();
 
   const [actionMenuSectionId, setActionMenuSectionId] = useState<string | null>(null);
+  const [actionMenuSmartViewId, setActionMenuSmartViewId] = useState<string | null>(null);
   const [sectionModal, setSectionModal] = useState<SectionModalState | null>(null);
   const [sectionModalInput, setSectionModalInput] = useState('');
   const [sectionModalError, setSectionModalError] = useState('');
+  const [smartViewModal, setSmartViewModal] = useState<SmartViewModalState | null>(null);
+  const [smartViewNameInput, setSmartViewNameInput] = useState('');
+  const [smartViewQueryInput, setSmartViewQueryInput] = useState('');
+  const [smartViewFieldInput, setSmartViewFieldInput] = useState<CustomSmartViewField>('all');
+  const [smartViewModalError, setSmartViewModalError] = useState('');
 
   const roots = useMemo(() => Object.values(nodes).filter((n) => n.context.sequence.length === 1), [nodes]);
   const bookmarks = useMemo(() => Object.values(nodes).filter((n) => n.isBookmarked), [nodes]);
   const sectionTree = getSectionTree();
+  const smartViews = getSmartViews();
 
   const openCreateModal = (parentId: string | null) => {
     setSectionModal({
@@ -112,6 +146,79 @@ export function LeftPanel() {
       return;
     }
     setSectionModalError(toErrorMessage(result));
+  };
+
+  const openCreateSmartViewModal = () => {
+    setSmartViewModal({
+      mode: 'create',
+      title: 'Create Smart View',
+      confirmText: 'Create',
+    });
+    setSmartViewNameInput('');
+    setSmartViewQueryInput('');
+    setSmartViewFieldInput('all');
+    setSmartViewModalError('');
+    setActionMenuSmartViewId(null);
+  };
+
+  const openEditSmartViewModal = (smartViewId: string) => {
+    const smartView = customSmartViewsById[smartViewId];
+    if (!smartView) return;
+    setSmartViewModal({
+      mode: 'edit',
+      smartViewId,
+      title: 'Edit Smart View',
+      confirmText: 'Save',
+    });
+    setSmartViewNameInput(smartView.name);
+    setSmartViewQueryInput(smartView.query);
+    setSmartViewFieldInput(smartView.field);
+    setSmartViewModalError('');
+    setActionMenuSmartViewId(null);
+  };
+
+  const openDeleteSmartViewModal = (smartViewId: string) => {
+    setSmartViewModal({
+      mode: 'delete',
+      smartViewId,
+      title: 'Delete Smart View',
+      confirmText: 'Delete',
+    });
+    setSmartViewNameInput('');
+    setSmartViewQueryInput('');
+    setSmartViewFieldInput('all');
+    setSmartViewModalError('');
+    setActionMenuSmartViewId(null);
+  };
+
+  const closeSmartViewModal = () => {
+    setSmartViewModal(null);
+    setSmartViewNameInput('');
+    setSmartViewQueryInput('');
+    setSmartViewFieldInput('all');
+    setSmartViewModalError('');
+  };
+
+  const submitSmartViewModal = () => {
+    if (!smartViewModal) return;
+    let result: SmartViewMutationResult = { ok: false, error: 'Unknown action.' };
+    if (smartViewModal.mode === 'create') {
+      result = createCustomSmartView(smartViewNameInput, smartViewQueryInput, smartViewFieldInput);
+    } else if (smartViewModal.mode === 'edit') {
+      result = updateCustomSmartView(smartViewModal.smartViewId, {
+        name: smartViewNameInput,
+        query: smartViewQueryInput,
+        field: smartViewFieldInput,
+      });
+    } else if (smartViewModal.mode === 'delete') {
+      result = deleteCustomSmartView(smartViewModal.smartViewId);
+    }
+
+    if (result.ok) {
+      closeSmartViewModal();
+      return;
+    }
+    setSmartViewModalError(toSmartViewErrorMessage(result));
   };
 
   const renderSectionRows = (items: SectionTreeNode[], depth = 0): ReactNode => {
@@ -221,6 +328,94 @@ export function LeftPanel() {
     });
   };
 
+  const renderSmartViewRows = (): ReactNode => {
+    return smartViews.map((smartView) => {
+      const isActive = leftPrimaryMode === 'smartViews' && activeSmartViewId === smartView.id;
+      const count = getSmartViewCount(smartView.id);
+
+      return (
+        <li key={smartView.id} className="relative">
+          <div className="group flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setLeftPrimaryMode('smartViews');
+                setActiveSmartViewId(smartView.id);
+              }}
+              className={`flex-1 min-w-0 text-left rounded-md text-sm transition-colors px-2 py-1.5 ${
+                isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5 min-w-0 w-full">
+                <span className="truncate">{smartView.name}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-slate-500 bg-slate-200 rounded-full px-1.5 py-0.5">
+                  {count}
+                </span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                toggleSmartViewPinned(smartView.id);
+              }}
+              className={`opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200 ${
+                smartView.isPinned ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'
+              }`}
+              aria-label={smartView.isPinned ? 'Unpin smart view' : 'Pin smart view'}
+              title={smartView.isPinned ? 'Unpin' : 'Pin'}
+            >
+              {smartView.isPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+            </button>
+
+            {!smartView.isBuiltIn && (
+              <button
+                type="button"
+                onClick={() => setActionMenuSmartViewId((prev) => (prev === smartView.id ? null : smartView.id))}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                aria-label="Smart view actions"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {actionMenuSmartViewId === smartView.id && !smartView.isBuiltIn && (
+            <div className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setLeftPrimaryMode('smartViews');
+                  setActiveSmartViewId(smartView.id);
+                  setActionMenuSmartViewId(null);
+                }}
+                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                onClick={() => openEditSmartViewModal(smartView.id)}
+                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+              >
+                <Pencil className="w-3 h-3" />
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => openDeleteSmartViewModal(smartView.id)}
+                className="w-full px-3 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-50 inline-flex items-center gap-2"
+              >
+                <Trash2 className="w-3 h-3" />
+                Delete
+              </button>
+            </div>
+          )}
+        </li>
+      );
+    });
+  };
+
   return (
     <div className="h-full w-full border-r border-slate-200 bg-slate-50 flex flex-col overflow-y-auto relative">
       <div className="p-4">
@@ -312,11 +507,23 @@ export function LeftPanel() {
       </div>
 
       <div className="px-4 py-4 border-t border-slate-200 mt-auto">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Eye className="w-3.5 h-3.5" />
-          Saved Views
-        </h3>
-        <div className="text-xs text-slate-400 italic px-2">Coming soon</div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            Smart Views
+          </h3>
+          <button
+            type="button"
+            onClick={openCreateSmartViewModal}
+            className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+            title="Create custom smart view"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <ul className="space-y-1">
+          {renderSmartViewRows()}
+        </ul>
       </div>
 
       {sectionModal && (
@@ -362,6 +569,85 @@ export function LeftPanel() {
                 }`}
               >
                 {sectionModal.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {smartViewModal && (
+        <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white shadow-xl p-4">
+            <h4 className="text-sm font-semibold text-slate-800">{smartViewModal.title}</h4>
+            {smartViewModal.mode === 'delete' ? (
+              <p className="mt-2 text-xs text-slate-600">
+                Delete this custom smart view?
+              </p>
+            ) : (
+              <>
+                <div className="mt-3">
+                  <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                    Name
+                  </label>
+                  <input
+                    value={smartViewNameInput}
+                    onChange={(event) => setSmartViewNameInput(event.target.value)}
+                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. Transfer candidates"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                    Query
+                  </label>
+                  <input
+                    value={smartViewQueryInput}
+                    onChange={(event) => setSmartViewQueryInput(event.target.value)}
+                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="text match"
+                  />
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                    Field
+                  </label>
+                  <select
+                    value={smartViewFieldInput}
+                    onChange={(event) => setSmartViewFieldInput(event.target.value as CustomSmartViewField)}
+                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    <option value="sequence">Sequence</option>
+                    <option value="notes">Notes</option>
+                    <option value="shows">Shows</option>
+                  </select>
+                </div>
+              </>
+            )}
+
+            {smartViewModalError && (
+              <div className="mt-2 text-xs text-rose-600">{smartViewModalError}</div>
+            )}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeSmartViewModal}
+                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitSmartViewModal}
+                className={`h-8 px-3 rounded-md text-sm text-white ${
+                  smartViewModal.mode === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {smartViewModal.confirmText}
               </button>
             </div>
           </div>

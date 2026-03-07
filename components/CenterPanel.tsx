@@ -1,6 +1,6 @@
 import { useBiddingStore, BiddingNode } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { SequenceRow } from './SequenceRow';
 import { ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 
@@ -9,37 +9,58 @@ type TreeViewMode = 'classic' | 'compact';
 export function CenterPanel() {
   const {
     nodes,
+    sectionsById,
     selectedNodeId,
     searchQuery,
     leftPrimaryMode,
+    activeSectionId,
     activeSmartViewId,
     expandAll,
     collapseAll,
     selectNode,
-    evalSmartView,
     getSmartViews,
+    getPrimaryMatchedNodeIds,
+    getDisplayNodeIdsWithAncestors,
     setLeftPrimaryMode,
+    setActiveSectionId,
     setActiveSmartViewId,
   } = useBiddingStore();
   const selectedNode = selectedNodeId ? nodes[selectedNodeId] : null;
   const selectedSequence = selectedNode?.context.sequence || [];
   const [viewMode, setViewMode] = useState<TreeViewMode>('classic');
-  const smartViews = getSmartViews();
-  const activeSmartView = leftPrimaryMode === 'smartViews' && activeSmartViewId
-    ? smartViews.find((smartView) => smartView.id === activeSmartViewId) ?? null
+  const activeSection = leftPrimaryMode === 'sections' && activeSectionId
+    ? sectionsById[activeSectionId] ?? null
     : null;
+  const activeSmartView = leftPrimaryMode === 'smartViews' && activeSmartViewId
+    ? getSmartViews().find((smartView) => smartView.id === activeSmartViewId) ?? null
+    : null;
+  const isPrimaryFilterActive = !!activeSection || (leftPrimaryMode === 'smartViews' && !!activeSmartViewId);
+  const primaryMatchedNodeIds = getPrimaryMatchedNodeIds();
+  const displayNodeIdSet = new Set(getDisplayNodeIdsWithAncestors());
+  const forcedExpandedNodeIds = (() => {
+    const forced = new Set<string>();
+    primaryMatchedNodeIds.forEach((nodeId) => {
+      const sequence = nodeId.split(' ').filter(Boolean);
+      for (let i = 1; i < sequence.length; i += 1) {
+        forced.add(sequence.slice(0, i).join(' '));
+      }
+    });
+    return forced;
+  })();
   
-  const sortedNodes = useMemo(() => {
-    return Object.values(nodes).sort((a, b) => compareSequences(a.context.sequence, b.context.sequence));
-  }, [nodes]);
+  const sortedNodes = Object.values(nodes).sort((a, b) => compareSequences(a.context.sequence, b.context.sequence));
 
   // Filter nodes based on search and expansion
-  const visibleNodes = useMemo(() => {
+  const visibleNodes = (() => {
     const visible: BiddingNode[] = [];
     let hiddenPrefix: string[] | null = null;
 
     for (const node of sortedNodes) {
       const seq = node.context.sequence;
+
+      if (isPrimaryFilterActive && !displayNodeIdSet.has(node.id)) {
+        continue;
+      }
       
       // If we are currently hiding descendants of a collapsed node
       if (hiddenPrefix) {
@@ -56,17 +77,13 @@ export function CenterPanel() {
           }
         }
         
-          if (isDescendant) {
-            // It's a descendant, but if there's a search query, we might want to show it anyway
-            if (!searchQuery && !activeSmartViewId) continue;
-          } else {
-            // No longer a descendant, clear hidden prefix
-            hiddenPrefix = null;
-          }
+        if (isDescendant) {
+          // It's a descendant, but if there's a search query, we might want to show it anyway
+          if (!searchQuery) continue;
+        } else {
+          // No longer a descendant, clear hidden prefix
+          hiddenPrefix = null;
         }
-
-      if (activeSmartView && !evalSmartView(node.id, activeSmartView.id)) {
-        continue;
       }
 
       // Search filtering
@@ -81,12 +98,12 @@ export function CenterPanel() {
       visible.push(node);
 
       // If this node is collapsed and we are not searching, hide its descendants
-      if (!node.isExpanded && !searchQuery && !activeSmartViewId) {
+      if (!node.isExpanded && !searchQuery && !forcedExpandedNodeIds.has(node.id)) {
         hiddenPrefix = seq;
       }
     }
     return visible;
-  }, [sortedNodes, searchQuery, activeSmartView, activeSmartViewId, evalSmartView]);
+  })();
 
   return (
     <div className="h-full w-full flex flex-col bg-white overflow-hidden">
@@ -108,13 +125,16 @@ export function CenterPanel() {
           <ChevronsDownUp className="w-3.5 h-3.5" />
           <span>Collapse All</span>
         </button>
-        {activeSmartView && (
+        {(activeSection || activeSmartView) && (
           <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
-            <span className="text-xs font-medium text-blue-800">Smart: {activeSmartView.name}</span>
+            <span className="text-xs font-medium text-blue-800">
+              {activeSection ? `Section: ${activeSection.name}` : `Smart: ${activeSmartView?.name}`}
+            </span>
             <button
               type="button"
               onClick={() => {
                 setLeftPrimaryMode('roots');
+                setActiveSectionId(null);
                 setActiveSmartViewId(null);
               }}
               className="text-[11px] text-blue-700 hover:text-blue-900"

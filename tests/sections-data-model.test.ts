@@ -283,3 +283,40 @@ test('recently edited smart view reacts to node changes', () => {
   const afterUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
   assert.equal(afterUpdate, true);
 });
+
+test('primary section filter returns matched ids and display includes ancestors', () => {
+  const section = useBiddingStore.getState().createSection('Responses');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().assignNodeToSection('1C 1D 1H 2D', sectionId);
+  useBiddingStore.getState().setLeftPrimaryMode('sections');
+  useBiddingStore.getState().setActiveSectionId(sectionId);
+
+  const matched = useBiddingStore.getState().getPrimaryMatchedNodeIds();
+  assert.deepEqual(matched, ['1C 1D 1H 2D']);
+
+  const display = new Set(useBiddingStore.getState().getDisplayNodeIdsWithAncestors());
+  assert.equal(display.has('1C'), true);
+  assert.equal(display.has('1C 1D'), true);
+  assert.equal(display.has('1C 1D 1H'), true);
+  assert.equal(display.has('1C 1D 1H 2D'), true);
+});
+
+test('primary smart view filter returns matched ids and display includes ancestors', () => {
+  const custom = useBiddingStore.getState().createCustomSmartView('Weak', 'weak', 'all');
+  assert.equal(custom.ok, true);
+  const smartViewId = custom.smartViewId as string;
+
+  useBiddingStore.getState().setLeftPrimaryMode('smartViews');
+  useBiddingStore.getState().setActiveSmartViewId(smartViewId);
+
+  const matchedSet = new Set(useBiddingStore.getState().getPrimaryMatchedNodeIds());
+  assert.equal(matchedSet.has('1C 1D 1H 1NT'), true);
+
+  const display = new Set(useBiddingStore.getState().getDisplayNodeIdsWithAncestors());
+  assert.equal(display.has('1C'), true);
+  assert.equal(display.has('1C 1D'), true);
+  assert.equal(display.has('1C 1D 1H'), true);
+  assert.equal(display.has('1C 1D 1H 1NT'), true);
+});

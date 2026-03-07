@@ -218,6 +218,8 @@ interface BiddingState {
   getSectionPath: (sectionId: string) => SectionRecord[];
   getEffectiveSectionIds: (nodeId: string) => string[];
   getSubtreeRulesForNode: (nodeId: string) => SubtreeRuleRecord[];
+  getPrimaryMatchedNodeIds: () => string[];
+  getDisplayNodeIdsWithAncestors: () => string[];
   getSmartViews: () => SmartViewDescriptor[];
   evalSmartView: (nodeId: string, smartViewId: string) => boolean;
   getSmartViewCount: (smartViewId: string) => number;
@@ -530,6 +532,23 @@ function evalSmartViewById(
   const custom = state.customSmartViewsById[smartViewId];
   if (!custom) return false;
   return matchesCustomSmartViewQuery(node, custom.query, custom.field);
+}
+
+function buildDisplayNodeIdsWithAncestors(
+  matchedNodeIds: string[],
+  nodes: Record<string, BiddingNode>,
+): string[] {
+  const displayIds = new Set<string>();
+  matchedNodeIds.forEach((nodeId) => {
+    const sequence = nodeId.split(' ').filter(Boolean);
+    for (let i = 1; i <= sequence.length; i += 1) {
+      const ancestorId = sequence.slice(0, i).join(' ');
+      if (nodes[ancestorId]) {
+        displayIds.add(ancestorId);
+      }
+    }
+  });
+  return Array.from(displayIds);
 }
 
 const defaultSystem = `
@@ -1923,6 +1942,26 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return Object.values(subtreeRulesById)
         .filter((rule) => rule.rootNodeId === nodeId && !!sectionsById[rule.sectionId])
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    },
+
+    getPrimaryMatchedNodeIds: () => {
+      const state = get();
+      const nodeIds = Object.keys(state.nodes);
+      if (state.leftPrimaryMode === 'sections' && state.activeSectionId && state.sectionsById[state.activeSectionId]) {
+        return nodeIds.filter((nodeId) =>
+          getEffectiveSectionIdsForNode(nodeId, state.nodeSectionIds, state.subtreeRulesById).includes(state.activeSectionId as string),
+        );
+      }
+      if (state.leftPrimaryMode === 'smartViews' && state.activeSmartViewId) {
+        return nodeIds.filter((nodeId) => evalSmartViewById(nodeId, state.activeSmartViewId as string, state));
+      }
+      return nodeIds;
+    },
+
+    getDisplayNodeIdsWithAncestors: () => {
+      const state = get();
+      const matchedNodeIds = state.getPrimaryMatchedNodeIds();
+      return buildDisplayNodeIdsWithAncestors(matchedNodeIds, state.nodes);
     },
 
     getSmartViews: () => {

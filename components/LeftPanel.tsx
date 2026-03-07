@@ -238,6 +238,7 @@ export function LeftPanel() {
               onClick={() => {
                 setLeftPrimaryMode('sections');
                 setActiveSectionId(section.id);
+                setActiveSmartViewId(null);
               }}
               className={`flex-1 min-w-0 text-left rounded-md text-sm transition-colors ${
                 isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
@@ -287,6 +288,7 @@ export function LeftPanel() {
                 onClick={() => {
                   setLeftPrimaryMode('sections');
                   setActiveSectionId(section.id);
+                  setActiveSmartViewId(null);
                   setActionMenuSectionId(null);
                 }}
                 className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
@@ -341,6 +343,7 @@ export function LeftPanel() {
               onClick={() => {
                 setLeftPrimaryMode('smartViews');
                 setActiveSmartViewId(smartView.id);
+                setActiveSectionId(null);
               }}
               className={`flex-1 min-w-0 text-left rounded-md text-sm transition-colors px-2 py-1.5 ${
                 isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
@@ -387,6 +390,7 @@ export function LeftPanel() {
                 onClick={() => {
                   setLeftPrimaryMode('smartViews');
                   setActiveSmartViewId(smartView.id);
+                  setActiveSectionId(null);
                   setActionMenuSmartViewId(null);
                 }}
                 className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
@@ -427,7 +431,12 @@ export function LeftPanel() {
           {roots.map((root) => (
             <li key={root.id}>
               <button
-                onClick={() => selectNode(root.id)}
+                onClick={() => {
+                  setLeftPrimaryMode('roots');
+                  setActiveSectionId(null);
+                  setActiveSmartViewId(null);
+                  selectNode(root.id);
+                }}
                 className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   selectedNodeId === root.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
                 }`}
@@ -486,7 +495,12 @@ export function LeftPanel() {
             {bookmarks.map((bm) => (
               <li key={bm.id}>
                 <button
-                  onClick={() => selectNode(bm.id)}
+                  onClick={() => {
+                    setLeftPrimaryMode('roots');
+                    setActiveSectionId(null);
+                    setActiveSmartViewId(null);
+                    selectNode(bm.id);
+                  }}
                   className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors truncate ${
                     selectedNodeId === bm.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
                   }`}

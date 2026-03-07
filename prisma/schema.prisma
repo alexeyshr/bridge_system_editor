@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ShareRole {
+  viewer
+  editor
+}
+
+enum InviteChannel {
+  email
+  internal
+  telegram
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+model User {
+  id               String           @id @default(cuid())
+  email            String?          @unique
+  passwordHash     String?
+  displayName      String?
+  telegramUsername String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  accounts         AuthAccount[]
+  ownedSystems     BiddingSystem[]  @relation("SystemOwner")
+  updatedSystems   BiddingSystem[]  @relation("SystemUpdater")
+  shares           SystemShare[]
+  nodesUpdated     BiddingNode[]    @relation("NodeUpdater")
+  invitesCreated   ShareInvite[]    @relation("InviteCreator")
+  invitesAccepted  ShareInvite[]    @relation("InviteAccepter")
+  invitesTargeted  ShareInvite[]    @relation("InviteTargetUser")
+  revisionsCreated SystemRevision[] @relation("RevisionCreator")
+}
+
+model AuthAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model BiddingSystem {
+  id            String           @id @default(cuid())
+  ownerId       String
+  title         String
+  description   String?
+  schemaVersion Int              @default(1)
+  revision      Int              @default(1)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  updatedById   String
+  owner         User             @relation("SystemOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  updatedBy     User             @relation("SystemUpdater", fields: [updatedById], references: [id])
+  nodes         BiddingNode[]
+  shares        SystemShare[]
+  invites       ShareInvite[]
+  revisions     SystemRevision[]
+
+  @@index([ownerId])
+  @@index([updatedById])
+}
+
+model BiddingNode {
+  id          String        @id @default(cuid())
+  systemId    String
+  sequenceId  String
+  payload     Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  updatedById String
+  system      BiddingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  updatedBy   User          @relation("NodeUpdater", fields: [updatedById], references: [id])
+
+  @@unique([systemId, sequenceId])
+  @@index([systemId])
+  @@index([updatedById])
+}
+
+model SystemShare {
+  id       String        @id @default(cuid())
+  systemId String
+  userId   String
+  role     ShareRole     @default(viewer)
+  createdAt DateTime     @default(now())
+  system   BiddingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([systemId, userId])
+  @@index([systemId])
+  @@index([userId])
+}
+
+model ShareInvite {
+  id                     String        @id @default(cuid())
+  systemId               String
+  createdById            String
+  role                   ShareRole
+  channel                InviteChannel
+  targetEmail            String?
+  targetUserId           String?
+  targetTelegramUsername String?
+  token                  String        @unique
+  status                 InviteStatus  @default(pending)
+  expiresAt              DateTime
+  acceptedAt             DateTime?
+  acceptedById           String?
+  createdAt              DateTime      @default(now())
+  system                 BiddingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdBy              User          @relation("InviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  targetUser             User?         @relation("InviteTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  acceptedBy             User?         @relation("InviteAccepter", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([systemId, status])
+  @@index([targetUserId])
+}
+
+model SystemRevision {
+  id          String        @id @default(cuid())
+  systemId    String
+  revision    Int
+  diff        Json?
+  createdById String
+  createdAt   DateTime      @default(now())
+  system      BiddingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation("RevisionCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@unique([systemId, revision])
+  @@index([systemId])
+}

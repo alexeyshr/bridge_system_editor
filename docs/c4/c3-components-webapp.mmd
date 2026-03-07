@@ -1,0 +1,17 @@
+flowchart LR
+  subgraph WebApp["Next.js Web App"]
+    shell["App Shell (layout, providers)"]
+    authui["Auth UI"]
+    editor["Bidding Editor UI (left/center/right panes)"]
+    leftpanel["Section and Smart View UI"]
+    sync["System Sync Hook (React Query + store bridge)"]
+    store["Client Store (Zustand UI state)"]
+    trpcclient["tRPC Client + React Query"]
+  end
+
+  shell --> authui
+  shell --> editor
+  editor --> leftpanel
+  editor --> sync
+  sync --> store
+  sync --> trpcclient

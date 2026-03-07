@@ -2,6 +2,16 @@
 
 Scope: expand the left panel into a flexible navigation and organization area without breaking the current center tree and right card flows.
 
+## Architecture References
+
+- ADR: `docs/adr/ADR-0001-api-first-modular-monolith.md`
+- C4: `docs/c4/c3-components-webapp.mmd`
+
+## Linear Scope
+
+- Parent: `BRI-33`
+- Mapping: `specs/004-left-panel-evolution/linear-mapping.md`
+
 ## Delivery Order
 
 1. `01-sections-data-model.md` - section entities and store state
@@ -24,7 +34,7 @@ Scope: expand the left panel into a flexible navigation and organization area wi
 
 ## Board
 
-- [ ] F01 Sections data model
+- [x] F01 Sections data model
 - [ ] F02 Sections CRUD UI
 - [ ] F03 Node assignment to sections
 - [ ] F04 Smart views

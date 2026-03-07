@@ -1,0 +1,15 @@
+flowchart LR
+  subgraph Bot["Telegram Bot Worker (grammY)"]
+    updates["Update Handlers"]
+    deeplink["Deep Link Resolver"]
+    authlink["Account Linking Flow"]
+    notif["Notification Dispatcher"]
+    apiclient["tRPC or Internal API Client"]
+  end
+
+  updates --> deeplink
+  updates --> authlink
+  updates --> notif
+  deeplink --> apiclient
+  authlink --> apiclient
+  notif --> apiclient

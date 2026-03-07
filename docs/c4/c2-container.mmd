@@ -1,0 +1,25 @@
+flowchart TB
+  browser["Web Browser (React UI)"]
+  miniapp["Telegram Mini App (React UI)"]
+  botchat["Telegram Bot Chat"]
+
+  web["Next.js App Shell + Pages"]
+  api["tRPC API Layer (Route Handlers)"]
+  worker["Background Jobs / Bot Worker (grammY)"]
+
+  postgres["PostgreSQL"]
+  redis["Redis"]
+  meili["Meilisearch"]
+  minio["MinIO or S3"]
+
+  browser --> web
+  miniapp --> web
+  web --> api
+  botchat --> worker
+  worker --> api
+
+  api --> postgres
+  api --> redis
+  api --> meili
+  api --> minio
+  worker --> redis

@@ -36,7 +36,7 @@ Scope: transition from completed bidding editor module to portal-ready, multi-us
 
 ## Board
 
-- [ ] F01 Drizzle-only cutover and Prisma removal
+- [x] F01 Drizzle-only cutover and Prisma removal
 - [ ] F02 Zustand slice refactor and Error Boundaries
 - [ ] F03 Auth migration and endpoint rate limiting
 - [ ] F04 PostgreSQL FTS and JSONB indexing

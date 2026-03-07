@@ -65,7 +65,7 @@ export default function Page() {
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <LeftPanel />
                 </Panel>
-                <Separator className="w-1 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
               </>
             )}
             
@@ -75,7 +75,7 @@ export default function Page() {
             
             {isRightPanelOpen && (
               <>
-                <Separator className="w-1 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <RightPanel />
                 </Panel>

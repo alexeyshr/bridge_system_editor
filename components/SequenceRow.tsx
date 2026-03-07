@@ -7,9 +7,10 @@ import { NodeSectionAssignment } from './NodeSectionAssignment';
 type SequenceViewMode = 'classic' | 'compact';
 
 const BID_SUITS = ['C', 'D', 'H', 'S', 'NT'] as const;
+const BID_DISPLAY_SUITS = ['NT', 'S', 'H', 'D', 'C'] as const;
 const SPECIAL_CALLS = ['Pass', 'X', 'XX'] as const;
 const ALL_BID_CALLS = Array.from({ length: 7 }, (_, levelIdx) =>
-  BID_SUITS.map((suit) => `${levelIdx + 1}${suit}`)
+  BID_DISPLAY_SUITS.map((suit) => `${levelIdx + 1}${suit}`)
 ).flat();
 
 function normalizeCall(rawValue: string): string | null {
@@ -70,6 +71,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   const canDouble = !!normalizedLastCall && isBidCall(normalizedLastCall);
   const canRedouble = normalizedLastCall === 'X';
   const isOpenerTurn = depth % 2 === 0;
+  const showRowActions = isHovered || isSelected || isAddFormOpen || isSectionAssignOpen || isDeleteDialogOpen;
   
   // Check if node has children
   const prefix = node.id + " ";
@@ -239,7 +241,11 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         )}
 
         {/* Hover Actions */}
-        <div className={`ml-4 flex items-center gap-1 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+        <div
+          className={`ml-4 flex items-center gap-1 transition-opacity ${
+            showRowActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+        >
           <button 
             className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
             onClick={handleOpenAddForm}
@@ -352,7 +358,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
               e.preventDefault();
               submitContinuation();
             }}
-            className="flex items-center gap-1"
+            className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1"
           >
             <input
               autoFocus
@@ -370,14 +376,8 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
                 }
               }}
               placeholder="e.g. 2H, 2NT, 3C"
-              className="flex-1 h-7 px-2 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 h-7 px-2 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <button
-              type="submit"
-              className="h-7 px-3 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
-            >
-              Add
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -385,9 +385,15 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
                 setContinuationCall('');
                 setContinuationError('');
               }}
-              className="h-7 px-2.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-md transition-colors"
+              className="h-7 px-2.5 shrink-0 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-md transition-colors"
             >
               Cancel
+            </button>
+            <button
+              type="submit"
+              className="h-7 px-3 shrink-0 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+            >
+              Add
             </button>
           </form>
 

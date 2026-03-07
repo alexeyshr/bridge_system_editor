@@ -191,10 +191,11 @@ Feature flags:
 
 ## Ближайший roadmap
 
-Основная следующая задача: развитие левой панели до пользовательских секций и smart views.
+Текущий следующий этап: platform hardening для встраивания редактора в портал.
 Спеки и порядок реализации описаны в:
-- `specs/004-left-panel-evolution/README.md`
-- `specs/004-left-panel-evolution/00-decisions.md`
+- `specs/005-platform-core-hardening/README.md`
+- `specs/005-platform-core-hardening/spec.md`
+- `specs/005-platform-core-hardening/plan.md`
 
 ## Troubleshooting
 

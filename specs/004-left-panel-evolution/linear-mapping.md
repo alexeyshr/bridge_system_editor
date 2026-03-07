@@ -26,5 +26,5 @@ Team: `BRI` (Bridgespace)
   - https://linear.app/bridgespace/issue/BRI-40/pr-87-f07-store-method-mapping
 - `BRI-41` -> `F08 Performance and indexing` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-41/pr-88-f08-performance-and-indexing
-- `BRI-42` -> `F09 QA and acceptance` (`Todo`)
+- `BRI-42` -> `F09 QA and acceptance` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-42/pr-89-f09-qa-and-acceptance

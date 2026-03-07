@@ -54,7 +54,7 @@ export interface SectionTreeNode {
   children: SectionTreeNode[];
 }
 
-interface SectionMutationResult {
+export interface SectionMutationResult {
   ok: boolean;
   sectionId?: string;
   error?: string;
@@ -77,6 +77,7 @@ interface BiddingState {
   selectedNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
   sectionRootOrder: string[];
+  sectionExpandedById: Record<string, boolean>;
   leftPrimaryMode: LeftPrimaryMode;
   activeSectionId: string | null;
   activeSmartViewId: string | null;
@@ -127,6 +128,8 @@ interface BiddingState {
   setLeftPrimaryMode: (mode: LeftPrimaryMode) => void;
   setActiveSectionId: (sectionId: string | null) => void;
   setActiveSmartViewId: (smartViewId: string | null) => void;
+  toggleSectionExpanded: (sectionId: string) => void;
+  setSectionExpanded: (sectionId: string, expanded: boolean) => void;
   getSectionChildren: (parentId: string | null) => SectionRecord[];
   getSectionTree: () => SectionTreeNode[];
   getSectionPath: (sectionId: string) => SectionRecord[];
@@ -411,6 +414,9 @@ const initialActiveSectionId = initialDraft?.activeSectionId && initialSectionsB
   ? initialDraft.activeSectionId
   : null;
 const initialActiveSmartViewId = initialDraft?.activeSmartViewId ?? null;
+const initialSectionExpandedById: Record<string, boolean> = Object.fromEntries(
+  Object.keys(initialSectionsById).map((sectionId) => [sectionId, true]),
+);
 
 export const useBiddingStore = create<BiddingState>((set, get) => {
   const queueDraftSave = () => {
@@ -470,6 +476,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     selectedNodeId: initialDraft?.selectedNodeId ?? null,
     sectionsById: initialSectionsById,
     sectionRootOrder: initialSectionRootOrder,
+    sectionExpandedById: initialSectionExpandedById,
     leftPrimaryMode: initialLeftPrimaryMode,
     activeSectionId: initialActiveSectionId,
     activeSmartViewId: initialActiveSmartViewId,
@@ -504,6 +511,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId: null,
           sectionsById: {},
           sectionRootOrder: [],
+          sectionExpandedById: {},
           activeSectionId: null,
           activeSmartViewId: null,
           leftPrimaryMode: 'roots',
@@ -758,6 +766,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId,
           sectionsById: {},
           sectionRootOrder: [],
+          sectionExpandedById: {},
           leftPrimaryMode: 'roots',
           activeSectionId: null,
           activeSmartViewId: null,
@@ -831,6 +840,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         return {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
+          sectionExpandedById: {
+            ...state.sectionExpandedById,
+            [sectionId]: true,
+          },
           leftPrimaryMode: 'sections' as LeftPrimaryMode,
           activeSectionId: sectionId,
           hasUnsavedChanges: true,
@@ -991,9 +1004,11 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didDelete = true;
         result = { ok: true, sectionId };
+        const { [sectionId]: _removedExpandedState, ...nextExpandedById } = state.sectionExpandedById;
         return {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
+          sectionExpandedById: nextExpandedById,
           activeSectionId: state.activeSectionId === sectionId ? targetParentId : state.activeSectionId,
           hasUnsavedChanges: true,
           serverSyncError: null,
@@ -1012,6 +1027,27 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     }),
 
     setActiveSmartViewId: (smartViewId: string | null) => set({ activeSmartViewId: smartViewId }),
+
+    toggleSectionExpanded: (sectionId: string) => set((state) => {
+      if (!state.sectionsById[sectionId]) return state;
+      const isExpanded = state.sectionExpandedById[sectionId] ?? true;
+      return {
+        sectionExpandedById: {
+          ...state.sectionExpandedById,
+          [sectionId]: !isExpanded,
+        },
+      };
+    }),
+
+    setSectionExpanded: (sectionId: string, expanded: boolean) => set((state) => {
+      if (!state.sectionsById[sectionId]) return state;
+      return {
+        sectionExpandedById: {
+          ...state.sectionExpandedById,
+          [sectionId]: expanded,
+        },
+      };
+    }),
 
     getSectionChildren: (parentId: string | null) => {
       const { sectionsById } = get();

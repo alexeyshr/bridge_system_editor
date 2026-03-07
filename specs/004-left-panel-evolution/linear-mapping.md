@@ -12,7 +12,7 @@ Team: `BRI` (Bridgespace)
 
 - `BRI-34` -> `F01 Sections data model` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-34/pr-81-f01-sections-data-model
-- `BRI-35` -> `F02 Sections CRUD UI` (`Todo`)
+- `BRI-35` -> `F02 Sections CRUD UI` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-35/pr-82-f02-sections-crud-ui
 - `BRI-36` -> `F03 Node section assignment` (`Todo`)
   - https://linear.app/bridgespace/issue/BRI-36/pr-83-f03-node-section-assignment

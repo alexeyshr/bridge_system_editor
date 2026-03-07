@@ -14,7 +14,7 @@ Team: `BRI` (Bridgespace)
   - https://linear.app/bridgespace/issue/BRI-34/pr-81-f01-sections-data-model
 - `BRI-35` -> `F02 Sections CRUD UI` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-35/pr-82-f02-sections-crud-ui
-- `BRI-36` -> `F03 Node section assignment` (`Todo`)
+- `BRI-36` -> `F03 Node section assignment` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-36/pr-83-f03-node-section-assignment
 - `BRI-37` -> `F04 Smart views` (`Todo`)
   - https://linear.app/bridgespace/issue/BRI-37/pr-84-f04-smart-views

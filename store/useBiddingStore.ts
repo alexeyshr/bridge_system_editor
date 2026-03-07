@@ -60,6 +60,21 @@ export interface SectionMutationResult {
   error?: string;
 }
 
+export interface SubtreeRuleRecord {
+  id: string;
+  sectionId: string;
+  rootNodeId: string;
+  includeFutureDescendants: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AssignmentMutationResult {
+  ok: boolean;
+  ruleId?: string;
+  error?: string;
+}
+
 interface DraftPayload {
   version: number;
   savedAt: string;
@@ -67,6 +82,8 @@ interface DraftPayload {
   selectedNodeId: string | null;
   sectionsById?: Record<string, SectionRecord>;
   sectionRootOrder?: string[];
+  nodeSectionIds?: Record<string, string[]>;
+  subtreeRulesById?: Record<string, SubtreeRuleRecord>;
   leftPrimaryMode?: LeftPrimaryMode;
   activeSectionId?: string | null;
   activeSmartViewId?: string | null;
@@ -77,6 +94,8 @@ interface BiddingState {
   selectedNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
   sectionRootOrder: string[];
+  nodeSectionIds: Record<string, string[]>;
+  subtreeRulesById: Record<string, SubtreeRuleRecord>;
   sectionExpandedById: Record<string, boolean>;
   leftPrimaryMode: LeftPrimaryMode;
   activeSectionId: string | null;
@@ -125,6 +144,15 @@ interface BiddingState {
   moveSection: (sectionId: string, targetParentId: string | null, targetIndex?: number) => SectionMutationResult;
   reorderSection: (sectionId: string, targetIndex: number) => SectionMutationResult;
   deleteSection: (sectionId: string) => SectionMutationResult;
+  assignNodeToSection: (nodeId: string, sectionId: string) => AssignmentMutationResult;
+  unassignNodeFromSection: (nodeId: string, sectionId: string) => AssignmentMutationResult;
+  setNodeSections: (nodeId: string, sectionIds: string[]) => AssignmentMutationResult;
+  createSubtreeRule: (
+    sectionId: string,
+    rootNodeId: string,
+    includeFutureDescendants?: boolean,
+  ) => AssignmentMutationResult;
+  deleteSubtreeRule: (ruleId: string) => AssignmentMutationResult;
   setLeftPrimaryMode: (mode: LeftPrimaryMode) => void;
   setActiveSectionId: (sectionId: string | null) => void;
   setActiveSmartViewId: (smartViewId: string | null) => void;
@@ -133,6 +161,8 @@ interface BiddingState {
   getSectionChildren: (parentId: string | null) => SectionRecord[];
   getSectionTree: () => SectionTreeNode[];
   getSectionPath: (sectionId: string) => SectionRecord[];
+  getEffectiveSectionIds: (nodeId: string) => string[];
+  getSubtreeRulesForNode: (nodeId: string) => SubtreeRuleRecord[];
   flushDraftSave: () => void;
   clearDraft: () => void;
 }
@@ -248,6 +278,54 @@ function nextSectionId(sectionsById: Record<string, SectionRecord>): string {
     id = `sec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   } while (sectionsById[id]);
   return id;
+}
+
+function nextSubtreeRuleId(rulesById: Record<string, SubtreeRuleRecord>): string {
+  let id = '';
+  do {
+    id = `rule_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  } while (rulesById[id]);
+  return id;
+}
+
+function normalizeSectionIdList(sectionIds: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  sectionIds.forEach((sectionId) => {
+    const trimmed = sectionId.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  });
+  return normalized;
+}
+
+function isNodeWithinSubtree(nodeId: string, rootNodeId: string): boolean {
+  if (nodeId === rootNodeId) return true;
+  return nodeId.startsWith(`${rootNodeId} `);
+}
+
+function remapNodeIdMapForRename<T>(
+  map: Record<string, T>,
+  oldRootNodeId: string,
+  newRootNodeId: string,
+): Record<string, T> {
+  const nextMap: Record<string, T> = {};
+  const oldPrefix = `${oldRootNodeId} `;
+  const newPrefix = `${newRootNodeId} `;
+  Object.entries(map).forEach(([nodeId, value]) => {
+    if (nodeId === oldRootNodeId) {
+      nextMap[newRootNodeId] = value;
+      return;
+    }
+    if (nodeId.startsWith(oldPrefix)) {
+      const suffix = nodeId.slice(oldPrefix.length);
+      nextMap[`${newPrefix}${suffix}`] = value;
+      return;
+    }
+    nextMap[nodeId] = value;
+  });
+  return nextMap;
 }
 
 const defaultSystem = `
@@ -406,6 +484,39 @@ const initialNodes = initialDraft?.nodes && Object.keys(initialDraft.nodes).leng
 const initialSectionsById = initialDraft?.sectionsById && typeof initialDraft.sectionsById === 'object'
   ? initialDraft.sectionsById
   : {};
+const initialNodeSectionIdsRaw = initialDraft?.nodeSectionIds && typeof initialDraft.nodeSectionIds === 'object'
+  ? initialDraft.nodeSectionIds
+  : {};
+const initialNodeSectionIds: Record<string, string[]> = {};
+Object.entries(initialNodeSectionIdsRaw).forEach(([nodeId, sectionIds]) => {
+  if (!initialNodes[nodeId] || !Array.isArray(sectionIds)) return;
+  const normalized = normalizeSectionIdList(
+    sectionIds.filter((sectionId): sectionId is string => typeof sectionId === 'string')
+      .filter((sectionId) => !!initialSectionsById[sectionId]),
+  );
+  if (normalized.length > 0) {
+    initialNodeSectionIds[nodeId] = normalized;
+  }
+});
+const initialSubtreeRulesRaw = initialDraft?.subtreeRulesById && typeof initialDraft.subtreeRulesById === 'object'
+  ? initialDraft.subtreeRulesById
+  : {};
+const initialSubtreeRulesById: Record<string, SubtreeRuleRecord> = {};
+Object.entries(initialSubtreeRulesRaw).forEach(([ruleId, maybeRule]) => {
+  const rule = maybeRule as Partial<SubtreeRuleRecord>;
+  if (!rule || typeof rule !== 'object') return;
+  if (!rule.sectionId || !initialSectionsById[rule.sectionId]) return;
+  if (!rule.rootNodeId || !initialNodes[rule.rootNodeId]) return;
+  const timestamp = typeof rule.createdAt === 'string' && rule.createdAt ? rule.createdAt : new Date().toISOString();
+  initialSubtreeRulesById[ruleId] = {
+    id: ruleId,
+    sectionId: rule.sectionId,
+    rootNodeId: rule.rootNodeId,
+    includeFutureDescendants: rule.includeFutureDescendants !== false,
+    createdAt: timestamp,
+    updatedAt: typeof rule.updatedAt === 'string' && rule.updatedAt ? rule.updatedAt : timestamp,
+  };
+});
 const initialSectionRootOrder = initialDraft?.sectionRootOrder && Array.isArray(initialDraft.sectionRootOrder)
   ? initialDraft.sectionRootOrder.filter((sectionId) => !!initialSectionsById[sectionId])
   : getSectionRootOrder(initialSectionsById);
@@ -438,6 +549,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         selectedNodeId: state.selectedNodeId,
         sectionsById: state.sectionsById,
         sectionRootOrder: state.sectionRootOrder,
+        nodeSectionIds: state.nodeSectionIds,
+        subtreeRulesById: state.subtreeRulesById,
         leftPrimaryMode: state.leftPrimaryMode,
         activeSectionId: state.activeSectionId,
         activeSmartViewId: state.activeSmartViewId,
@@ -464,6 +577,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       selectedNodeId: state.selectedNodeId,
       sectionsById: state.sectionsById,
       sectionRootOrder: state.sectionRootOrder,
+      nodeSectionIds: state.nodeSectionIds,
+      subtreeRulesById: state.subtreeRulesById,
       leftPrimaryMode: state.leftPrimaryMode,
       activeSectionId: state.activeSectionId,
       activeSmartViewId: state.activeSmartViewId,
@@ -476,6 +591,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     selectedNodeId: initialDraft?.selectedNodeId ?? null,
     sectionsById: initialSectionsById,
     sectionRootOrder: initialSectionRootOrder,
+    nodeSectionIds: initialNodeSectionIds,
+    subtreeRulesById: initialSubtreeRulesById,
     sectionExpandedById: initialSectionExpandedById,
     leftPrimaryMode: initialLeftPrimaryMode,
     activeSectionId: initialActiveSectionId,
@@ -511,6 +628,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId: null,
           sectionsById: {},
           sectionRootOrder: [],
+          nodeSectionIds: {},
+          subtreeRulesById: {},
           sectionExpandedById: {},
           activeSectionId: null,
           activeSmartViewId: null,
@@ -648,9 +767,25 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           }
         });
 
+        const nextNodeSectionIds = remapNodeIdMapForRename(state.nodeSectionIds, id, newId);
+        const nextSubtreeRulesById = Object.fromEntries(
+          Object.entries(state.subtreeRulesById).map(([ruleId, rule]) => {
+            if (rule.rootNodeId === id) {
+              return [ruleId, { ...rule, rootNodeId: newId, updatedAt: new Date().toISOString() }];
+            }
+            if (rule.rootNodeId.startsWith(prefix)) {
+              const suffix = rule.rootNodeId.substring(prefix.length);
+              return [ruleId, { ...rule, rootNodeId: newPrefix + suffix, updatedAt: new Date().toISOString() }];
+            }
+            return [ruleId, rule];
+          }),
+        ) as Record<string, SubtreeRuleRecord>;
+
         didRename = true;
         return {
           nodes: newNodes,
+          nodeSectionIds: nextNodeSectionIds,
+          subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
           selectedNodeId: state.selectedNodeId === id
@@ -680,8 +815,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         if (!didDelete) return state;
 
+        const nextNodeSectionIds = Object.fromEntries(
+          Object.entries(state.nodeSectionIds).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, id)),
+        ) as Record<string, string[]>;
+
+        const nextSubtreeRulesById = Object.fromEntries(
+          Object.entries(state.subtreeRulesById).filter(([, rule]) => !isNodeWithinSubtree(rule.rootNodeId, id)),
+        ) as Record<string, SubtreeRuleRecord>;
+
         return {
           nodes: newNodes,
+          nodeSectionIds: nextNodeSectionIds,
+          subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
           selectedNodeId: state.selectedNodeId === id || state.selectedNodeId?.startsWith(prefix)
@@ -766,6 +911,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId,
           sectionsById: {},
           sectionRootOrder: [],
+          nodeSectionIds: {},
+          subtreeRulesById: {},
           sectionExpandedById: {},
           leftPrimaryMode: 'roots',
           activeSectionId: null,
@@ -1005,11 +1152,215 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didDelete = true;
         result = { ok: true, sectionId };
         const { [sectionId]: _removedExpandedState, ...nextExpandedById } = state.sectionExpandedById;
+        const nextNodeSectionIds = Object.fromEntries(
+          Object.entries(state.nodeSectionIds)
+            .map(([nodeId, sectionIds]) => [nodeId, sectionIds.filter((id) => id !== sectionId)] as const)
+            .filter(([, sectionIds]) => sectionIds.length > 0),
+        ) as Record<string, string[]>;
+        const nextSubtreeRulesById = Object.fromEntries(
+          Object.entries(state.subtreeRulesById).filter(([, rule]) => rule.sectionId !== sectionId),
+        ) as Record<string, SubtreeRuleRecord>;
         return {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
+          nodeSectionIds: nextNodeSectionIds,
+          subtreeRulesById: nextSubtreeRulesById,
           sectionExpandedById: nextExpandedById,
           activeSectionId: state.activeSectionId === sectionId ? targetParentId : state.activeSectionId,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didDelete) queueDraftSave();
+      return result;
+    },
+
+    assignNodeToSection: (nodeId: string, sectionId: string) => {
+      let result: AssignmentMutationResult = { ok: false, error: 'Failed to assign section.' };
+      let didAssign = false;
+
+      set((state) => {
+        if (!state.nodes[nodeId]) {
+          result = { ok: false, error: 'Node not found.' };
+          return state;
+        }
+        if (!state.sectionsById[sectionId]) {
+          result = { ok: false, error: 'Section not found.' };
+          return state;
+        }
+
+        const existing = state.nodeSectionIds[nodeId] ?? [];
+        if (existing.includes(sectionId)) {
+          result = { ok: true };
+          return state;
+        }
+
+        didAssign = true;
+        result = { ok: true };
+        return {
+          nodeSectionIds: {
+            ...state.nodeSectionIds,
+            [nodeId]: [...existing, sectionId],
+          },
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didAssign) queueDraftSave();
+      return result;
+    },
+
+    unassignNodeFromSection: (nodeId: string, sectionId: string) => {
+      let result: AssignmentMutationResult = { ok: false, error: 'Failed to unassign section.' };
+      let didUnassign = false;
+
+      set((state) => {
+        if (!state.nodes[nodeId]) {
+          result = { ok: false, error: 'Node not found.' };
+          return state;
+        }
+        if (!state.sectionsById[sectionId]) {
+          result = { ok: false, error: 'Section not found.' };
+          return state;
+        }
+
+        const existing = state.nodeSectionIds[nodeId] ?? [];
+        if (!existing.includes(sectionId)) {
+          result = { ok: true };
+          return state;
+        }
+
+        const nextIds = existing.filter((id) => id !== sectionId);
+        const nextNodeSectionIds = { ...state.nodeSectionIds };
+        if (nextIds.length > 0) {
+          nextNodeSectionIds[nodeId] = nextIds;
+        } else {
+          delete nextNodeSectionIds[nodeId];
+        }
+
+        didUnassign = true;
+        result = { ok: true };
+        return {
+          nodeSectionIds: nextNodeSectionIds,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didUnassign) queueDraftSave();
+      return result;
+    },
+
+    setNodeSections: (nodeId: string, sectionIds: string[]) => {
+      let result: AssignmentMutationResult = { ok: false, error: 'Failed to set node sections.' };
+      let didSet = false;
+
+      set((state) => {
+        if (!state.nodes[nodeId]) {
+          result = { ok: false, error: 'Node not found.' };
+          return state;
+        }
+
+        const normalized = normalizeSectionIdList(sectionIds);
+        const hasMissingSection = normalized.some((sectionId) => !state.sectionsById[sectionId]);
+        if (hasMissingSection) {
+          result = { ok: false, error: 'One or more sections were not found.' };
+          return state;
+        }
+
+        const previous = state.nodeSectionIds[nodeId] ?? [];
+        if (previous.length === normalized.length && previous.every((id, index) => id === normalized[index])) {
+          result = { ok: true };
+          return state;
+        }
+
+        const nextNodeSectionIds = { ...state.nodeSectionIds };
+        if (normalized.length > 0) {
+          nextNodeSectionIds[nodeId] = normalized;
+        } else {
+          delete nextNodeSectionIds[nodeId];
+        }
+
+        didSet = true;
+        result = { ok: true };
+        return {
+          nodeSectionIds: nextNodeSectionIds,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didSet) queueDraftSave();
+      return result;
+    },
+
+    createSubtreeRule: (sectionId: string, rootNodeId: string, includeFutureDescendants = true) => {
+      let result: AssignmentMutationResult = { ok: false, error: 'Failed to create subtree rule.' };
+      let didCreate = false;
+
+      set((state) => {
+        if (!state.sectionsById[sectionId]) {
+          result = { ok: false, error: 'Section not found.' };
+          return state;
+        }
+        if (!state.nodes[rootNodeId]) {
+          result = { ok: false, error: 'Root node not found.' };
+          return state;
+        }
+
+        const existingRule = Object.values(state.subtreeRulesById).find(
+          (rule) => rule.sectionId === sectionId && rule.rootNodeId === rootNodeId,
+        );
+        if (existingRule) {
+          result = { ok: true, ruleId: existingRule.id };
+          return state;
+        }
+
+        const ruleId = nextSubtreeRuleId(state.subtreeRulesById);
+        const timestamp = new Date().toISOString();
+        didCreate = true;
+        result = { ok: true, ruleId };
+
+        return {
+          subtreeRulesById: {
+            ...state.subtreeRulesById,
+            [ruleId]: {
+              id: ruleId,
+              sectionId,
+              rootNodeId,
+              includeFutureDescendants,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          },
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didCreate) queueDraftSave();
+      return result;
+    },
+
+    deleteSubtreeRule: (ruleId: string) => {
+      let result: AssignmentMutationResult = { ok: false, error: 'Failed to delete subtree rule.' };
+      let didDelete = false;
+
+      set((state) => {
+        if (!state.subtreeRulesById[ruleId]) {
+          result = { ok: false, error: 'Subtree rule not found.' };
+          return state;
+        }
+
+        const nextRules = { ...state.subtreeRulesById };
+        delete nextRules[ruleId];
+
+        didDelete = true;
+        result = { ok: true };
+        return {
+          subtreeRulesById: nextRules,
           hasUnsavedChanges: true,
           serverSyncError: null,
         };
@@ -1062,6 +1413,24 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     getSectionPath: (sectionId: string) => {
       const { sectionsById } = get();
       return buildSectionPath(sectionsById, sectionId);
+    },
+
+    getEffectiveSectionIds: (nodeId: string) => {
+      const { sectionsById, nodeSectionIds, subtreeRulesById } = get();
+      if (!nodeId) return [];
+      const direct = nodeSectionIds[nodeId] ?? [];
+      const fromRules = Object.values(subtreeRulesById)
+        .filter((rule) => isNodeWithinSubtree(nodeId, rule.rootNodeId))
+        .map((rule) => rule.sectionId);
+      const merged = normalizeSectionIdList([...direct, ...fromRules]);
+      return merged.filter((sectionId) => !!sectionsById[sectionId]);
+    },
+
+    getSubtreeRulesForNode: (nodeId: string) => {
+      const { sectionsById, subtreeRulesById } = get();
+      return Object.values(subtreeRulesById)
+        .filter((rule) => rule.rootNodeId === nodeId && !!sectionsById[rule.sectionId])
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     },
 
     flushDraftSave,

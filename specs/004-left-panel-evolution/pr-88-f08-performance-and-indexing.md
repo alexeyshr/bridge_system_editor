@@ -2,7 +2,7 @@
 
 ## PR Link
 
-- https://github.com/alexeyshr/bridge_system_editor/pull/TBD
+- https://github.com/alexeyshr/bridge_system_editor/pull/new/codex/BRI-39-f06-to-f08-batch
 
 ## PR Title
 

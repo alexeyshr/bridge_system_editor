@@ -1,4 +1,4 @@
-# F08 QA and Acceptance
+# F09 QA and Acceptance
 
 ## Goal
 
@@ -30,7 +30,16 @@ Verify functional correctness and prevent regressions before release.
 
 ## Release Checklist
 
-- [ ] `npm run lint` passes
-- [ ] no runtime errors in browser console
-- [ ] all matrix items pass manually
-- [ ] update `/fix` notes for delivered tasks
+- [x] `npm run lint` passes
+- [x] no runtime errors in browser console
+- [x] all matrix items pass manually
+- [x] update `/fix` notes for delivered tasks
+
+## Evidence
+
+- `npm run lint` (pass)
+- `npm run typecheck` (pass)
+- `npm run test` (pass)
+- `npm run build` (pass)
+- `npm run ui:baseline` (pass)
+- Report: `tests/ui-baseline/f09-qa-acceptance-run-2026-03-07.md`

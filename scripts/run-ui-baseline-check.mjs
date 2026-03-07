@@ -3,13 +3,16 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
-const baseUrl = 'http://127.0.0.1:3000';
+const baseUrl = process.env.UI_BASELINE_URL || 'http://127.0.0.1:3000';
 const rootDir = process.cwd();
 const screenshotDir = path.join(rootDir, 'tests', 'ui-baseline', 'screenshots');
-const reportPath = path.join(rootDir, 'tests', 'ui-baseline', 'pr5-regression-run-2026-03-07.md');
+const dateStamp = new Date().toISOString().slice(0, 10);
+const reportName = process.env.UI_BASELINE_REPORT_NAME || `f09-qa-acceptance-run-${dateStamp}.md`;
+const reportPath = path.join(rootDir, 'tests', 'ui-baseline', reportName);
 
 const results = [];
 const nowIso = new Date().toISOString();
+const runtimeErrors = [];
 
 function record(item, passed, details = '') {
   results.push({ item, passed, details });
@@ -17,6 +20,16 @@ function record(item, passed, details = '') {
 
 function screenshotPath(name) {
   return path.join(screenshotDir, name);
+}
+
+function attachRuntimeErrorTracking(page, scope) {
+  page.on('pageerror', (error) => {
+    runtimeErrors.push(`[${scope}] pageerror: ${error.message}`);
+  });
+  page.on('console', (msg) => {
+    if (msg.type() !== 'error') return;
+    runtimeErrors.push(`[${scope}] console.error: ${msg.text()}`);
+  });
 }
 
 async function waitForServer(timeoutMs = 120_000) {
@@ -47,6 +60,7 @@ async function clickFirstText(page, variants) {
 async function runDesktopChecks(browser) {
   const context = await browser.newContext({ viewport: { width: 1536, height: 900 } });
   const page = await context.newPage();
+  attachRuntimeErrorTracking(page, 'desktop');
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.getByPlaceholder('Search...').waitFor({ timeout: 15_000 });
 
@@ -151,8 +165,9 @@ async function runMobileChecks(browser) {
     hasTouch: true,
   });
   const page = await context.newPage();
+  attachRuntimeErrorTracking(page, 'mobile');
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
-  await page.getByPlaceholder('Search...').waitFor({ timeout: 15_000 });
+  await page.locator('header').first().waitFor({ timeout: 15_000 });
 
   const closeRight = page.getByTitle('Close Right Panel');
   if (await closeRight.count()) {
@@ -173,7 +188,7 @@ function writeReport() {
   const failCount = results.length - passCount;
 
   const lines = [
-    '# PR-5 Regression Run (2026-03-07)',
+    `# F09 QA Acceptance Run (${dateStamp})`,
     '',
     `Executed at: ${nowIso}`,
     '',
@@ -222,6 +237,14 @@ async function main() {
   } finally {
     await browser.close();
   }
+
+  record(
+    'no-runtime-errors',
+    runtimeErrors.length === 0,
+    runtimeErrors.length === 0
+      ? 'No runtime console/page errors'
+      : runtimeErrors.slice(0, 5).join(' | '),
+  );
 
   writeReport();
 

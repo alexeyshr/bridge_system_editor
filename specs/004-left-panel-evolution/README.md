@@ -42,7 +42,7 @@ Scope: expand the left panel into a flexible navigation and organization area wi
 - [x] F06 Import/export migration
 - [x] F07 Store method mapping
 - [x] F08 Performance and indexing
-- [ ] F09 QA and acceptance
+- [x] F09 QA and acceptance
 
 ## Notes
 

@@ -14,15 +14,18 @@ Source alignment:
 
 ## Now
 
-1. Complete migration of editor backend path to Drizzle + tRPC with UI parity.
-2. Finish left-panel evolution foundation:
-   - user-defined sections,
-   - custom smart views,
-   - assignment flows.
-3. Formalize architecture artifacts:
-   - Vision/JTBD/Glossary,
-   - C4 baseline,
-   - ADR process in PR workflow.
+1. Execute PR-9 platform core hardening (`specs/005-platform-core-hardening/`):
+   - Drizzle-only cutover (remove Prisma path),
+   - Zustand slice refactor + Error Boundaries,
+   - auth migration gate + rate limiting.
+2. Implement portal-ready collaboration baseline:
+   - PostgreSQL FTS + indexing (no external search engine),
+   - SSE notifications for system updates,
+   - schemaVersion migration strategy.
+3. Add production operability baseline:
+   - structured logs (`pino`),
+   - error tracking (Sentry),
+   - final QA evidence gate.
 
 ## Next
 
@@ -45,8 +48,8 @@ Source alignment:
    - tournament prep tools,
    - searchable knowledge base.
 2. Advanced analytics/search:
-   - Meilisearch-backed query UX,
    - branch quality and agreement coverage metrics.
+   - reconsider external search only if PostgreSQL thresholds are exceeded.
 3. Community capabilities:
    - public templates,
    - discoverable systems,

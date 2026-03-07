@@ -1,7 +1,8 @@
 import { BiddingNode, useBiddingStore } from '@/store/useBiddingStore';
 import { formatCall, getSuitColor } from '@/lib/utils';
-import { ChevronRight, ChevronDown, Plus, Bookmark, AlertTriangle, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Bookmark, AlertTriangle, Trash2, FolderInput } from 'lucide-react';
 import { useState } from 'react';
+import { NodeSectionAssignment } from './NodeSectionAssignment';
 
 type SequenceViewMode = 'classic' | 'compact';
 
@@ -54,6 +55,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   const [isHovered, setIsHovered] = useState(false);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isSectionAssignOpen, setIsSectionAssignOpen] = useState(false);
   const [continuationCall, setContinuationCall] = useState('');
   const [continuationError, setContinuationError] = useState('');
 
@@ -121,9 +123,16 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
 
   const handleOpenAddForm = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsSectionAssignOpen(false);
     setIsAddFormOpen(true);
     setContinuationCall('');
     setContinuationError('');
+  };
+
+  const handleOpenSectionAssign = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsAddFormOpen(false);
+    setIsSectionAssignOpen((prev) => !prev);
   };
 
   const handleToggleBookmark = (e: React.MouseEvent) => {
@@ -244,6 +253,13 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
             title="Bookmark"
           >
             <Bookmark className="w-3.5 h-3.5" />
+          </button>
+          <button
+            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
+            onClick={handleOpenSectionAssign}
+            title="Assign sections"
+          >
+            <FolderInput className="w-3.5 h-3.5" />
           </button>
           <button 
             className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded"
@@ -378,6 +394,27 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
           {continuationError && (
             <div className="mt-1 text-[10px] text-red-600">{continuationError}</div>
           )}
+        </div>
+      )}
+
+      {isSectionAssignOpen && (
+        <div
+          className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[300px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Assign Sections
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSectionAssignOpen(false)}
+              className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100"
+            >
+              Close
+            </button>
+          </div>
+          <NodeSectionAssignment nodeId={node.id} compact />
         </div>
       )}
 

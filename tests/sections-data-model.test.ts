@@ -16,6 +16,9 @@ function resetStoreState(): void {
       selectedNodeId: null,
       sectionsById: {},
       sectionRootOrder: [],
+      nodeSectionIds: {},
+      subtreeRulesById: {},
+      sectionExpandedById: {},
       leftPrimaryMode: 'roots',
       activeSectionId: null,
       activeSmartViewId: null,
@@ -147,4 +150,78 @@ test('section expansion state toggles in session and cleans up on delete', () =>
 
   useBiddingStore.getState().deleteSection(sectionId);
   assert.equal(useBiddingStore.getState().sectionExpandedById[sectionId], undefined);
+});
+
+test('node can be assigned to multiple sections and effective list includes direct sections', () => {
+  const openings = useBiddingStore.getState().createSection('Openings');
+  const competitive = useBiddingStore.getState().createSection('Competitive');
+  assert.equal(openings.ok && competitive.ok, true);
+  const openingsId = openings.sectionId as string;
+  const competitiveId = competitive.sectionId as string;
+
+  const nodeId = '1C';
+  const assignA = useBiddingStore.getState().assignNodeToSection(nodeId, openingsId);
+  const assignB = useBiddingStore.getState().assignNodeToSection(nodeId, competitiveId);
+  assert.equal(assignA.ok && assignB.ok, true);
+
+  const effective = useBiddingStore.getState().getEffectiveSectionIds(nodeId);
+  assert.deepEqual(new Set(effective), new Set([openingsId, competitiveId]));
+});
+
+test('subtree rule applies to existing and future descendants by default', () => {
+  const section = useBiddingStore.getState().createSection('1C System');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  const rule = useBiddingStore.getState().createSubtreeRule(sectionId, '1C', true);
+  assert.equal(rule.ok, true);
+
+  const existingNodeEffective = useBiddingStore.getState().getEffectiveSectionIds('1C 1D');
+  assert.deepEqual(new Set(existingNodeEffective), new Set([sectionId]));
+
+  useBiddingStore.getState().addNode('1C 1D 1H 2D', '2H');
+  const futureNodeEffective = useBiddingStore.getState().getEffectiveSectionIds('1C 1D 1H 2D 2H');
+  assert.deepEqual(new Set(futureNodeEffective), new Set([sectionId]));
+});
+
+test('deleting section removes related node assignments and subtree rules', () => {
+  const secA = useBiddingStore.getState().createSection('A');
+  const secB = useBiddingStore.getState().createSection('B');
+  assert.equal(secA.ok && secB.ok, true);
+  const secAId = secA.sectionId as string;
+  const secBId = secB.sectionId as string;
+
+  useBiddingStore.getState().assignNodeToSection('1C', secAId);
+  useBiddingStore.getState().assignNodeToSection('1C', secBId);
+  useBiddingStore.getState().createSubtreeRule(secAId, '1C', true);
+
+  const delResult = useBiddingStore.getState().deleteSection(secAId);
+  assert.equal(delResult.ok, true);
+
+  const state = useBiddingStore.getState();
+  assert.equal(state.sectionsById[secAId], undefined);
+  assert.deepEqual(state.nodeSectionIds['1C'], [secBId]);
+  assert.equal(
+    Object.values(state.subtreeRulesById).some((rule) => rule.sectionId === secAId),
+    false,
+  );
+});
+
+test('renaming node remaps direct assignment and subtree rule roots', () => {
+  const section = useBiddingStore.getState().createSection('Relay');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().assignNodeToSection('1C 1D', sectionId);
+  useBiddingStore.getState().createSubtreeRule(sectionId, '1C 1D', true);
+
+  useBiddingStore.getState().renameNode('1C 1D', '1H');
+  const state = useBiddingStore.getState();
+
+  assert.equal(state.nodeSectionIds['1C 1D'], undefined);
+  assert.deepEqual(state.nodeSectionIds['1C 1H'], [sectionId]);
+  assert.equal(
+    Object.values(state.subtreeRulesById).some((rule) => rule.rootNodeId === '1C 1H'),
+    true,
+  );
 });

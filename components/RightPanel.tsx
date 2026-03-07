@@ -2,6 +2,7 @@ import { useBiddingStore } from '@/store/useBiddingStore';
 import { formatCall, getSuitColor } from '@/lib/utils';
 import { X, CheckCircle2, Trash2, AlertTriangle, Reply, CornerDownRight } from 'lucide-react';
 import { useState } from 'react';
+import { NodeSectionAssignment } from './NodeSectionAssignment';
 
 export function RightPanel() {
   const { nodes, selectedNodeId, selectNode, updateNode, deleteNode, addNode, toggleRightPanel } = useBiddingStore();
@@ -211,6 +212,13 @@ export function RightPanel() {
               <option value="FG">FG - forcing game</option>
               <option value="SL">SL - slam try</option>
             </select>
+          </div>
+        </div>
+
+        <div className="pt-1">
+          <div className="text-[10px] text-slate-500 mb-1 font-medium uppercase tracking-wider">Sections</div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+            <NodeSectionAssignment nodeId={node.id} />
           </div>
         </div>
 

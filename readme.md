@@ -61,10 +61,6 @@ npm run typecheck  # TypeScript check (no emit)
 npm run build      # production build
 npm run start      # запуск production-сборки
 npm run clean      # очистка .next и tsbuildinfo
-npm run prisma:generate
-npm run prisma:migrate:dev
-npm run prisma:migrate:deploy
-npm run prisma:studio
 npm run db:generate
 npm run db:migrate
 npm run db:push
@@ -74,15 +70,9 @@ npm run db:seed
 npm run ui:baseline # automated UI baseline run (requires running dev server on :3000)
 ```
 
-## Migration Flags
+## Runtime Flags
 
-Для поэтапной миграции backend добавлены runtime-флаги:
-
-- `DB_DRIVER=prisma|drizzle`
-- `API_TRANSPORT=rest|trpc`
-- `DUAL_WRITE_ENABLED=true|false`
-
-Текущие дефолты см. в `.env.example`.
+- `API_TRANSPORT=rest|trpc` (default in `.env.example`: `trpc`)
 
 Drizzle foundation files:
 
@@ -184,10 +174,6 @@ SDD пакет для текущей реализации PR-5:
 Доменные контракты (DTO + инварианты):
 
 - `lib/domain/bidding/contracts.ts`
-
-Feature flags:
-
-- `lib/config/feature-flags.ts`
 
 ## Ближайший roadmap
 

@@ -1,6 +1,6 @@
 # ADR-0003: Drizzle-Only Cutover and Prisma Removal
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-03-07
 - Deciders: BridgeHub core
 - Tags: data, migration, simplification

@@ -1,218 +1,145 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { prisma } from '../../lib/db/prisma';
+import { and, eq, inArray } from 'drizzle-orm';
+import { db } from '../../lib/db/drizzle/client';
+import { biddingNodes, biddingSystems, systemShares, users } from '../../lib/db/drizzle/schema';
 import { drizzleSystemsDriver } from '../../lib/server/drivers/drizzle-systems-driver';
-import { prismaSystemsDriver } from '../../lib/server/drivers/prisma-systems-driver';
 import { createEntityId } from '../../lib/server/utils/id';
-
-function normalizeSystemList(
-  systems: Awaited<ReturnType<typeof prismaSystemsDriver.listSystemsForUser>>,
-): Array<{
-  id: string;
-  title: string;
-  description: string | null;
-  schemaVersion: number;
-  revision: number;
-  role: 'owner' | 'editor' | 'viewer';
-}> {
-  return systems
-    .map((system) => ({
-      id: system.id,
-      title: system.title,
-      description: system.description,
-      schemaVersion: system.schemaVersion,
-      revision: system.revision,
-      role: system.role,
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
-}
 
 const testIfDb = process.env.DATABASE_URL ? test : test.skip;
 
-testIfDb('systems drivers parity on read paths', async () => {
+async function cleanupUsers(userIds: string[]) {
+  if (userIds.length === 0) return;
+
+  await db
+    .delete(users)
+    .where(inArray(users.id, userIds));
+}
+
+testIfDb('drizzle systems driver read path', async () => {
   const ownerId = createEntityId('usr');
   const viewerId = createEntityId('usr');
   const systemId = createEntityId('sys');
   const nodeId = createEntityId('node');
   const shareId = createEntityId('share');
+  const now = new Date();
 
-  await prisma.user.createMany({
-    data: [
-      { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner' },
-      { id: viewerId, email: `${viewerId}@example.test`, displayName: 'Viewer' },
-    ],
-  });
+  await db.insert(users).values([
+    { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
+    { id: viewerId, email: `${viewerId}@example.test`, displayName: 'Viewer', createdAt: now, updatedAt: now },
+  ]);
 
   try {
-    await prisma.biddingSystem.create({
-      data: {
-        id: systemId,
-        ownerId,
-        updatedById: ownerId,
-        title: 'Parity Read',
-        description: 'Read parity baseline',
-        schemaVersion: 1,
-        revision: 1,
-      },
+    await db.insert(biddingSystems).values({
+      id: systemId,
+      ownerId,
+      updatedById: ownerId,
+      title: 'Drizzle Read',
+      description: 'Read baseline',
+      schemaVersion: 1,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
     });
 
-    await prisma.biddingNode.create({
-      data: {
-        id: nodeId,
-        systemId,
-        sequenceId: '1C-1D',
-        payload: { sequence: '1C-1D', forcing: 'NF' },
-        updatedById: ownerId,
-      },
+    await db.insert(biddingNodes).values({
+      id: nodeId,
+      systemId,
+      sequenceId: '1C-1D',
+      payload: { sequence: '1C-1D', forcing: 'NF' },
+      updatedById: ownerId,
+      createdAt: now,
+      updatedAt: now,
     });
 
-    await prisma.systemShare.create({
-      data: {
-        id: shareId,
-        systemId,
-        userId: viewerId,
-        role: 'viewer',
-      },
+    await db.insert(systemShares).values({
+      id: shareId,
+      systemId,
+      userId: viewerId,
+      role: 'viewer',
+      createdAt: now,
     });
 
-    const [prismaAccess, drizzleAccess] = await Promise.all([
-      prismaSystemsDriver.resolveSystemAccess(systemId, viewerId),
-      drizzleSystemsDriver.resolveSystemAccess(systemId, viewerId),
-    ]);
-    assert.deepEqual(drizzleAccess, prismaAccess);
+    const access = await drizzleSystemsDriver.resolveSystemAccess(systemId, viewerId);
+    assert.deepEqual(access, { role: 'viewer', systemExists: true });
 
-    const [prismaList, drizzleList] = await Promise.all([
-      prismaSystemsDriver.listSystemsForUser(viewerId),
-      drizzleSystemsDriver.listSystemsForUser(viewerId),
-    ]);
-    assert.deepEqual(normalizeSystemList(drizzleList), normalizeSystemList(prismaList));
+    const list = await drizzleSystemsDriver.listSystemsForUser(viewerId);
+    assert.equal(list.length, 1);
+    assert.equal(list[0]?.id, systemId);
+    assert.equal(list[0]?.role, 'viewer');
 
-    const [prismaSystem, drizzleSystem] = await Promise.all([
-      prismaSystemsDriver.getSystemForUser(systemId, viewerId),
-      drizzleSystemsDriver.getSystemForUser(systemId, viewerId),
-    ]);
-    assert.deepEqual(
-      {
-        title: drizzleSystem.title,
-        description: drizzleSystem.description,
-        schemaVersion: drizzleSystem.schemaVersion,
-        revision: drizzleSystem.revision,
-        role: drizzleSystem.role,
-        nodes: drizzleSystem.nodes.map((node) => ({
-          sequenceId: node.sequenceId,
-          payload: node.payload,
-        })),
-      },
-      {
-        title: prismaSystem.title,
-        description: prismaSystem.description,
-        schemaVersion: prismaSystem.schemaVersion,
-        revision: prismaSystem.revision,
-        role: prismaSystem.role,
-        nodes: prismaSystem.nodes.map((node) => ({
-          sequenceId: node.sequenceId,
-          payload: node.payload,
-        })),
-      },
-    );
+    const system = await drizzleSystemsDriver.getSystemForUser(systemId, viewerId);
+    assert.equal(system.id, systemId);
+    assert.equal(system.role, 'viewer');
+    assert.equal(system.nodes.length, 1);
+    assert.equal(system.nodes[0]?.sequenceId, '1C-1D');
   } finally {
-    await prisma.user.deleteMany({
-      where: { id: { in: [ownerId, viewerId] } },
-    });
+    await cleanupUsers([ownerId, viewerId]);
   }
 });
 
-testIfDb('systems drivers parity on mutations', async () => {
+testIfDb('drizzle systems driver mutation path', async () => {
   const ownerId = createEntityId('usr');
   const editorId = createEntityId('usr');
-  await prisma.user.createMany({
-    data: [
-      { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner' },
-      { id: editorId, email: `${editorId}@example.test`, displayName: 'Editor' },
-    ],
-  });
+  const now = new Date();
+
+  await db.insert(users).values([
+    { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
+    { id: editorId, email: `${editorId}@example.test`, displayName: 'Editor', createdAt: now, updatedAt: now },
+  ]);
 
   try {
-    const prismaCreated = await prismaSystemsDriver.createSystemForUser(ownerId, {
-      title: 'Parity Prisma',
-      description: 'Prisma path',
-    });
-    const drizzleCreated = await drizzleSystemsDriver.createSystemForUser(ownerId, {
-      title: 'Parity Drizzle',
-      description: 'Drizzle path',
+    const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
+      title: 'Drizzle Mutation',
+      description: 'Mutation baseline',
     });
 
-    assert.equal(prismaCreated.role, drizzleCreated.role);
-    assert.equal(prismaCreated.schemaVersion, drizzleCreated.schemaVersion);
-    assert.equal(prismaCreated.revision, drizzleCreated.revision);
+    assert.equal(created.role, 'owner');
+    assert.equal(created.revision, 1);
+    assert.equal(created.schemaVersion, 1);
 
-    const prismaUpdated = await prismaSystemsDriver.updateSystemMetadata(prismaCreated.id, ownerId, {
-      title: 'Updated title',
-      description: 'Updated description',
-      schemaVersion: 2,
-    });
-    const drizzleUpdated = await drizzleSystemsDriver.updateSystemMetadata(drizzleCreated.id, ownerId, {
+    const updated = await drizzleSystemsDriver.updateSystemMetadata(created.id, ownerId, {
       title: 'Updated title',
       description: 'Updated description',
       schemaVersion: 2,
     });
 
-    assert.deepEqual(
-      {
-        title: drizzleUpdated.title,
-        description: drizzleUpdated.description,
-        schemaVersion: drizzleUpdated.schemaVersion,
-        revision: drizzleUpdated.revision,
-      },
-      {
-        title: prismaUpdated.title,
-        description: prismaUpdated.description,
-        schemaVersion: prismaUpdated.schemaVersion,
-        revision: prismaUpdated.revision,
-      },
-    );
+    assert.equal(updated.title, 'Updated title');
+    assert.equal(updated.description, 'Updated description');
+    assert.equal(updated.schemaVersion, 2);
 
-    const nodeInput = {
+    const sync = await drizzleSystemsDriver.upsertSystemNodes(created.id, ownerId, {
       nodes: [{ sequenceId: '1C-1H', payload: { forcing: 'F1' } }],
-      removeSequenceIds: [] as string[],
       baseRevision: 1,
-    };
-
-    const prismaNodesResult = await prismaSystemsDriver.upsertSystemNodes(
-      prismaCreated.id,
-      ownerId,
-      nodeInput,
-    );
-    const drizzleNodesResult = await drizzleSystemsDriver.upsertSystemNodes(
-      drizzleCreated.id,
-      ownerId,
-      nodeInput,
-    );
-
-    assert.deepEqual(drizzleNodesResult, prismaNodesResult);
-
-    const prismaShare = await prismaSystemsDriver.upsertSystemShare(prismaCreated.id, ownerId, {
-      role: 'editor',
-      userId: editorId,
+      removeSequenceIds: [],
     });
-    const drizzleShare = await drizzleSystemsDriver.upsertSystemShare(drizzleCreated.id, ownerId, {
+
+    assert.deepEqual(sync, {
+      revision: 2,
+      upserted: 1,
+      removed: 0,
+    });
+
+    const share = await drizzleSystemsDriver.upsertSystemShare(created.id, ownerId, {
       role: 'editor',
       userId: editorId,
     });
 
-    assert.deepEqual(
-      {
-        role: drizzleShare.role,
-        userId: drizzleShare.user.id,
-      },
-      {
-        role: prismaShare.role,
-        userId: prismaShare.user.id,
-      },
-    );
+    assert.equal(share.role, 'editor');
+    assert.equal(share.user.id, editorId);
+
+    const shares = await drizzleSystemsDriver.listSystemShares(created.id, ownerId);
+    assert.equal(shares.length, 1);
+    assert.equal(shares[0]?.user.id, editorId);
+
+    const [node] = await db
+      .select({ sequenceId: biddingNodes.sequenceId })
+      .from(biddingNodes)
+      .where(and(eq(biddingNodes.systemId, created.id), eq(biddingNodes.sequenceId, '1C-1H')))
+      .limit(1);
+
+    assert.equal(node?.sequenceId, '1C-1H');
   } finally {
-    await prisma.user.deleteMany({
-      where: { id: { in: [ownerId, editorId] } },
-    });
+    await cleanupUsers([ownerId, editorId]);
   }
 });

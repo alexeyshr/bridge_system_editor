@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import yaml from 'js-yaml';
 import { useBiddingStore } from '../store/useBiddingStore';
 
 const baseline = useBiddingStore.getState();
@@ -18,6 +19,10 @@ function resetStoreState(): void {
       sectionRootOrder: [],
       nodeSectionIds: {},
       subtreeRulesById: {},
+      customSmartViewsById: {},
+      customSmartViewOrder: [],
+      smartViewPinnedById: {},
+      nodeTouchedAtById: {},
       sectionExpandedById: {},
       leftPrimaryMode: 'roots',
       activeSectionId: null,
@@ -224,4 +229,155 @@ test('renaming node remaps direct assignment and subtree rule roots', () => {
     Object.values(state.subtreeRulesById).some((rule) => rule.rootNodeId === '1C 1H'),
     true,
   );
+});
+
+test('built-in smart views are available and counts are computed', () => {
+  const smartViews = useBiddingStore.getState().getSmartViews();
+  const builtInIds = new Set(smartViews.filter((item) => item.isBuiltIn).map((item) => item.id));
+  assert.equal(builtInIds.has('sv_unassigned'), true);
+  assert.equal(builtInIds.has('sv_bookmarked'), true);
+  assert.equal(builtInIds.has('sv_no_notes'), true);
+  assert.equal(builtInIds.has('sv_unaccepted'), true);
+  assert.equal(builtInIds.has('sv_recently_edited'), true);
+
+  const section = useBiddingStore.getState().createSection('Test');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+  useBiddingStore.getState().assignNodeToSection('1C', sectionId);
+
+  const unassignedCount = useBiddingStore.getState().getSmartViewCount('sv_unassigned');
+  const bookmarkedCount = useBiddingStore.getState().getSmartViewCount('sv_bookmarked');
+  assert.equal(unassignedCount >= 1, true);
+  assert.equal(bookmarkedCount, 0);
+});
+
+test('custom smart view supports create, eval, pin and delete', () => {
+  const create = useBiddingStore.getState().createCustomSmartView('Weak NT', 'weak', 'all');
+  assert.equal(create.ok, true);
+  const smartViewId = create.smartViewId as string;
+
+  const match1 = useBiddingStore.getState().evalSmartView('1C 1D 1H 1NT', smartViewId);
+  const match2 = useBiddingStore.getState().evalSmartView('1C 1D', smartViewId);
+  assert.equal(match1, true);
+  assert.equal(match2, false);
+
+  const pinResult = useBiddingStore.getState().toggleSmartViewPinned(smartViewId);
+  assert.equal(pinResult.ok, true);
+  assert.equal(useBiddingStore.getState().smartViewPinnedById[smartViewId], true);
+
+  const remove = useBiddingStore.getState().deleteCustomSmartView(smartViewId);
+  assert.equal(remove.ok, true);
+  assert.equal(useBiddingStore.getState().customSmartViewsById[smartViewId], undefined);
+});
+
+test('recently edited smart view reacts to node changes', () => {
+  const beforeUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
+  assert.equal(beforeUpdate, false);
+
+  useBiddingStore.getState().updateNode('1C', {
+    meaning: {
+      ...(useBiddingStore.getState().nodes['1C'].meaning || {}),
+      notes: 'Updated now',
+    },
+  });
+
+  const afterUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
+  assert.equal(afterUpdate, true);
+});
+
+test('primary section filter returns matched ids and display includes ancestors', () => {
+  const section = useBiddingStore.getState().createSection('Responses');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().assignNodeToSection('1C 1D 1H 2D', sectionId);
+  useBiddingStore.getState().setLeftPrimaryMode('sections');
+  useBiddingStore.getState().setActiveSectionId(sectionId);
+
+  const matched = useBiddingStore.getState().getPrimaryMatchedNodeIds();
+  assert.deepEqual(matched, ['1C 1D 1H 2D']);
+
+  const display = new Set(useBiddingStore.getState().getDisplayNodeIdsWithAncestors());
+  assert.equal(display.has('1C'), true);
+  assert.equal(display.has('1C 1D'), true);
+  assert.equal(display.has('1C 1D 1H'), true);
+  assert.equal(display.has('1C 1D 1H 2D'), true);
+});
+
+test('primary smart view filter returns matched ids and display includes ancestors', () => {
+  const custom = useBiddingStore.getState().createCustomSmartView('Weak', 'weak', 'all');
+  assert.equal(custom.ok, true);
+  const smartViewId = custom.smartViewId as string;
+
+  useBiddingStore.getState().setLeftPrimaryMode('smartViews');
+  useBiddingStore.getState().setActiveSmartViewId(smartViewId);
+
+  const matchedSet = new Set(useBiddingStore.getState().getPrimaryMatchedNodeIds());
+  assert.equal(matchedSet.has('1C 1D 1H 1NT'), true);
+
+  const display = new Set(useBiddingStore.getState().getDisplayNodeIdsWithAncestors());
+  assert.equal(display.has('1C'), true);
+  assert.equal(display.has('1C 1D'), true);
+  assert.equal(display.has('1C 1D 1H'), true);
+  assert.equal(display.has('1C 1D 1H 1NT'), true);
+});
+
+test('addNode auto-assigns active section when section filter is active', () => {
+  const section = useBiddingStore.getState().createSection('Auto');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().setLeftPrimaryMode('sections');
+  useBiddingStore.getState().setActiveSectionId(sectionId);
+
+  useBiddingStore.getState().addNode('1C 1D 1H 2D', '2S');
+  const newNodeId = '1C 1D 1H 2D 2S';
+
+  assert.deepEqual(useBiddingStore.getState().nodeSectionIds[newNodeId], [sectionId]);
+  assert.equal(
+    useBiddingStore.getState().getEffectiveSectionIds(newNodeId).includes(sectionId),
+    true,
+  );
+});
+
+test('export defaults to schema v2 and preserves sections/smart views after import', () => {
+  const section = useBiddingStore.getState().createSection('Roundtrip');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().assignNodeToSection('1C', sectionId);
+  const custom = useBiddingStore.getState().createCustomSmartView('RT', 'weak', 'all');
+  assert.equal(custom.ok, true);
+  const smartViewId = custom.smartViewId as string;
+  useBiddingStore.getState().toggleSmartViewPinned(smartViewId);
+
+  const serialized = useBiddingStore.getState().exportYaml();
+  const parsed = yaml.load(serialized) as Record<string, unknown>;
+  assert.equal(typeof parsed, 'object');
+  assert.equal(parsed.schemaVersion, 2);
+
+  useBiddingStore.getState().importYaml(serialized);
+  const state = useBiddingStore.getState();
+
+  assert.equal(!!state.sectionsById[sectionId], true);
+  assert.deepEqual(state.nodeSectionIds['1C'], [sectionId]);
+  assert.equal(!!state.customSmartViewsById[smartViewId], true);
+  assert.equal(state.smartViewPinnedById[smartViewId], true);
+});
+
+test('legacy array import and legacy export mode remain supported', () => {
+  const legacyYaml = `
+- id: "1C"
+  context:
+    sequence: ["1C"]
+  meaning:
+    type: opening
+`;
+  useBiddingStore.getState().importYaml(legacyYaml);
+  assert.equal(!!useBiddingStore.getState().nodes['1C'], true);
+  assert.equal(Object.keys(useBiddingStore.getState().sectionsById).length, 0);
+
+  const legacyOut = useBiddingStore.getState().exportYaml({ legacy: true });
+  const parsedLegacy = yaml.load(legacyOut);
+  assert.equal(Array.isArray(parsedLegacy), true);
 });

@@ -8,16 +8,31 @@ import { RightPanel } from '@/components/RightPanel';
 import { useBiddingStore } from '@/store/useBiddingStore';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useEffect, useState } from 'react';
+import { useSystemSync } from '@/hooks/useSystemSync';
 
 export default function Page() {
   const { isLeftPanelOpen, isRightPanelOpen } = useBiddingStore();
   const [isMobile, setIsMobile] = useState(false);
+  useSystemSync();
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const state = useBiddingStore.getState();
+      if (!state.hasUnsavedChanges) return;
+      state.flushDraftSave();
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   return (

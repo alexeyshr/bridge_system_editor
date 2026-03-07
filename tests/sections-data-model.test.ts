@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import yaml from 'js-yaml';
 import { useBiddingStore } from '../store/useBiddingStore';
 
 const baseline = useBiddingStore.getState();
@@ -319,4 +320,64 @@ test('primary smart view filter returns matched ids and display includes ancesto
   assert.equal(display.has('1C 1D'), true);
   assert.equal(display.has('1C 1D 1H'), true);
   assert.equal(display.has('1C 1D 1H 1NT'), true);
+});
+
+test('addNode auto-assigns active section when section filter is active', () => {
+  const section = useBiddingStore.getState().createSection('Auto');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().setLeftPrimaryMode('sections');
+  useBiddingStore.getState().setActiveSectionId(sectionId);
+
+  useBiddingStore.getState().addNode('1C 1D 1H 2D', '2S');
+  const newNodeId = '1C 1D 1H 2D 2S';
+
+  assert.deepEqual(useBiddingStore.getState().nodeSectionIds[newNodeId], [sectionId]);
+  assert.equal(
+    useBiddingStore.getState().getEffectiveSectionIds(newNodeId).includes(sectionId),
+    true,
+  );
+});
+
+test('export defaults to schema v2 and preserves sections/smart views after import', () => {
+  const section = useBiddingStore.getState().createSection('Roundtrip');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  useBiddingStore.getState().assignNodeToSection('1C', sectionId);
+  const custom = useBiddingStore.getState().createCustomSmartView('RT', 'weak', 'all');
+  assert.equal(custom.ok, true);
+  const smartViewId = custom.smartViewId as string;
+  useBiddingStore.getState().toggleSmartViewPinned(smartViewId);
+
+  const serialized = useBiddingStore.getState().exportYaml();
+  const parsed = yaml.load(serialized) as Record<string, unknown>;
+  assert.equal(typeof parsed, 'object');
+  assert.equal(parsed.schemaVersion, 2);
+
+  useBiddingStore.getState().importYaml(serialized);
+  const state = useBiddingStore.getState();
+
+  assert.equal(!!state.sectionsById[sectionId], true);
+  assert.deepEqual(state.nodeSectionIds['1C'], [sectionId]);
+  assert.equal(!!state.customSmartViewsById[smartViewId], true);
+  assert.equal(state.smartViewPinnedById[smartViewId], true);
+});
+
+test('legacy array import and legacy export mode remain supported', () => {
+  const legacyYaml = `
+- id: "1C"
+  context:
+    sequence: ["1C"]
+  meaning:
+    type: opening
+`;
+  useBiddingStore.getState().importYaml(legacyYaml);
+  assert.equal(!!useBiddingStore.getState().nodes['1C'], true);
+  assert.equal(Object.keys(useBiddingStore.getState().sectionsById).length, 0);
+
+  const legacyOut = useBiddingStore.getState().exportYaml({ legacy: true });
+  const parsedLegacy = yaml.load(legacyOut);
+  assert.equal(Array.isArray(parsedLegacy), true);
 });

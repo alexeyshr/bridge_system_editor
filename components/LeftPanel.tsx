@@ -63,6 +63,7 @@ export function LeftPanel() {
     setActiveSmartViewId,
     toggleSectionExpanded,
     getSectionTree,
+    getSectionNodeCount,
     getSmartViews,
     getSmartViewCount,
     customSmartViewsById,
@@ -228,7 +229,7 @@ export function LeftPanel() {
       const hasChildren = children.length > 0;
       const isExpanded = sectionExpandedById[section.id] ?? true;
       const isActive = leftPrimaryMode === 'sections' && activeSectionId === section.id;
-      const childCount = children.length;
+      const nodeCount = getSectionNodeCount(section.id);
 
       return (
         <li key={section.id} className="relative">
@@ -264,7 +265,7 @@ export function LeftPanel() {
                 )}
                 <span className="truncate">{section.name}</span>
                 <span className="ml-auto shrink-0 text-[10px] text-slate-500 bg-slate-200 rounded-full px-1.5 py-0.5">
-                  {childCount}
+                  {nodeCount}
                 </span>
               </span>
             </button>

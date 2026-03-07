@@ -129,6 +129,23 @@ interface DraftPayload {
   activeSmartViewId?: string | null;
 }
 
+interface ExportSchemaV2 {
+  schemaVersion: number;
+  exportedAt: string;
+  nodes: BiddingNode[];
+  sectionsById: Record<string, SectionRecord>;
+  sectionRootOrder: string[];
+  nodeSectionIds: Record<string, string[]>;
+  subtreeRulesById: Record<string, SubtreeRuleRecord>;
+  customSmartViewsById: Record<string, CustomSmartViewRecord>;
+  customSmartViewOrder: string[];
+  smartViewPinnedById: Record<string, boolean>;
+  nodeTouchedAtById: Record<string, string>;
+  leftPrimaryMode: LeftPrimaryMode;
+  activeSectionId: string | null;
+  activeSmartViewId: string | null;
+}
+
 interface BiddingState {
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
@@ -159,7 +176,7 @@ interface BiddingState {
 
   // Actions
   importYaml: (yamlString: string) => void;
-  exportYaml: () => string;
+  exportYaml: (options?: { legacy?: boolean }) => string;
   addNode: (parentId: string | null, call: string) => void;
   updateNode: (id: string, updates: Partial<BiddingNode>) => void;
   renameNode: (id: string, newCall: string) => void;
@@ -216,6 +233,7 @@ interface BiddingState {
   getSectionChildren: (parentId: string | null) => SectionRecord[];
   getSectionTree: () => SectionTreeNode[];
   getSectionPath: (sectionId: string) => SectionRecord[];
+  getSectionNodeCount: (sectionId: string) => number;
   getEffectiveSectionIds: (nodeId: string) => string[];
   getSubtreeRulesForNode: (nodeId: string) => SubtreeRuleRecord[];
   getPrimaryMatchedNodeIds: () => string[];
@@ -230,6 +248,7 @@ interface BiddingState {
 const DRAFT_STORAGE_KEY = 'bridge-system-editor:draft:v1';
 const DRAFT_VERSION = 1;
 const DRAFT_SAVE_DEBOUNCE_MS = 900;
+const EXPORT_SCHEMA_VERSION = 2;
 const SECTION_NAME_MAX_LENGTH = 64;
 const SMART_VIEW_NAME_MAX_LENGTH = 64;
 const SMART_VIEW_QUERY_MAX_LENGTH = 160;
@@ -243,6 +262,7 @@ const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: 
   { id: 'sv_unaccepted', name: 'Unaccepted', order: 3 },
   { id: 'sv_recently_edited', name: 'Recently edited', order: 4 },
 ];
+const SECTION_ROOT_KEY = '__root__';
 
 function clampIndex(index: number, max: number): number {
   if (!Number.isFinite(index)) return max;
@@ -253,6 +273,10 @@ function clampIndex(index: number, max: number): number {
 
 function normalizeSectionName(input: string): string {
   return input.trim().replace(/\s+/g, ' ');
+}
+
+function sectionParentKey(parentId: string | null): string {
+  return parentId ?? SECTION_ROOT_KEY;
 }
 
 function hasSectionNameConflict(
@@ -315,14 +339,19 @@ function isDescendantSection(
   return false;
 }
 
-function buildSectionTree(
+function buildSectionTreeFromChildMap(
   sectionsById: Record<string, SectionRecord>,
+  sectionChildIdsByParentId: Record<string, string[]>,
   parentId: string | null,
 ): SectionTreeNode[] {
-  return getSiblingIdsSorted(sectionsById, parentId).map((sectionId) => ({
-    section: sectionsById[sectionId],
-    children: buildSectionTree(sectionsById, sectionId),
-  }));
+  const siblingIds = sectionChildIdsByParentId[sectionParentKey(parentId)] ?? [];
+  return siblingIds
+    .map((sectionId) => sectionsById[sectionId])
+    .filter((section): section is SectionRecord => !!section)
+    .map((section) => ({
+      section,
+      children: buildSectionTreeFromChildMap(sectionsById, sectionChildIdsByParentId, section.id),
+    }));
 }
 
 function buildSectionPath(
@@ -446,10 +475,17 @@ function getEffectiveSectionIdsForNode(
   nodeId: string,
   nodeSectionIds: Record<string, string[]>,
   subtreeRulesById: Record<string, SubtreeRuleRecord>,
+  sectionsById?: Record<string, SectionRecord>,
 ): string[] {
-  const direct = nodeSectionIds[nodeId] ?? [];
+  const direct = (nodeSectionIds[nodeId] ?? [])
+    .filter((sectionId) => (sectionsById ? !!sectionsById[sectionId] : true));
   const fromRules = Object.values(subtreeRulesById)
-    .filter((rule) => isNodeWithinSubtree(nodeId, rule.rootNodeId))
+    .filter((rule) => {
+      if (sectionsById && !sectionsById[rule.sectionId]) return false;
+      if (rule.rootNodeId === nodeId) return true;
+      if (!rule.includeFutureDescendants) return false;
+      return isNodeWithinSubtree(nodeId, rule.rootNodeId);
+    })
     .map((rule) => rule.sectionId);
   return normalizeSectionIdList([...direct, ...fromRules]);
 }
@@ -500,14 +536,18 @@ function evalSmartViewById(
     | 'subtreeRulesById'
     | 'nodeTouchedAtById'
     | 'customSmartViewsById'
-  >,
+  > & {
+    effectiveSectionIdsByNode?: Record<string, string[]>;
+  },
 ): boolean {
   const node = state.nodes[nodeId];
   if (!node) return false;
 
   if (isBuiltInSmartViewId(smartViewId)) {
     if (smartViewId === 'sv_unassigned') {
-      return getEffectiveSectionIdsForNode(nodeId, state.nodeSectionIds, state.subtreeRulesById).length === 0;
+      const effectiveSectionIds = state.effectiveSectionIdsByNode?.[nodeId]
+        ?? getEffectiveSectionIdsForNode(nodeId, state.nodeSectionIds, state.subtreeRulesById);
+      return effectiveSectionIds.length === 0;
     }
     if (smartViewId === 'sv_bookmarked') {
       return !!node.isBookmarked;
@@ -549,6 +589,401 @@ function buildDisplayNodeIdsWithAncestors(
     }
   });
   return Array.from(displayIds);
+}
+
+interface DerivedIndexes {
+  rulesByRootNodeId: Record<string, SubtreeRuleRecord[]>;
+  nodeParentById: Record<string, string | null>;
+  sectionChildIdsByParentId: Record<string, string[]>;
+  effectiveSectionIdsByNode: Record<string, string[]>;
+  sectionNodeCountBySectionId: Record<string, number>;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeImportedNodes(rawNodes: unknown, warnings: string[]): Record<string, BiddingNode> {
+  if (!Array.isArray(rawNodes)) {
+    warnings.push('nodes payload is not an array; using empty nodes set');
+    return {};
+  }
+
+  const nodes: Record<string, BiddingNode> = {};
+  let dropped = 0;
+
+  rawNodes.forEach((rawNode) => {
+    if (!isPlainRecord(rawNode)) {
+      dropped += 1;
+      return;
+    }
+
+    const rawContext = isPlainRecord(rawNode.context) ? rawNode.context : {};
+    const rawSequence = Array.isArray(rawContext.sequence)
+      ? rawContext.sequence.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const fallbackId = typeof rawNode.id === 'string' ? rawNode.id.trim() : '';
+    const sequence = rawSequence.length > 0 ? rawSequence : fallbackId.split(' ').filter(Boolean);
+    if (sequence.length === 0) {
+      dropped += 1;
+      return;
+    }
+
+    const id = sequence.join(' ');
+    const rawIsExpanded = typeof rawNode.isExpanded === 'boolean' ? rawNode.isExpanded : sequence.length <= 2;
+    const rawIsBookmarked = typeof rawNode.isBookmarked === 'boolean' ? rawNode.isBookmarked : false;
+
+    const normalizedNode: BiddingNode = {
+      ...(rawNode as Partial<BiddingNode>),
+      id,
+      context: { sequence },
+      isExpanded: rawIsExpanded,
+      isBookmarked: rawIsBookmarked,
+    };
+
+    nodes[id] = normalizedNode;
+  });
+
+  if (dropped > 0) {
+    warnings.push(`dropped ${dropped} invalid node record(s)`);
+  }
+
+  return nodes;
+}
+
+function normalizeImportedV2Payload(
+  input: Record<string, unknown>,
+  warnings: string[],
+): ExportSchemaV2 {
+  const now = new Date().toISOString();
+  const rawNodes = Array.isArray(input.nodes)
+    ? input.nodes
+    : isPlainRecord(input.data) && Array.isArray((input.data as Record<string, unknown>).nodes)
+      ? (input.data as Record<string, unknown>).nodes
+      : [];
+  const nodes = normalizeImportedNodes(rawNodes, warnings);
+
+  const rawSections: Record<string, unknown> = isPlainRecord(input.sectionsById)
+    ? input.sectionsById
+    : isPlainRecord(input.data) && isPlainRecord((input.data as Record<string, unknown>).sectionsById)
+      ? ((input.data as Record<string, unknown>).sectionsById as Record<string, unknown>)
+      : {};
+  const sectionsById: Record<string, SectionRecord> = {};
+  Object.entries(rawSections).forEach(([sectionId, rawSection]) => {
+    if (!isPlainRecord(rawSection)) return;
+    const name = normalizeSectionName(String(rawSection.name || ''));
+    if (!name) return;
+    sectionsById[sectionId] = {
+      id: sectionId,
+      name,
+      parentId: typeof rawSection.parentId === 'string' && rawSection.parentId.trim().length > 0
+        ? rawSection.parentId
+        : null,
+      order: Number.isFinite(rawSection.order) ? Number(rawSection.order) : 0,
+      createdAt: typeof rawSection.createdAt === 'string' && rawSection.createdAt ? rawSection.createdAt : now,
+      updatedAt: typeof rawSection.updatedAt === 'string' && rawSection.updatedAt ? rawSection.updatedAt : now,
+    };
+  });
+
+  let rewiredParents = 0;
+  Object.keys(sectionsById).forEach((sectionId) => {
+    const section = sectionsById[sectionId];
+    if (!section.parentId) return;
+    if (!sectionsById[section.parentId] || section.parentId === section.id) {
+      sectionsById[sectionId] = { ...section, parentId: null, updatedAt: now };
+      rewiredParents += 1;
+      return;
+    }
+    const visited = new Set<string>([section.id]);
+    let cursor: string | null = section.parentId;
+    while (cursor) {
+      if (visited.has(cursor)) {
+        sectionsById[sectionId] = { ...section, parentId: null, updatedAt: now };
+        rewiredParents += 1;
+        break;
+      }
+      visited.add(cursor);
+      cursor = sectionsById[cursor]?.parentId ?? null;
+    }
+  });
+
+  if (rewiredParents > 0) {
+    warnings.push(`rewired ${rewiredParents} invalid section parent link(s) to root`);
+  }
+
+  let orderedSectionsById = { ...sectionsById };
+  const parentIds = new Set<string | null>([null]);
+  Object.values(orderedSectionsById).forEach((section) => parentIds.add(section.parentId));
+  parentIds.forEach((parentId) => {
+    const siblingIds = getSiblingIdsSorted(orderedSectionsById, parentId);
+    orderedSectionsById = applySiblingOrder(orderedSectionsById, parentId, siblingIds);
+  });
+
+  const rawSectionRootOrder = Array.isArray(input.sectionRootOrder)
+    ? input.sectionRootOrder
+    : isPlainRecord(input.data) && Array.isArray((input.data as Record<string, unknown>).sectionRootOrder)
+      ? (input.data as Record<string, unknown>).sectionRootOrder
+      : [];
+  const sectionRootOrder = Array.isArray(rawSectionRootOrder)
+    ? rawSectionRootOrder
+      .filter((sectionId): sectionId is string => typeof sectionId === 'string' && !!orderedSectionsById[sectionId])
+    : [];
+  const normalizedSectionRootOrder = sectionRootOrder.length > 0
+    ? normalizeSectionIdList(sectionRootOrder)
+    : getSectionRootOrder(orderedSectionsById);
+
+  const rawNodeSectionIds: Record<string, unknown> = isPlainRecord(input.nodeSectionIds)
+    ? input.nodeSectionIds
+    : isPlainRecord(input.data) && isPlainRecord((input.data as Record<string, unknown>).nodeSectionIds)
+      ? ((input.data as Record<string, unknown>).nodeSectionIds as Record<string, unknown>)
+      : {};
+  const nodeSectionIds: Record<string, string[]> = {};
+  let droppedNodeSectionRefs = 0;
+  Object.entries(rawNodeSectionIds).forEach(([nodeId, rawSectionIds]) => {
+    if (!nodes[nodeId] || !Array.isArray(rawSectionIds)) return;
+    const normalized = normalizeSectionIdList(
+      rawSectionIds
+        .filter((sectionId): sectionId is string => typeof sectionId === 'string')
+        .filter((sectionId) => !!orderedSectionsById[sectionId]),
+    );
+    if (normalized.length !== rawSectionIds.length) {
+      droppedNodeSectionRefs += rawSectionIds.length - normalized.length;
+    }
+    if (normalized.length > 0) {
+      nodeSectionIds[nodeId] = normalized;
+    }
+  });
+
+  const rawSubtreeRules: Record<string, unknown> = isPlainRecord(input.subtreeRulesById)
+    ? input.subtreeRulesById
+    : isPlainRecord(input.data) && isPlainRecord((input.data as Record<string, unknown>).subtreeRulesById)
+      ? ((input.data as Record<string, unknown>).subtreeRulesById as Record<string, unknown>)
+      : {};
+  const subtreeRulesById: Record<string, SubtreeRuleRecord> = {};
+  let droppedRules = 0;
+  Object.entries(rawSubtreeRules).forEach(([ruleId, rawRule]) => {
+    if (!isPlainRecord(rawRule)) {
+      droppedRules += 1;
+      return;
+    }
+    const sectionId = typeof rawRule.sectionId === 'string' ? rawRule.sectionId : '';
+    const rootNodeId = typeof rawRule.rootNodeId === 'string' ? rawRule.rootNodeId : '';
+    if (!sectionId || !rootNodeId || !orderedSectionsById[sectionId] || !nodes[rootNodeId]) {
+      droppedRules += 1;
+      return;
+    }
+    const createdAt = typeof rawRule.createdAt === 'string' && rawRule.createdAt ? rawRule.createdAt : now;
+    subtreeRulesById[ruleId] = {
+      id: ruleId,
+      sectionId,
+      rootNodeId,
+      includeFutureDescendants: rawRule.includeFutureDescendants !== false,
+      createdAt,
+      updatedAt: typeof rawRule.updatedAt === 'string' && rawRule.updatedAt ? rawRule.updatedAt : createdAt,
+    };
+  });
+
+  const rawCustomSmartViews: Record<string, unknown> = isPlainRecord(input.customSmartViewsById)
+    ? input.customSmartViewsById
+    : isPlainRecord(input.data) && isPlainRecord((input.data as Record<string, unknown>).customSmartViewsById)
+      ? ((input.data as Record<string, unknown>).customSmartViewsById as Record<string, unknown>)
+      : {};
+  const customSmartViewsById: Record<string, CustomSmartViewRecord> = {};
+  let droppedCustomViews = 0;
+  Object.entries(rawCustomSmartViews).forEach(([smartViewId, rawSmartView]) => {
+    if (!isPlainRecord(rawSmartView)) {
+      droppedCustomViews += 1;
+      return;
+    }
+    const name = normalizeSmartViewName(String(rawSmartView.name || ''));
+    const query = normalizeSmartViewQuery(String(rawSmartView.query || ''));
+    if (!name || !query) {
+      droppedCustomViews += 1;
+      return;
+    }
+    const field = rawSmartView.field === 'sequence' || rawSmartView.field === 'notes' || rawSmartView.field === 'shows'
+      ? rawSmartView.field
+      : 'all';
+    const createdAt = typeof rawSmartView.createdAt === 'string' && rawSmartView.createdAt ? rawSmartView.createdAt : now;
+    customSmartViewsById[smartViewId] = {
+      id: smartViewId,
+      name,
+      query,
+      field,
+      order: Number.isFinite(rawSmartView.order) ? Number(rawSmartView.order) : 0,
+      createdAt,
+      updatedAt: typeof rawSmartView.updatedAt === 'string' && rawSmartView.updatedAt ? rawSmartView.updatedAt : createdAt,
+    };
+  });
+
+  const rawCustomOrder: unknown[] = Array.isArray(input.customSmartViewOrder)
+    ? input.customSmartViewOrder
+    : isPlainRecord(input.data) && Array.isArray((input.data as Record<string, unknown>).customSmartViewOrder)
+      ? ((input.data as Record<string, unknown>).customSmartViewOrder as unknown[])
+      : [];
+  const customSmartViewOrder = normalizeSectionIdList(
+    rawCustomOrder.filter((smartViewId): smartViewId is string =>
+      typeof smartViewId === 'string' && !!customSmartViewsById[smartViewId],
+    ),
+  );
+  const orderedCustomIds = customSmartViewOrder.length > 0
+    ? customSmartViewOrder
+    : Object.values(customSmartViewsById)
+      .sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+      .map((item) => item.id);
+
+  const rawPinned: Record<string, unknown> = isPlainRecord(input.smartViewPinnedById)
+    ? input.smartViewPinnedById
+    : isPlainRecord(input.data) && isPlainRecord((input.data as Record<string, unknown>).smartViewPinnedById)
+      ? ((input.data as Record<string, unknown>).smartViewPinnedById as Record<string, unknown>)
+      : {};
+  const smartViewPinnedById: Record<string, boolean> = {};
+  Object.entries(rawPinned).forEach(([smartViewId, pinned]) => {
+    if (typeof pinned !== 'boolean') return;
+    if (!isBuiltInSmartViewId(smartViewId) && !customSmartViewsById[smartViewId]) return;
+    smartViewPinnedById[smartViewId] = pinned;
+  });
+
+  const rawTouched: Record<string, unknown> = isPlainRecord(input.nodeTouchedAtById)
+    ? input.nodeTouchedAtById
+    : isPlainRecord(input.data) && isPlainRecord((input.data as Record<string, unknown>).nodeTouchedAtById)
+      ? ((input.data as Record<string, unknown>).nodeTouchedAtById as Record<string, unknown>)
+      : {};
+  const nodeTouchedAtById: Record<string, string> = {};
+  Object.entries(rawTouched).forEach(([nodeId, touchedAt]) => {
+    if (!nodes[nodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
+    nodeTouchedAtById[nodeId] = touchedAt;
+  });
+
+  if (droppedNodeSectionRefs > 0) {
+    warnings.push(`dropped ${droppedNodeSectionRefs} invalid node-section reference(s)`);
+  }
+  if (droppedRules > 0) {
+    warnings.push(`dropped ${droppedRules} invalid subtree rule(s)`);
+  }
+  if (droppedCustomViews > 0) {
+    warnings.push(`dropped ${droppedCustomViews} invalid custom smart view(s)`);
+  }
+
+  const nestedData = isPlainRecord(input.data) ? input.data : {};
+  const rawMode = typeof input.leftPrimaryMode === 'string'
+    ? input.leftPrimaryMode
+    : typeof nestedData.leftPrimaryMode === 'string'
+      ? nestedData.leftPrimaryMode
+      : undefined;
+  const rawActiveSectionId = typeof input.activeSectionId === 'string'
+    ? input.activeSectionId
+    : typeof nestedData.activeSectionId === 'string'
+      ? nestedData.activeSectionId
+      : null;
+  const rawActiveSmartViewId = typeof input.activeSmartViewId === 'string'
+    ? input.activeSmartViewId
+    : typeof nestedData.activeSmartViewId === 'string'
+      ? nestedData.activeSmartViewId
+      : null;
+  const activeSectionId = rawActiveSectionId && orderedSectionsById[rawActiveSectionId] ? rawActiveSectionId : null;
+  const activeSmartViewId = rawActiveSmartViewId
+    && (isBuiltInSmartViewId(rawActiveSmartViewId) || !!customSmartViewsById[rawActiveSmartViewId])
+    ? rawActiveSmartViewId
+    : null;
+  const leftPrimaryMode: LeftPrimaryMode =
+    rawMode === 'sections' && activeSectionId
+      ? 'sections'
+      : rawMode === 'smartViews' && activeSmartViewId
+        ? 'smartViews'
+        : 'roots';
+
+  return {
+    schemaVersion: EXPORT_SCHEMA_VERSION,
+    exportedAt: typeof input.exportedAt === 'string' && input.exportedAt ? input.exportedAt : now,
+    nodes: Object.values(nodes),
+    sectionsById: orderedSectionsById,
+    sectionRootOrder: normalizedSectionRootOrder,
+    nodeSectionIds,
+    subtreeRulesById,
+    customSmartViewsById,
+    customSmartViewOrder: orderedCustomIds,
+    smartViewPinnedById,
+    nodeTouchedAtById,
+    leftPrimaryMode,
+    activeSectionId,
+    activeSmartViewId,
+  };
+}
+
+function buildDerivedIndexes(
+  nodes: Record<string, BiddingNode>,
+  sectionsById: Record<string, SectionRecord>,
+  nodeSectionIds: Record<string, string[]>,
+  subtreeRulesById: Record<string, SubtreeRuleRecord>,
+): DerivedIndexes {
+  const sectionChildIdsByParentId: Record<string, string[]> = {};
+  Object.values(sectionsById).forEach((section) => {
+    const parentKey = sectionParentKey(section.parentId);
+    if (!sectionChildIdsByParentId[parentKey]) {
+      sectionChildIdsByParentId[parentKey] = [];
+    }
+    sectionChildIdsByParentId[parentKey].push(section.id);
+  });
+  Object.keys(sectionChildIdsByParentId).forEach((parentKey) => {
+    sectionChildIdsByParentId[parentKey].sort((a, b) => {
+      const sectionA = sectionsById[a];
+      const sectionB = sectionsById[b];
+      if (!sectionA || !sectionB) return a.localeCompare(b);
+      return (sectionA.order - sectionB.order)
+        || sectionA.name.localeCompare(sectionB.name)
+        || sectionA.id.localeCompare(sectionB.id);
+    });
+  });
+
+  const nodeIds = Object.keys(nodes);
+  const nodeParentById: Record<string, string | null> = {};
+  nodeIds.forEach((nodeId) => {
+    const sequence = nodeId.split(' ').filter(Boolean);
+    nodeParentById[nodeId] = sequence.length > 1 ? sequence.slice(0, -1).join(' ') : null;
+  });
+
+  const rulesByRootNodeId: Record<string, SubtreeRuleRecord[]> = {};
+  Object.values(subtreeRulesById).forEach((rule) => {
+    if (!sectionsById[rule.sectionId] || !nodes[rule.rootNodeId]) return;
+    if (!rulesByRootNodeId[rule.rootNodeId]) {
+      rulesByRootNodeId[rule.rootNodeId] = [];
+    }
+    rulesByRootNodeId[rule.rootNodeId].push(rule);
+  });
+
+  const effectiveSectionIdsByNode: Record<string, string[]> = {};
+  const sectionNodeCountBySectionId: Record<string, number> = {};
+  nodeIds.forEach((nodeId) => {
+    const sectionIdsSet = new Set<string>();
+    (nodeSectionIds[nodeId] ?? []).forEach((sectionId) => {
+      if (sectionsById[sectionId]) sectionIdsSet.add(sectionId);
+    });
+
+    let cursor: string | null = nodeId;
+    while (cursor) {
+      const rules = rulesByRootNodeId[cursor] ?? [];
+      rules.forEach((rule) => {
+        if (cursor !== nodeId && !rule.includeFutureDescendants) return;
+        sectionIdsSet.add(rule.sectionId);
+      });
+      cursor = nodeParentById[cursor] ?? null;
+    }
+
+    const sectionIds = Array.from(sectionIdsSet);
+    effectiveSectionIdsByNode[nodeId] = sectionIds;
+    sectionIds.forEach((sectionId) => {
+      sectionNodeCountBySectionId[sectionId] = (sectionNodeCountBySectionId[sectionId] ?? 0) + 1;
+    });
+  });
+
+  return {
+    rulesByRootNodeId,
+    nodeParentById,
+    sectionChildIdsByParentId,
+    effectiveSectionIdsByNode,
+    sectionNodeCountBySectionId,
+  };
 }
 
 const defaultSystem = `
@@ -874,6 +1309,101 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
   };
 
+  let derivedIndexesCache: {
+    nodesRef: Record<string, BiddingNode>;
+    sectionsByIdRef: Record<string, SectionRecord>;
+    nodeSectionIdsRef: Record<string, string[]>;
+    subtreeRulesByIdRef: Record<string, SubtreeRuleRecord>;
+    value: DerivedIndexes;
+  } | null = null;
+
+  const getDerivedIndexes = (state: BiddingState): DerivedIndexes => {
+    if (
+      derivedIndexesCache
+      && derivedIndexesCache.nodesRef === state.nodes
+      && derivedIndexesCache.sectionsByIdRef === state.sectionsById
+      && derivedIndexesCache.nodeSectionIdsRef === state.nodeSectionIds
+      && derivedIndexesCache.subtreeRulesByIdRef === state.subtreeRulesById
+    ) {
+      return derivedIndexesCache.value;
+    }
+
+    const value = buildDerivedIndexes(state.nodes, state.sectionsById, state.nodeSectionIds, state.subtreeRulesById);
+    derivedIndexesCache = {
+      nodesRef: state.nodes,
+      sectionsByIdRef: state.sectionsById,
+      nodeSectionIdsRef: state.nodeSectionIds,
+      subtreeRulesByIdRef: state.subtreeRulesById,
+      value,
+    };
+    return value;
+  };
+
+  let smartViewCountCache: {
+    nodesRef: Record<string, BiddingNode>;
+    nodeSectionIdsRef: Record<string, string[]>;
+    subtreeRulesByIdRef: Record<string, SubtreeRuleRecord>;
+    customSmartViewsByIdRef: Record<string, CustomSmartViewRecord>;
+    nodeTouchedAtByIdRef: Record<string, string>;
+    sectionsByIdRef: Record<string, SectionRecord>;
+    nowMinute: number;
+    value: Record<string, number>;
+  } | null = null;
+
+  const getSmartViewCountMap = (state: BiddingState): Record<string, number> => {
+    const nowMinute = Math.floor(Date.now() / 60000);
+    if (
+      smartViewCountCache
+      && smartViewCountCache.nodesRef === state.nodes
+      && smartViewCountCache.nodeSectionIdsRef === state.nodeSectionIds
+      && smartViewCountCache.subtreeRulesByIdRef === state.subtreeRulesById
+      && smartViewCountCache.customSmartViewsByIdRef === state.customSmartViewsById
+      && smartViewCountCache.nodeTouchedAtByIdRef === state.nodeTouchedAtById
+      && smartViewCountCache.sectionsByIdRef === state.sectionsById
+      && smartViewCountCache.nowMinute === nowMinute
+    ) {
+      return smartViewCountCache.value;
+    }
+
+    const derived = getDerivedIndexes(state);
+    const counts: Record<string, number> = {};
+    const nodeIds = Object.keys(state.nodes);
+    const totalNodes = nodeIds.length;
+    const assignedNodes = Object.values(derived.effectiveSectionIdsByNode).filter((sectionIds) => sectionIds.length > 0).length;
+    counts.sv_unassigned = totalNodes - assignedNodes;
+    counts.sv_bookmarked = nodeIds.reduce((acc, nodeId) => acc + (state.nodes[nodeId].isBookmarked ? 1 : 0), 0);
+    counts.sv_no_notes = nodeIds.reduce((acc, nodeId) => {
+      const notes = state.nodes[nodeId].meaning?.notes ?? '';
+      return acc + (notes.trim() ? 0 : 1);
+    }, 0);
+    counts.sv_unaccepted = nodeIds.reduce((acc, nodeId) => acc + (state.nodes[nodeId].meaning?.accepted ? 0 : 1), 0);
+    counts.sv_recently_edited = nodeIds.reduce((acc, nodeId) => {
+      const touchedAt = state.nodeTouchedAtById[nodeId];
+      if (!touchedAt) return acc;
+      const touchedMs = new Date(touchedAt).getTime();
+      if (Number.isNaN(touchedMs)) return acc;
+      return acc + (Date.now() - touchedMs <= RECENTLY_EDITED_WINDOW_MS ? 1 : 0);
+    }, 0);
+
+    Object.values(state.customSmartViewsById).forEach((smartView) => {
+      counts[smartView.id] = nodeIds.reduce((acc, nodeId) => (
+        matchesCustomSmartViewQuery(state.nodes[nodeId], smartView.query, smartView.field) ? acc + 1 : acc
+      ), 0);
+    });
+
+    smartViewCountCache = {
+      nodesRef: state.nodes,
+      nodeSectionIdsRef: state.nodeSectionIds,
+      subtreeRulesByIdRef: state.subtreeRulesById,
+      customSmartViewsByIdRef: state.customSmartViewsById,
+      nodeTouchedAtByIdRef: state.nodeTouchedAtById,
+      sectionsByIdRef: state.sectionsById,
+      nowMinute,
+      value: counts,
+    };
+    return counts;
+  };
+
   return {
     nodes: initialNodes,
     selectedNodeId: initialDraft?.selectedNodeId ?? null,
@@ -904,36 +1434,89 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     importYaml: (yamlString: string) => {
       try {
-        const parsed = yaml.load(yamlString) as any[];
-        if (!Array.isArray(parsed)) throw new Error('Invalid YAML format: expected an array of nodes.');
+        const parsed = yaml.load(yamlString);
+        const warnings: string[] = [];
+        const now = new Date().toISOString();
+        let payload: ExportSchemaV2;
 
-        const newNodes: Record<string, BiddingNode> = {};
-        parsed.forEach((node) => {
-          if (node.id && node.context && node.context.sequence) {
-            const isExpanded = node.context.sequence.length <= 2;
-            newNodes[node.id] = { ...node, isExpanded };
+        if (Array.isArray(parsed)) {
+          const legacyNodes = normalizeImportedNodes(parsed, warnings);
+          payload = {
+            schemaVersion: EXPORT_SCHEMA_VERSION,
+            exportedAt: now,
+            nodes: Object.values(legacyNodes),
+            sectionsById: {},
+            sectionRootOrder: [],
+            nodeSectionIds: {},
+            subtreeRulesById: {},
+            customSmartViewsById: {},
+            customSmartViewOrder: [],
+            smartViewPinnedById: {},
+            nodeTouchedAtById: {},
+            leftPrimaryMode: 'roots',
+            activeSectionId: null,
+            activeSmartViewId: null,
+          };
+        } else if (isPlainRecord(parsed)) {
+          const legacyWrappedNodes = Array.isArray(parsed.data) ? parsed.data : null;
+          if (legacyWrappedNodes) {
+            const migratedNodes = normalizeImportedNodes(legacyWrappedNodes, warnings);
+            payload = {
+              schemaVersion: EXPORT_SCHEMA_VERSION,
+              exportedAt: now,
+              nodes: Object.values(migratedNodes),
+              sectionsById: {},
+              sectionRootOrder: [],
+              nodeSectionIds: {},
+              subtreeRulesById: {},
+              customSmartViewsById: {},
+              customSmartViewOrder: [],
+              smartViewPinnedById: {},
+              nodeTouchedAtById: {},
+              leftPrimaryMode: 'roots',
+              activeSectionId: null,
+              activeSmartViewId: null,
+            };
+          } else {
+            payload = normalizeImportedV2Payload(parsed, warnings);
           }
+        } else {
+          throw new Error('Invalid YAML format: expected legacy array or schema object.');
+        }
+
+        const nodesById: Record<string, BiddingNode> = {};
+        payload.nodes.forEach((node) => {
+          nodesById[node.id] = node;
         });
+        const sectionRootOrder = payload.sectionRootOrder.length > 0
+          ? payload.sectionRootOrder.filter((sectionId) => !!payload.sectionsById[sectionId])
+          : getSectionRootOrder(payload.sectionsById);
+        const sectionExpandedById: Record<string, boolean> = Object.fromEntries(
+          Object.keys(payload.sectionsById).map((sectionId) => [sectionId, true]),
+        );
 
         set({
-          nodes: newNodes,
+          nodes: nodesById,
           selectedNodeId: null,
-          sectionsById: {},
-          sectionRootOrder: [],
-          nodeSectionIds: {},
-          subtreeRulesById: {},
-          customSmartViewsById: {},
-          customSmartViewOrder: [],
-          smartViewPinnedById: {},
-          nodeTouchedAtById: {},
-          sectionExpandedById: {},
-          activeSectionId: null,
-          activeSmartViewId: null,
-          leftPrimaryMode: 'roots',
+          sectionsById: payload.sectionsById,
+          sectionRootOrder,
+          nodeSectionIds: payload.nodeSectionIds,
+          subtreeRulesById: payload.subtreeRulesById,
+          customSmartViewsById: payload.customSmartViewsById,
+          customSmartViewOrder: payload.customSmartViewOrder,
+          smartViewPinnedById: payload.smartViewPinnedById,
+          nodeTouchedAtById: payload.nodeTouchedAtById,
+          sectionExpandedById,
+          activeSectionId: payload.activeSectionId,
+          activeSmartViewId: payload.activeSmartViewId,
+          leftPrimaryMode: payload.leftPrimaryMode,
           hasUnsavedChanges: true,
           serverSyncError: null,
           lastExportedAt: null,
         });
+        if (warnings.length > 0) {
+          console.warn('[importYaml] Migration warnings:', warnings);
+        }
         queueDraftSave();
       } catch (e) {
         console.error('Failed to parse YAML', e);
@@ -941,19 +1524,41 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       }
     },
 
-    exportYaml: () => {
-      const { nodes } = get();
+    exportYaml: (options?: { legacy?: boolean }) => {
+      const state = get();
       const exportedAt = new Date().toISOString();
+      const useLegacyFormat = options?.legacy === true;
 
-      const exportData = Object.values(nodes).map((node) => {
-        const { isExpanded, isBookmarked, ...rest } = node;
-        return rest;
-      });
+      let output: string;
+      if (useLegacyFormat) {
+        const legacyData = Object.values(state.nodes).map((node) => {
+          const { isExpanded, isBookmarked, ...rest } = node;
+          return rest;
+        });
+        output = yaml.dump(legacyData);
+      } else {
+        const payload: ExportSchemaV2 = {
+          schemaVersion: EXPORT_SCHEMA_VERSION,
+          exportedAt,
+          nodes: Object.values(state.nodes),
+          sectionsById: state.sectionsById,
+          sectionRootOrder: state.sectionRootOrder,
+          nodeSectionIds: state.nodeSectionIds,
+          subtreeRulesById: state.subtreeRulesById,
+          customSmartViewsById: state.customSmartViewsById,
+          customSmartViewOrder: state.customSmartViewOrder,
+          smartViewPinnedById: state.smartViewPinnedById,
+          nodeTouchedAtById: state.nodeTouchedAtById,
+          leftPrimaryMode: state.leftPrimaryMode,
+          activeSectionId: state.activeSectionId,
+          activeSmartViewId: state.activeSmartViewId,
+        };
+        output = yaml.dump(payload);
+      }
 
       set({ lastExportedAt: exportedAt });
       flushDraftSave();
-
-      return yaml.dump(exportData);
+      return output;
     },
 
     addNode: (parentId: string | null, call: string) => {
@@ -982,10 +1587,20 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           updatedNodes[parentId] = { ...updatedNodes[parentId], isExpanded: true };
         }
         const touchedAt = new Date().toISOString();
+        const nextNodeSectionIds = { ...state.nodeSectionIds };
+        if (
+          state.leftPrimaryMode === 'sections'
+          && state.activeSectionId
+          && state.sectionsById[state.activeSectionId]
+        ) {
+          const existing = nextNodeSectionIds[id] ?? [];
+          nextNodeSectionIds[id] = normalizeSectionIdList([...existing, state.activeSectionId]);
+        }
 
         didAdd = true;
         return {
           nodes: updatedNodes,
+          nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: {
             ...state.nodeTouchedAtById,
             [id]: touchedAt,
@@ -1916,13 +2531,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     }),
 
     getSectionChildren: (parentId: string | null) => {
-      const { sectionsById } = get();
-      return getSiblingIdsSorted(sectionsById, parentId).map((sectionId) => sectionsById[sectionId]);
+      const state = get();
+      const derived = getDerivedIndexes(state);
+      const sectionIds = derived.sectionChildIdsByParentId[sectionParentKey(parentId)] ?? [];
+      return sectionIds
+        .map((sectionId) => state.sectionsById[sectionId])
+        .filter((section): section is SectionRecord => !!section);
     },
 
     getSectionTree: () => {
-      const { sectionsById } = get();
-      return buildSectionTree(sectionsById, null);
+      const state = get();
+      const derived = getDerivedIndexes(state);
+      return buildSectionTreeFromChildMap(state.sectionsById, derived.sectionChildIdsByParentId, null);
     },
 
     getSectionPath: (sectionId: string) => {
@@ -1930,30 +2550,41 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return buildSectionPath(sectionsById, sectionId);
     },
 
+    getSectionNodeCount: (sectionId: string) => {
+      const state = get();
+      if (!state.sectionsById[sectionId]) return 0;
+      const derived = getDerivedIndexes(state);
+      return derived.sectionNodeCountBySectionId[sectionId] ?? 0;
+    },
+
     getEffectiveSectionIds: (nodeId: string) => {
-      const { sectionsById, nodeSectionIds, subtreeRulesById } = get();
-      if (!nodeId) return [];
-      const merged = getEffectiveSectionIdsForNode(nodeId, nodeSectionIds, subtreeRulesById);
-      return merged.filter((sectionId) => !!sectionsById[sectionId]);
+      const state = get();
+      if (!nodeId || !state.nodes[nodeId]) return [];
+      const derived = getDerivedIndexes(state);
+      return derived.effectiveSectionIdsByNode[nodeId] ?? [];
     },
 
     getSubtreeRulesForNode: (nodeId: string) => {
-      const { sectionsById, subtreeRulesById } = get();
-      return Object.values(subtreeRulesById)
-        .filter((rule) => rule.rootNodeId === nodeId && !!sectionsById[rule.sectionId])
+      const state = get();
+      const derived = getDerivedIndexes(state);
+      return (derived.rulesByRootNodeId[nodeId] ?? [])
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     },
 
     getPrimaryMatchedNodeIds: () => {
       const state = get();
+      const derived = getDerivedIndexes(state);
       const nodeIds = Object.keys(state.nodes);
       if (state.leftPrimaryMode === 'sections' && state.activeSectionId && state.sectionsById[state.activeSectionId]) {
         return nodeIds.filter((nodeId) =>
-          getEffectiveSectionIdsForNode(nodeId, state.nodeSectionIds, state.subtreeRulesById).includes(state.activeSectionId as string),
+          (derived.effectiveSectionIdsByNode[nodeId] ?? []).includes(state.activeSectionId as string),
         );
       }
       if (state.leftPrimaryMode === 'smartViews' && state.activeSmartViewId) {
-        return nodeIds.filter((nodeId) => evalSmartViewById(nodeId, state.activeSmartViewId as string, state));
+        return nodeIds.filter((nodeId) => evalSmartViewById(nodeId, state.activeSmartViewId as string, {
+          ...state,
+          effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
+        }));
       }
       return nodeIds;
     },
@@ -1971,14 +2602,17 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     evalSmartView: (nodeId: string, smartViewId: string) => {
       const state = get();
-      return evalSmartViewById(nodeId, smartViewId, state);
+      const derived = getDerivedIndexes(state);
+      return evalSmartViewById(nodeId, smartViewId, {
+        ...state,
+        effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
+      });
     },
 
     getSmartViewCount: (smartViewId: string) => {
       const state = get();
-      return Object.keys(state.nodes).reduce((count, nodeId) => (
-        evalSmartViewById(nodeId, smartViewId, state) ? count + 1 : count
-      ), 0);
+      const countMap = getSmartViewCountMap(state);
+      return countMap[smartViewId] ?? 0;
     },
 
     flushDraftSave,

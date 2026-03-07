@@ -20,33 +20,66 @@ export function CenterPanel() {
     selectNode,
     getSmartViews,
     getPrimaryMatchedNodeIds,
-    getDisplayNodeIdsWithAncestors,
+    getEffectiveSectionIds,
     setLeftPrimaryMode,
     setActiveSectionId,
     setActiveSmartViewId,
   } = useBiddingStore();
-  const selectedNode = selectedNodeId ? nodes[selectedNodeId] : null;
-  const selectedSequence = selectedNode?.context.sequence || [];
+  const allNodeIds = Object.keys(nodes);
   const [viewMode, setViewMode] = useState<TreeViewMode>('classic');
+
+  const selectedRootId = (() => {
+    if (leftPrimaryMode !== 'roots' || !selectedNodeId) return null;
+    const node = nodes[selectedNodeId];
+    if (!node || node.context.sequence.length === 0) return null;
+    const rootId = node.context.sequence[0];
+    return nodes[rootId] && nodes[rootId].context.sequence.length === 1 ? rootId : null;
+  })();
+
+  const isSectionFilterMode = leftPrimaryMode === 'sections';
+  const isSmartFilterMode = leftPrimaryMode === 'smartViews' && !!activeSmartViewId;
+  const isRootFilterMode = leftPrimaryMode === 'roots' && !!selectedRootId;
+
   const activeSection = leftPrimaryMode === 'sections' && activeSectionId
     ? sectionsById[activeSectionId] ?? null
     : null;
   const activeSmartView = leftPrimaryMode === 'smartViews' && activeSmartViewId
     ? getSmartViews().find((smartView) => smartView.id === activeSmartViewId) ?? null
     : null;
-  const isPrimaryFilterActive = !!activeSection || (leftPrimaryMode === 'smartViews' && !!activeSmartViewId);
-  const primaryMatchedNodeIds = getPrimaryMatchedNodeIds();
-  const displayNodeIdSet = new Set(getDisplayNodeIdsWithAncestors());
-  const forcedExpandedNodeIds = (() => {
-    const forced = new Set<string>();
+
+  const isPrimaryFilterActive = isSectionFilterMode || isSmartFilterMode || isRootFilterMode;
+
+  const primaryMatchedNodeIds = (() => {
+    if (isRootFilterMode && selectedRootId) {
+      const rootPrefix = `${selectedRootId} `;
+      return allNodeIds.filter((nodeId) => nodeId === selectedRootId || nodeId.startsWith(rootPrefix));
+    }
+    if (isSectionFilterMode) {
+      if (!activeSectionId || !sectionsById[activeSectionId]) return [] as string[];
+      return allNodeIds.filter((nodeId) => getEffectiveSectionIds(nodeId).includes(activeSectionId));
+    }
+    if (isSmartFilterMode) {
+      return getPrimaryMatchedNodeIds();
+    }
+    return allNodeIds;
+  })();
+
+  const displayNodeIdSet = (() => {
+    if (!isPrimaryFilterActive) return new Set<string>(allNodeIds);
+    const ids = new Set<string>();
     primaryMatchedNodeIds.forEach((nodeId) => {
       const sequence = nodeId.split(' ').filter(Boolean);
-      for (let i = 1; i < sequence.length; i += 1) {
-        forced.add(sequence.slice(0, i).join(' '));
+      for (let i = 1; i <= sequence.length; i += 1) {
+        const ancestorId = sequence.slice(0, i).join(' ');
+        if (nodes[ancestorId]) ids.add(ancestorId);
       }
     });
-    return forced;
+    return ids;
   })();
+
+  const effectiveSelectedNode =
+    selectedNodeId && displayNodeIdSet.has(selectedNodeId) ? nodes[selectedNodeId] ?? null : null;
+  const selectedSequence = effectiveSelectedNode?.context.sequence || [];
   
   const sortedNodes = Object.values(nodes).sort((a, b) => compareSequences(a.context.sequence, b.context.sequence));
 
@@ -98,7 +131,7 @@ export function CenterPanel() {
       visible.push(node);
 
       // If this node is collapsed and we are not searching, hide its descendants
-      if (!node.isExpanded && !searchQuery && !forcedExpandedNodeIds.has(node.id)) {
+      if (!node.isExpanded && !searchQuery) {
         hiddenPrefix = seq;
       }
     }
@@ -175,7 +208,7 @@ export function CenterPanel() {
           <div className="font-mono text-sm whitespace-nowrap overflow-x-auto pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {selectedSequence.map((call, index) => {
               const nodeId = selectedSequence.slice(0, index + 1).join(' ');
-              const isActive = nodeId === selectedNodeId;
+              const isActive = nodeId === effectiveSelectedNode?.id;
               const isExistingNode = !!nodes[nodeId];
 
               return (
@@ -220,9 +253,19 @@ export function CenterPanel() {
           
           {/* List */}
           <div className="flex flex-col">
-            {visibleNodes.map(node => (
-              <SequenceRow key={node.id} node={node} viewMode={viewMode} />
-            ))}
+            {visibleNodes.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">
+                {isSectionFilterMode
+                  ? 'No sequences in this section yet.'
+                  : isSmartFilterMode
+                    ? 'No sequences match this smart view.'
+                    : 'No sequences to display.'}
+              </div>
+            ) : (
+              visibleNodes.map(node => (
+                <SequenceRow key={node.id} node={node} viewMode={viewMode} />
+              ))
+            )}
           </div>
         </div>
       </div>

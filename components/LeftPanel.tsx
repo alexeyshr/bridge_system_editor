@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   useBiddingStore,
   type CustomSmartViewField,
@@ -6,7 +6,7 @@ import {
   type SmartViewMutationResult,
   type SectionTreeNode,
 } from '@/store/useBiddingStore';
-import { formatCall, getSuitColor } from '@/lib/utils';
+import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
 import {
   Bookmark,
   ChevronDown,
@@ -32,6 +32,19 @@ type SmartViewModalState =
   | { mode: 'edit'; smartViewId: string; title: string; confirmText: string }
   | { mode: 'delete'; smartViewId: string; title: string; confirmText: string };
 
+type RootDeleteDialogState = {
+  nodeId: string;
+  call: string;
+  descendantsCount: number;
+} | null;
+
+const ROOT_BID_CALLS = Array.from({ length: 7 }, (_, levelIdx) =>
+  ['NT', 'S', 'H', 'D', 'C'].map((suit) => `${levelIdx + 1}${suit}`),
+).flat();
+const ROOT_DISPLAY_SUITS = ['NT', 'S', 'H', 'D', 'C'] as const;
+const ROOT_DISPLAY_LEVELS = [1, 2, 3, 4, 5, 6, 7] as const;
+type RootViewMode = 'matrix' | 'list';
+
 function toErrorMessage(result: SectionMutationResult): string {
   if (result.ok) return '';
   return result.error || 'Operation failed.';
@@ -46,6 +59,8 @@ export function LeftPanel() {
   const {
     nodes,
     selectNode,
+    addNode,
+    deleteNode,
     selectedNodeId,
     leftPrimaryMode,
     activeSectionId,
@@ -79,11 +94,107 @@ export function LeftPanel() {
   const [smartViewQueryInput, setSmartViewQueryInput] = useState('');
   const [smartViewFieldInput, setSmartViewFieldInput] = useState<CustomSmartViewField>('all');
   const [smartViewModalError, setSmartViewModalError] = useState('');
+  const [isRootsOpen, setIsRootsOpen] = useState(true);
+  const [isSectionsOpen, setIsSectionsOpen] = useState(true);
+  const [isBookmarksOpen, setIsBookmarksOpen] = useState(true);
+  const [isSmartViewsOpen, setIsSmartViewsOpen] = useState(true);
+  const [isRootPickerOpen, setIsRootPickerOpen] = useState(false);
+  const [selectedRootCalls, setSelectedRootCalls] = useState<string[]>([]);
+  const [rootPickerError, setRootPickerError] = useState('');
+  const [rootDeleteDialog, setRootDeleteDialog] = useState<RootDeleteDialogState>(null);
+  const [rootViewMode, setRootViewMode] = useState<RootViewMode>('matrix');
 
-  const roots = useMemo(() => Object.values(nodes).filter((n) => n.context.sequence.length === 1), [nodes]);
+  const roots = useMemo(
+    () => Object.values(nodes)
+      .filter((n) => n.context.sequence.length === 1)
+      .sort((a, b) => compareSequences(a.context.sequence, b.context.sequence)),
+    [nodes],
+  );
+  const rootsByCall = useMemo(
+    () => new Map(roots.map((root) => [root.id, root])),
+    [roots],
+  );
+  const selectedRootCall = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const selectedNode = nodes[selectedNodeId];
+    if (!selectedNode || selectedNode.context.sequence.length === 0) return null;
+    const rootCall = selectedNode.context.sequence[0];
+    return rootsByCall.has(rootCall) ? rootCall : null;
+  }, [nodes, rootsByCall, selectedNodeId]);
   const bookmarks = useMemo(() => Object.values(nodes).filter((n) => n.isBookmarked), [nodes]);
   const sectionTree = getSectionTree();
   const smartViews = getSmartViews();
+  const existingRootCalls = useMemo(() => new Set(roots.map((root) => root.id)), [roots]);
+
+  const openRootPicker = () => {
+    setRootPickerError('');
+    setSelectedRootCalls([]);
+    setIsRootPickerOpen(true);
+  };
+
+  const closeRootPicker = () => {
+    setIsRootPickerOpen(false);
+    setRootPickerError('');
+    setSelectedRootCalls([]);
+  };
+
+  const toggleRootCallSelection = (call: string) => {
+    if (existingRootCalls.has(call)) return;
+    setSelectedRootCalls((prev) => (
+      prev.includes(call) ? prev.filter((item) => item !== call) : [...prev, call]
+    ));
+    if (rootPickerError) setRootPickerError('');
+  };
+
+  const submitRootPicker = () => {
+    const callsToAdd = selectedRootCalls.filter((call) => !existingRootCalls.has(call));
+    if (callsToAdd.length === 0) {
+      setRootPickerError('Select at least one available root call.');
+      return;
+    }
+
+    callsToAdd.forEach((call) => addNode(null, call));
+    closeRootPicker();
+  };
+
+  const openRootDeleteDialog = (nodeId: string, call: string) => {
+    const descendantsCount = Object.keys(nodes).filter(
+      (key) => key.startsWith(`${nodeId} `),
+    ).length;
+    setRootDeleteDialog({
+      nodeId,
+      call,
+      descendantsCount,
+    });
+  };
+
+  const closeRootDeleteDialog = () => {
+    setRootDeleteDialog(null);
+  };
+
+  const confirmRootDelete = () => {
+    if (!rootDeleteDialog) return;
+    deleteNode(rootDeleteDialog.nodeId);
+    closeRootDeleteDialog();
+  };
+
+  useEffect(() => {
+    if (!actionMenuSectionId && !actionMenuSmartViewId) return;
+
+    const handleGlobalMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('[data-leftpanel-menu]')) return;
+      if (target.closest('[data-leftpanel-menu-trigger]')) return;
+      setActionMenuSectionId(null);
+      setActionMenuSmartViewId(null);
+    };
+
+    window.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => {
+      window.removeEventListener('mousedown', handleGlobalMouseDown);
+    };
+  }, [actionMenuSectionId, actionMenuSmartViewId]);
 
   const openCreateModal = (parentId: string | null) => {
     setSectionModal({
@@ -275,6 +386,7 @@ export function LeftPanel() {
               onClick={() =>
                 setActionMenuSectionId((prev) => (prev === section.id ? null : section.id))
               }
+              data-leftpanel-menu-trigger
               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700"
               aria-label="Section actions"
             >
@@ -283,19 +395,7 @@ export function LeftPanel() {
           </div>
 
           {actionMenuSectionId === section.id && (
-            <div className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setLeftPrimaryMode('sections');
-                  setActiveSectionId(section.id);
-                  setActiveSmartViewId(null);
-                  setActionMenuSectionId(null);
-                }}
-                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
-              >
-                Open
-              </button>
+            <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
               <button
                 type="button"
                 onClick={() => openRenameModal(section.id, section.name)}
@@ -376,6 +476,7 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={() => setActionMenuSmartViewId((prev) => (prev === smartView.id ? null : smartView.id))}
+                data-leftpanel-menu-trigger
                 className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700"
                 aria-label="Smart view actions"
               >
@@ -385,19 +486,7 @@ export function LeftPanel() {
           </div>
 
           {actionMenuSmartViewId === smartView.id && !smartView.isBuiltIn && (
-            <div className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setLeftPrimaryMode('smartViews');
-                  setActiveSmartViewId(smartView.id);
-                  setActiveSectionId(null);
-                  setActionMenuSmartViewId(null);
-                }}
-                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
-              >
-                Open
-              </button>
+            <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
               <button
                 type="button"
                 onClick={() => openEditSmartViewModal(smartView.id)}
@@ -422,41 +511,174 @@ export function LeftPanel() {
   };
 
   return (
-    <div className="h-full w-full border-r border-slate-200 bg-slate-50 flex flex-col overflow-y-auto relative">
+    <div className="h-full w-full border-r border-[#DBEAFE] bg-slate-50 flex flex-col overflow-y-auto relative">
       <div className="p-4">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <FolderTree className="w-3.5 h-3.5" />
-          Roots
-        </h3>
-        <ul className="space-y-1">
-          {roots.map((root) => (
-            <li key={root.id}>
-              <button
-                onClick={() => {
-                  setLeftPrimaryMode('roots');
-                  setActiveSectionId(null);
-                  setActiveSmartViewId(null);
-                  selectNode(root.id);
-                }}
-                className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  selectedNodeId === root.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
-                }`}
-              >
-                <span className={getSuitColor(root.context.sequence[0])}>
-                  {formatCall(root.context.sequence[0])}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="flex items-center mb-3">
+          <button
+            type="button"
+            onClick={() => setIsRootsOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+          >
+            <FolderTree className="w-3.5 h-3.5" />
+            Roots
+          </button>
+          <button
+            type="button"
+            onClick={openRootPicker}
+            className="ml-1 p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+            title="Add root calls"
+            aria-label="Add root calls"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <div className="ml-2 inline-flex items-center rounded-md border border-slate-200 bg-slate-100 p-0.5">
+            <button
+              type="button"
+              onClick={() => setRootViewMode('matrix')}
+              className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                rootViewMode === 'matrix'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+              title="Matrix view"
+            >
+              Matrix
+            </button>
+            <button
+              type="button"
+              onClick={() => setRootViewMode('list')}
+              className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                rootViewMode === 'list'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+              title="List view"
+            >
+              List
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsRootsOpen((prev) => !prev)}
+            className="ml-auto p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+            title={isRootsOpen ? 'Collapse roots' : 'Expand roots'}
+          >
+            {isRootsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        {isRootsOpen && (
+          <>
+            {rootViewMode === 'matrix' ? (
+              <div className="space-y-1.5">
+                {ROOT_DISPLAY_LEVELS.map((level) => (
+                  <div key={`roots-row-${level}`} className="grid grid-cols-5 gap-1">
+                    {ROOT_DISPLAY_SUITS.map((suit) => {
+                      const call = `${level}${suit}`;
+                      const root = rootsByCall.get(call);
+                      const isActive = leftPrimaryMode === 'roots' && selectedRootCall === call;
+
+                      if (!root) {
+                        return (
+                          <div
+                            key={`root-empty-${call}`}
+                            className="h-7 rounded-md border border-slate-200 bg-slate-100/70 text-[11px] text-slate-300 flex items-center justify-center select-none"
+                            title={`${formatCall(call)} is not added to roots`}
+                          >
+                            {formatCall(call)}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div key={root.id} className="relative group/root">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeftPrimaryMode('roots');
+                              setActiveSectionId(null);
+                              setActiveSmartViewId(null);
+                              selectNode(root.id);
+                            }}
+                            className={`h-7 w-full px-1 rounded-md border text-[12px] font-semibold transition-colors ${
+                              isActive
+                                ? 'border-blue-200 bg-blue-100 text-blue-900'
+                                : `border-slate-200 bg-white hover:border-slate-300 ${getSuitColor(call)}`
+                            }`}
+                          >
+                            {formatCall(call)}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openRootDeleteDialog(root.id, call);
+                            }}
+                            className="absolute -top-1 -right-1 opacity-0 group-hover/root:opacity-100 transition-opacity p-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-rose-700 hover:border-rose-200"
+                            title="Delete root"
+                            aria-label={`Delete root ${formatCall(call)}`}
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="space-y-1">
+                {roots.map((root) => {
+                  const call = root.context.sequence[0];
+                  const isActive = leftPrimaryMode === 'roots' && selectedRootCall === call;
+                  return (
+                    <li key={root.id} className="group flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLeftPrimaryMode('roots');
+                          setActiveSectionId(null);
+                          setActiveSmartViewId(null);
+                          selectNode(root.id);
+                        }}
+                        className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className={getSuitColor(call)}>{formatCall(call)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openRootDeleteDialog(root.id, call);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
+                        title="Delete root"
+                        aria-label={`Delete root ${formatCall(call)}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        )}
       </div>
 
       <div className="px-4 py-3 border-t border-slate-200">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-            <FolderPlus className="w-3.5 h-3.5" />
-            Sections
-          </h3>
+        <div className="flex items-center mb-3">
+          <button
+            type="button"
+            onClick={() => setIsSectionsOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+          >
+            <span className="inline-flex items-center gap-2">
+              <FolderPlus className="w-3.5 h-3.5" />
+              Sections
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => openCreateModal(null)}
@@ -465,68 +687,97 @@ export function LeftPanel() {
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={() => setIsSectionsOpen((prev) => !prev)}
+            className="ml-auto p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+            title={isSectionsOpen ? 'Collapse sections' : 'Expand sections'}
+          >
+            {isSectionsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
         </div>
 
-        {sectionTree.length === 0 ? (
-          <div className="rounded-md border border-dashed border-slate-300 bg-white p-3">
-            <div className="text-xs text-slate-500">No sections yet</div>
-            <button
-              type="button"
-              onClick={() => openCreateModal(null)}
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:text-blue-800"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Create first section
-            </button>
-          </div>
-        ) : (
-          <ul className="space-y-1">{renderSectionRows(sectionTree, 0)}</ul>
+        {isSectionsOpen && (
+          <>
+            {sectionTree.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-300 bg-white p-3">
+                <div className="text-xs text-slate-500">No sections yet</div>
+                <button
+                  type="button"
+                  onClick={() => openCreateModal(null)}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:text-blue-800"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create first section
+                </button>
+              </div>
+            ) : (
+              <ul className="space-y-1">{renderSectionRows(sectionTree, 0)}</ul>
+            )}
+          </>
         )}
       </div>
 
       <div className="px-4 py-2 border-t border-slate-200">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Bookmark className="w-3.5 h-3.5" />
-          Bookmarks
-        </h3>
-        {bookmarks.length === 0 ? (
-          <div className="text-xs text-slate-400 italic px-2">No bookmarks</div>
-        ) : (
-          <ul className="space-y-1">
-            {bookmarks.map((bm) => (
-              <li key={bm.id}>
-                <button
-                  onClick={() => {
-                    setLeftPrimaryMode('roots');
-                    setActiveSectionId(null);
-                    setActiveSmartViewId(null);
-                    selectNode(bm.id);
-                  }}
-                  className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors truncate ${
-                    selectedNodeId === bm.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {bm.context.sequence.map((c, i) => (
-                    <span key={i} className="inline-flex items-center">
-                      <span className={getSuitColor(c)}>{formatCall(c)}</span>
-                      {i < bm.context.sequence.length - 1 && (
-                        <span className="mx-1 text-slate-400">-</span>
-                      )}
-                    </span>
-                  ))}
-                </button>
-              </li>
-            ))}
-          </ul>
+        <button
+          type="button"
+          onClick={() => setIsBookmarksOpen((prev) => !prev)}
+          className="w-full mb-3 flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+        >
+          <span className="inline-flex items-center gap-2">
+            <Bookmark className="w-3.5 h-3.5" />
+            Bookmarks
+          </span>
+          {isBookmarksOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+        {isBookmarksOpen && (
+          <>
+            {bookmarks.length === 0 ? (
+              <div className="text-xs text-slate-400 italic px-2">No bookmarks</div>
+            ) : (
+              <ul className="space-y-1">
+                {bookmarks.map((bm) => (
+                  <li key={bm.id}>
+                    <button
+                      onClick={() => {
+                        setLeftPrimaryMode('roots');
+                        setActiveSectionId(null);
+                        setActiveSmartViewId(null);
+                        selectNode(bm.id);
+                      }}
+                      className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors truncate ${
+                        selectedNodeId === bm.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {bm.context.sequence.map((c, i) => (
+                        <span key={i} className="inline-flex items-center">
+                          <span className={getSuitColor(c)}>{formatCall(c)}</span>
+                          {i < bm.context.sequence.length - 1 && (
+                            <span className="mx-1 text-slate-400">-</span>
+                          )}
+                        </span>
+                      ))}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
 
       <div className="px-4 py-4 border-t border-slate-200 mt-auto">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5" />
-            Smart Views
-          </h3>
+        <div className="flex items-center mb-3">
+          <button
+            type="button"
+            onClick={() => setIsSmartViewsOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5" />
+              Smart Views
+            </span>
+          </button>
           <button
             type="button"
             onClick={openCreateSmartViewModal}
@@ -535,11 +786,132 @@ export function LeftPanel() {
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={() => setIsSmartViewsOpen((prev) => !prev)}
+            className="ml-auto p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+            title={isSmartViewsOpen ? 'Collapse smart views' : 'Expand smart views'}
+          >
+            {isSmartViewsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
         </div>
-        <ul className="space-y-1">
-          {renderSmartViewRows()}
-        </ul>
+        {isSmartViewsOpen && (
+          <ul className="space-y-1">
+            {renderSmartViewRows()}
+          </ul>
+        )}
       </div>
+
+      {isRootPickerOpen && (
+        <div
+          className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-3"
+          onClick={closeRootPicker}
+        >
+          <div
+            className="w-full max-w-[292px] rounded-xl border border-slate-200 bg-white shadow-xl p-3"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Add root calls
+            </div>
+            <div className="mt-1 text-[11px] text-slate-600">
+              Select one or more bids. Existing roots are disabled.
+            </div>
+
+            <div className="mt-2.5 grid grid-cols-5 gap-1">
+              {ROOT_BID_CALLS.map((call) => {
+                const isDisabled = existingRootCalls.has(call);
+                const isSelected = selectedRootCalls.includes(call);
+                return (
+                  <button
+                    key={`root-picker-${call}`}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => toggleRootCallSelection(call)}
+                    className={`h-7 px-1 rounded-md text-[11px] border transition-colors ${
+                      isSelected
+                        ? 'border-blue-300 bg-blue-100 text-blue-700'
+                        : isDisabled
+                          ? 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
+                          : `border-slate-200 bg-white hover:border-slate-300 ${getSuitColor(call)}`
+                    }`}
+                    title={isDisabled ? `${formatCall(call)} already exists in roots` : `Add ${formatCall(call)}`}
+                  >
+                    {formatCall(call)}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2 text-[10px] text-slate-500">
+              Selected: {selectedRootCalls.length}
+            </div>
+
+            {rootPickerError && (
+              <div className="mt-1.5 text-[11px] text-rose-600">{rootPickerError}</div>
+            )}
+
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeRootPicker}
+                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitRootPicker}
+                className="h-8 px-3 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                disabled={selectedRootCalls.length === 0}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rootDeleteDialog && (
+        <div
+          className="absolute inset-0 z-[55] bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-3"
+          onClick={closeRootDeleteDialog}
+        >
+          <div
+            className="w-full max-w-xs rounded-xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-900">Delete root?</div>
+              <div className="mt-0.5 text-xs">
+                <span className={getSuitColor(rootDeleteDialog.call)}>{formatCall(rootDeleteDialog.call)}</span>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 text-sm text-slate-600">
+              This will remove the root and {rootDeleteDialog.descendantsCount} continuation
+              {rootDeleteDialog.descendantsCount === 1 ? '' : 's'}.
+            </div>
+
+            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeRootDeleteDialog}
+                className="h-8 px-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRootDelete}
+                className="h-8 px-3 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {sectionModal && (
         <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4">

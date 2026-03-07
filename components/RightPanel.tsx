@@ -2,7 +2,6 @@ import { useBiddingStore } from '@/store/useBiddingStore';
 import { formatCall, getSuitColor } from '@/lib/utils';
 import { X, CheckCircle2, Trash2, AlertTriangle, Reply, CornerDownRight } from 'lucide-react';
 import { useState } from 'react';
-import { NodeSectionAssignment } from './NodeSectionAssignment';
 
 export function RightPanel() {
   const { nodes, selectedNodeId, selectNode, updateNode, deleteNode, addNode, toggleRightPanel } = useBiddingStore();
@@ -19,7 +18,7 @@ export function RightPanel() {
 
   if (!node) {
     return (
-      <div className="h-full w-full border-l border-slate-200 bg-slate-50 flex items-center justify-center relative">
+      <div className="h-full w-full border-l border-[#DBEAFE] bg-slate-50 flex items-center justify-center relative">
         <button 
           onClick={toggleRightPanel}
           className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200"
@@ -89,7 +88,7 @@ export function RightPanel() {
   const unansweredCount = topLevelComments.filter((c: any) => !repliesByParent[c.id] || repliesByParent[c.id].length === 0).length;
 
   return (
-    <div className="h-full w-full border-l border-slate-200 bg-white flex flex-col overflow-y-auto">
+    <div className="h-full w-full border-l border-[#DBEAFE] bg-white flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between py-2 px-3 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
         <div className="flex items-center gap-1 font-mono text-xs font-semibold overflow-x-auto whitespace-nowrap pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -212,13 +211,6 @@ export function RightPanel() {
               <option value="FG">FG - forcing game</option>
               <option value="SL">SL - slam try</option>
             </select>
-          </div>
-        </div>
-
-        <div className="pt-1">
-          <div className="text-[10px] text-slate-500 mb-1 font-medium uppercase tracking-wider">Sections</div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-            <NodeSectionAssignment nodeId={node.id} />
           </div>
         </div>
 

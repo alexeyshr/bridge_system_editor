@@ -130,3 +130,21 @@ test('deleting section moves children to parent and does not delete bidding node
   assert.equal(state.sectionsById[grandChildId]?.parentId, child1Id);
   assert.equal(Object.keys(state.nodes).length, beforeNodeCount + 1);
 });
+
+test('section expansion state toggles in session and cleans up on delete', () => {
+  const root = useBiddingStore.getState().createSection('Competitive');
+  assert.equal(root.ok, true);
+  const sectionId = root.sectionId as string;
+
+  const beforeToggle = useBiddingStore.getState().sectionExpandedById[sectionId];
+  assert.equal(beforeToggle, true);
+
+  useBiddingStore.getState().toggleSectionExpanded(sectionId);
+  assert.equal(useBiddingStore.getState().sectionExpandedById[sectionId], false);
+
+  useBiddingStore.getState().setSectionExpanded(sectionId, true);
+  assert.equal(useBiddingStore.getState().sectionExpandedById[sectionId], true);
+
+  useBiddingStore.getState().deleteSection(sectionId);
+  assert.equal(useBiddingStore.getState().sectionExpandedById[sectionId], undefined);
+});

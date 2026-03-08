@@ -32,10 +32,10 @@ Plan: `specs/008-systems-lifecycle-and-tournament-usage/plan.md`
 
 ## F04 Tournament Usage Binding
 
-- [ ] T1130 Implement bind/unbind version for tournament scope (pair/team/global).
-- [ ] T1131 Implement freeze-on-start rules and transition checks.
-- [ ] T1132 Expose binding view in tournament prep UI.
-- [ ] T1133 [P] Add state machine tests for binding transitions.
+- [x] T1130 Implement bind/unbind version for tournament scope (pair/team/global).
+- [x] T1131 Implement freeze-on-start rules and transition checks.
+- [x] T1132 Expose binding view in tournament prep UI.
+- [x] T1133 [P] Add state machine tests for binding transitions.
 
 ## F05 Template Profiles (Bootstrap)
 

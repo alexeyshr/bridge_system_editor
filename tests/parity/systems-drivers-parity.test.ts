@@ -3,6 +3,7 @@ import test from 'node:test';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../lib/db/drizzle/client';
 import { biddingNodes, biddingSystems, systemShares, users } from '../../lib/db/drizzle/schema';
+import { InvalidStateError } from '../../lib/server/domain-errors';
 import { drizzleSystemsDriver } from '../../lib/server/drivers/drizzle-systems-driver';
 import { createEntityId } from '../../lib/server/utils/id';
 
@@ -191,6 +192,33 @@ testIfDb('drizzle systems driver lifecycle and tournament bindings path', async 
 
     const frozen = await drizzleSystemsDriver.freezeTournamentBinding(created.id, ownerId, binding.id);
     assert.equal(frozen.status, 'frozen');
+
+    await assert.rejects(
+      () =>
+        drizzleSystemsDriver.upsertTournamentBinding(created.id, ownerId, {
+          tournamentId: 'tournament-1',
+          scopeType: 'global',
+          versionId: published.id,
+        }),
+      (error: unknown) => error instanceof InvalidStateError,
+    );
+
+    await assert.rejects(
+      () => drizzleSystemsDriver.removeTournamentBinding(created.id, ownerId, binding.id),
+      (error: unknown) => error instanceof InvalidStateError,
+    );
+
+    const pairBinding = await drizzleSystemsDriver.upsertTournamentBinding(created.id, ownerId, {
+      tournamentId: 'tournament-1',
+      scopeType: 'pair',
+      scopeId: 'pair-42',
+      versionId: published.id,
+    });
+    assert.equal(pairBinding.status, 'active');
+
+    const freezeResult = await drizzleSystemsDriver.freezeTournamentBindings(created.id, ownerId, 'tournament-1');
+    assert.equal(freezeResult.frozenCount, 1);
+    assert.equal(freezeResult.alreadyFrozenCount, 1);
 
     await drizzleSystemsDriver.upsertSystemNodes(created.id, ownerId, {
       nodes: [{ sequenceId: '1C-1H', payload: { forcing: 'F1' } }],

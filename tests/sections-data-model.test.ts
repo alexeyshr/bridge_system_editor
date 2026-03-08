@@ -371,6 +371,39 @@ test('removing root entry does not delete bidding nodes', () => {
   assert.equal(useBiddingStore.getState().rootEntryNodeIds.includes(rootId), false);
 });
 
+test('removing section links and subtree rules does not delete bidding nodes', () => {
+  const section = useBiddingStore.getState().createSection('Safety');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  const rootNodeId = nid('1C 1D 1H');
+  const childNodeId = nid('1C 1D 1H 2S');
+  if (!useBiddingStore.getState().nodes[childNodeId]) {
+    useBiddingStore.getState().addNode(rootNodeId, '2S');
+  }
+
+  const beforeNodeCount = Object.keys(useBiddingStore.getState().nodes).length;
+
+  const assignResult = useBiddingStore.getState().assignNodeToSection(rootNodeId, sectionId);
+  assert.equal(assignResult.ok, true);
+  const unassignResult = useBiddingStore.getState().unassignNodeFromSection(rootNodeId, sectionId);
+  assert.equal(unassignResult.ok, true);
+
+  const ruleResult = useBiddingStore.getState().createSubtreeRule(sectionId, rootNodeId, true);
+  assert.equal(ruleResult.ok, true);
+  assert.equal(typeof ruleResult.ruleId, 'string');
+  const ruleId = ruleResult.ruleId as string;
+  const deleteRuleResult = useBiddingStore.getState().deleteSubtreeRule(ruleId);
+  assert.equal(deleteRuleResult.ok, true);
+
+  const state = useBiddingStore.getState();
+  assert.equal(!!state.nodes[rootNodeId], true);
+  assert.equal(!!state.nodes[childNodeId], true);
+  assert.equal(Object.keys(state.nodes).length, beforeNodeCount);
+  assert.equal(state.nodeSectionIds[rootNodeId], undefined);
+  assert.equal(state.subtreeRulesById[ruleId], undefined);
+});
+
 test('adding top-level node auto-creates root entry and selecting root is persisted', () => {
   useBiddingStore.getState().addNode(null, '2D');
   const rootId = nid('2D');

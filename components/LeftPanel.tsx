@@ -13,6 +13,7 @@ import {
   normalizeBiddingCall,
   type BiddingStep,
 } from '@/lib/bidding-steps';
+import { getMutationIntentUiMeta } from '@/lib/domain/bidding/mutation-intents';
 import {
   ArrowDown,
   ArrowUp,
@@ -246,6 +247,7 @@ export function LeftPanel() {
   );
   const canSubmitSingleMode = selectedRootCalls.length > 0;
   const canSubmitSequenceMode = sequenceRootSteps.length > 0 && !sequenceConflictsExistingRoot;
+  const removeRootIntentMeta = getMutationIntentUiMeta('remove-root-entry');
   const editingRootLabel = useMemo(() => {
     if (!rootEditEntryNodeId) return '';
     const node = nodes[rootEditEntryNodeId];
@@ -1557,7 +1559,7 @@ export function LeftPanel() {
           >
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="text-sm font-semibold text-slate-900">
-                Remove root entry?
+                {removeRootIntentMeta.title}
               </div>
               <div className="mt-0.5 text-xs">
                 <span className="text-slate-700">{rootDeleteDialog.label}</span>
@@ -1579,9 +1581,9 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={confirmRootDelete}
-                className="h-8 px-3 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                className={`h-8 px-3 text-sm font-semibold text-white rounded-md transition-colors ${removeRootIntentMeta.confirmButtonClassName}`}
               >
-                Remove
+                {removeRootIntentMeta.confirmLabel}
               </button>
             </div>
           </div>

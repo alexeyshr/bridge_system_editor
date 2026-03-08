@@ -19,6 +19,7 @@ import {
   type BiddingActor,
   type BiddingStep,
 } from '@/lib/bidding-steps';
+import { getMutationIntentUiMeta } from '@/lib/domain/bidding/mutation-intents';
 
 type SequenceViewMode = 'classic' | 'compact';
 
@@ -105,6 +106,7 @@ export function SequenceRow({
   const childrenCount = Object.keys(nodes).filter(key => key.startsWith(prefix) && key.split(" ").length === seq.length + 1).length;
   const hasChildren = childrenCount > 0;
   const descendantsCount = Object.keys(nodes).filter((key) => key === node.id || key.startsWith(prefix)).length - 1;
+  const deleteIntentMeta = getMutationIntentUiMeta('delete-node');
 
   const isCallAvailable = (call: string) => {
     const newNodeId = buildSequenceIdFromSteps([
@@ -605,7 +607,7 @@ export function SequenceRow({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-slate-100">
-              <div className="text-sm font-semibold text-slate-900">Delete sequence?</div>
+              <div className="text-sm font-semibold text-slate-900">{deleteIntentMeta.title}</div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {seq.map((step, i) => (
                   <span key={`${node.id}-delete-${i}`} className="inline-flex items-center">
@@ -632,9 +634,9 @@ export function SequenceRow({
               <button
                 type="button"
                 onClick={confirmDelete}
-                className="h-8 px-3 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                className={`h-8 px-3 text-sm font-semibold text-white rounded-md transition-colors ${deleteIntentMeta.confirmButtonClassName}`}
               >
-                Delete
+                {deleteIntentMeta.confirmLabel}
               </button>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import type { BiddingStep } from "@/lib/bidding-steps"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -37,12 +38,44 @@ export function getBidValue(call: string): number {
   return level * 10 + suitsOrder.indexOf(suit);
 }
 
-export function compareSequences(seqA: string[], seqB: string[]): number {
+type SequenceEntry = string | BiddingStep;
+
+function toComparableStep(value: SequenceEntry): { call: string; actor: 'our' | 'opp' } {
+  if (typeof value !== 'string') {
+    return {
+      call: value.call,
+      actor: value.actor === 'opp' ? 'opp' : 'our',
+    };
+  }
+
+  const trimmed = value.trim();
+  const prefixed = trimmed.match(/^([op]):(.+)$/i);
+  if (prefixed) {
+    return {
+      call: prefixed[2],
+      actor: prefixed[1].toLowerCase() === 'p' ? 'opp' : 'our',
+    };
+  }
+
+  return {
+    call: trimmed,
+    actor: 'our',
+  };
+}
+
+export function compareStepSequences(seqA: SequenceEntry[], seqB: SequenceEntry[]): number {
   const len = Math.min(seqA.length, seqB.length);
   for (let i = 0; i < len; i++) {
-    const valA = getBidValue(seqA[i]);
-    const valB = getBidValue(seqB[i]);
+    const stepA = toComparableStep(seqA[i]);
+    const stepB = toComparableStep(seqB[i]);
+    const valA = getBidValue(stepA.call);
+    const valB = getBidValue(stepB.call);
     if (valA !== valB) return valA - valB;
+    if (stepA.actor !== stepB.actor) return stepA.actor === 'our' ? -1 : 1;
   }
   return seqA.length - seqB.length;
+}
+
+export function compareSequences(seqA: SequenceEntry[], seqB: SequenceEntry[]): number {
+  return compareStepSequences(seqA, seqB);
 }

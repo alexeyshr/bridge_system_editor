@@ -1,6 +1,6 @@
 # Product Roadmap (Now / Next / Later)
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 Cadence:
 - 6-week build cycles + cooldown window (Shape Up style).
@@ -14,32 +14,40 @@ Source alignment:
 
 ## Now
 
-1. Execute PR-9 platform core hardening (`specs/005-platform-core-hardening/`):
+1. Finish PR-9 platform core hardening (`specs/005-platform-core-hardening/`):
    - Drizzle-only cutover (remove Prisma path),
-   - Zustand slice refactor + Error Boundaries,
-   - auth migration gate + rate limiting.
-2. Implement portal-ready collaboration baseline:
-   - PostgreSQL FTS + indexing (no external search engine),
-   - SSE notifications for system updates,
-   - schemaVersion migration strategy.
-3. Add production operability baseline:
-   - structured logs (`pino`),
-   - error tracking (Sentry),
-   - final QA evidence gate.
+   - Zustand slice architecture + Error Boundaries,
+   - auth migration gate + rate limiting,
+   - observability baseline.
+2. Deliver Editor Surface v2 (`specs/007-editor-surface-v2/`):
+   - undo/redo,
+   - safe delete UX split,
+   - multi-select batch actions,
+   - section drag/drop reordering,
+   - persisted UI state.
+3. Introduce systems lifecycle above editor (`specs/008-systems-lifecycle-and-tournament-usage/`):
+   - Systems Hub,
+   - draft/published versioning,
+   - version compare + rollback,
+   - tournament binding by `systemId + versionId`.
+4. Start collaboration and sharing layer (`specs/009-collaboration-discussions-and-sharing/`):
+   - role-based permissions,
+   - invite channels (email/username/Telegram),
+   - discussion threads + mentions,
+   - publish read-only link.
 
 ## Next
 
-1. Auth and access model hardening:
-   - email/password,
-   - Telegram login/linking,
-   - roles and permissions for sharing.
-2. Collaboration features:
-   - invite by email,
-   - invite internal users,
-   - Telegram share handoff.
-3. Persistence behavior:
-   - auto-save as default canonical path,
-   - import/export as interoperability tool, not primary save model.
+1. Domain depth improvements:
+   - legal/illegal/duplicate bid validation visibility,
+   - QA smart views (`Dead ends`, `No meaning`, `No HCP`, `No forcing`, `Conflicts`),
+   - actor-aware visual legend polish.
+2. System profile templates and onboarding:
+   - `Standard`, `2/1`, `Precision`,
+   - starter roots/sections and guided setup.
+3. Node change timeline:
+   - node-level history in right panel,
+   - audit-based attribution (`who/when/what`).
 
 ## Later
 
@@ -54,6 +62,9 @@ Source alignment:
    - public templates,
    - discoverable systems,
    - club/school spaces.
+4. Advanced collaboration:
+   - proposal workflow from discussions to draft changes,
+   - moderation policies and abuse controls.
 
 ## Planning Rules
 

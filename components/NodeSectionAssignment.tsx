@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { type SectionTreeNode, useBiddingStore } from '@/store/useBiddingStore';
+import { getMutationIntentUiMeta } from '@/lib/domain/bidding/mutation-intents';
 
 interface NodeSectionAssignmentProps {
   nodeId: string;
@@ -13,6 +14,11 @@ interface FlatSectionOption {
   label: string;
   pathLabel: string;
 }
+
+type SectionRemoveDialogState =
+  | { intent: 'remove-node-section'; sectionId: string; label: string }
+  | { intent: 'remove-subtree-rule'; ruleId: string; label: string }
+  | null;
 
 function flattenSections(
   tree: SectionTreeNode[],
@@ -46,6 +52,7 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
 
   const [error, setError] = useState('');
   const [selectedForSubtree, setSelectedForSubtree] = useState('');
+  const [removeDialog, setRemoveDialog] = useState<SectionRemoveDialogState>(null);
 
   const sectionOptions = flattenSections(
     getSectionTree(),
@@ -59,9 +66,13 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
   const subtreeRuleSectionIds = new Set(subtreeRules.map((rule) => rule.sectionId));
 
   const handleToggleDirect = (sectionId: string, checked: boolean) => {
-    const result = checked
-      ? assignNodeToSection(nodeId, sectionId)
-      : unassignNodeFromSection(nodeId, sectionId);
+    if (!checked) {
+      const label = sectionsById[sectionId]?.name ?? 'Section';
+      setRemoveDialog({ intent: 'remove-node-section', sectionId, label });
+      return;
+    }
+
+    const result = assignNodeToSection(nodeId, sectionId);
     if (!result.ok) {
       setError(result.error || 'Failed to update assignment.');
       return;
@@ -84,12 +95,36 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
   };
 
   const handleRemoveSubtreeRule = (ruleId: string) => {
-    const result = deleteSubtreeRule(ruleId);
+    const rule = subtreeRules.find((item) => item.id === ruleId);
+    const label = rule && sectionsById[rule.sectionId] ? sectionsById[rule.sectionId].name : 'Section';
+    setRemoveDialog({ intent: 'remove-subtree-rule', ruleId, label });
+  };
+
+  const closeRemoveDialog = () => {
+    setRemoveDialog(null);
+  };
+
+  const confirmRemoveDialog = () => {
+    if (!removeDialog) return;
+
+    if (removeDialog.intent === 'remove-node-section') {
+      const result = unassignNodeFromSection(nodeId, removeDialog.sectionId);
+      if (!result.ok) {
+        setError(result.error || 'Failed to remove section link.');
+        return;
+      }
+      setError('');
+      setRemoveDialog(null);
+      return;
+    }
+
+    const result = deleteSubtreeRule(removeDialog.ruleId);
     if (!result.ok) {
-      setError(result.error || 'Failed to delete subtree rule.');
+      setError(result.error || 'Failed to remove subtree rule.');
       return;
     }
     setError('');
+    setRemoveDialog(null);
   };
 
   if (sectionOptions.length === 0) {
@@ -212,6 +247,52 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
       </div>
 
       {error && <div className="text-[10px] text-rose-600">{error}</div>}
+
+      {removeDialog && (
+        <div
+          className="fixed inset-0 z-[70] bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4"
+          onClick={closeRemoveDialog}
+        >
+          <div
+            className="w-full max-w-sm rounded-lg border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-900">
+                {getMutationIntentUiMeta(removeDialog.intent).title}
+              </div>
+              <div className="mt-0.5 text-xs text-slate-700">
+                {removeDialog.label}
+              </div>
+            </div>
+
+            <div className="px-4 py-3 text-sm text-slate-600">
+              {removeDialog.intent === 'remove-node-section'
+                ? 'This will only remove node assignment from this section. The bidding tree remains unchanged.'
+                : 'This will only remove subtree assignment rule. Nodes and sequences remain unchanged.'}
+            </div>
+
+            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeRemoveDialog}
+                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveDialog}
+                className={`h-8 px-3 rounded-md text-sm text-white ${
+                  getMutationIntentUiMeta(removeDialog.intent).confirmButtonClassName
+                }`}
+              >
+                {getMutationIntentUiMeta(removeDialog.intent).confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

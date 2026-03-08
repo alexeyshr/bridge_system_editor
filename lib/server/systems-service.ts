@@ -1,7 +1,7 @@
 import { drizzleSystemsDriver } from '@/lib/server/drivers/drizzle-systems-driver';
-import type { ResolvedAccess, ShareRole } from './drivers/types';
+import type { ResolvedAccess, ShareRole, TournamentBindingScope } from './drivers/types';
 
-export { AccessDeniedError, NotFoundError, RevisionConflictError, UserLookupError } from './domain-errors';
+export { AccessDeniedError, InvalidStateError, NotFoundError, RevisionConflictError, UserLookupError } from './domain-errors';
 
 export async function resolveSystemAccess(systemId: string, userId: string): Promise<ResolvedAccess> {
   return drizzleSystemsDriver.resolveSystemAccess(systemId, userId);
@@ -49,4 +49,45 @@ export async function upsertSystemShare(
   input: { role: ShareRole; userId?: string; email?: string },
 ) {
   return drizzleSystemsDriver.upsertSystemShare(systemId, ownerId, input);
+}
+
+export async function listSystemVersions(systemId: string, userId: string) {
+  return drizzleSystemsDriver.listSystemVersions(systemId, userId);
+}
+
+export async function publishSystemVersion(
+  systemId: string,
+  userId: string,
+  input: { label?: string | null; notes?: string | null },
+) {
+  return drizzleSystemsDriver.publishSystemVersion(systemId, userId, input);
+}
+
+export async function createDraftFromVersion(systemId: string, userId: string, versionId: string) {
+  return drizzleSystemsDriver.createDraftFromVersion(systemId, userId, versionId);
+}
+
+export async function listTournamentBindings(
+  systemId: string,
+  userId: string,
+  input?: { tournamentId?: string },
+) {
+  return drizzleSystemsDriver.listTournamentBindings(systemId, userId, input);
+}
+
+export async function upsertTournamentBinding(
+  systemId: string,
+  userId: string,
+  input: {
+    tournamentId: string;
+    scopeType: TournamentBindingScope;
+    scopeId?: string;
+    versionId: string;
+  },
+) {
+  return drizzleSystemsDriver.upsertTournamentBinding(systemId, userId, input);
+}
+
+export async function freezeTournamentBinding(systemId: string, userId: string, bindingId: string) {
+  return drizzleSystemsDriver.freezeTournamentBinding(systemId, userId, bindingId);
 }

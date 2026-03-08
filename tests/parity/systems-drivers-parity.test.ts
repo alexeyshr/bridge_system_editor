@@ -143,3 +143,69 @@ testIfDb('drizzle systems driver mutation path', async () => {
     await cleanupUsers([ownerId, editorId]);
   }
 });
+
+testIfDb('drizzle systems driver lifecycle and tournament bindings path', async () => {
+  const ownerId = createEntityId('usr');
+  const now = new Date();
+
+  await db.insert(users).values([
+    { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
+  ]);
+
+  try {
+    const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
+      title: 'Lifecycle baseline',
+      description: 'Lifecycle',
+    });
+
+    await drizzleSystemsDriver.upsertSystemNodes(created.id, ownerId, {
+      nodes: [{ sequenceId: '1C-1D', payload: { forcing: 'NF' } }],
+      baseRevision: 1,
+      removeSequenceIds: [],
+    });
+
+    const published = await drizzleSystemsDriver.publishSystemVersion(created.id, ownerId, {
+      label: 'v1',
+      notes: 'Initial publish',
+    });
+    assert.equal(published.systemId, created.id);
+    assert.equal(published.versionNumber, 1);
+
+    const versions = await drizzleSystemsDriver.listSystemVersions(created.id, ownerId);
+    assert.equal(versions.length, 1);
+    assert.equal(versions[0]?.id, published.id);
+
+    const binding = await drizzleSystemsDriver.upsertTournamentBinding(created.id, ownerId, {
+      tournamentId: 'tournament-1',
+      scopeType: 'global',
+      versionId: published.id,
+    });
+    assert.equal(binding.status, 'active');
+    assert.equal(binding.versionId, published.id);
+
+    const bindings = await drizzleSystemsDriver.listTournamentBindings(created.id, ownerId, {
+      tournamentId: 'tournament-1',
+    });
+    assert.equal(bindings.length, 1);
+    assert.equal(bindings[0]?.id, binding.id);
+
+    const frozen = await drizzleSystemsDriver.freezeTournamentBinding(created.id, ownerId, binding.id);
+    assert.equal(frozen.status, 'frozen');
+
+    await drizzleSystemsDriver.upsertSystemNodes(created.id, ownerId, {
+      nodes: [{ sequenceId: '1C-1H', payload: { forcing: 'F1' } }],
+      baseRevision: 2,
+      removeSequenceIds: ['1C-1D'],
+    });
+
+    const restored = await drizzleSystemsDriver.createDraftFromVersion(created.id, ownerId, published.id);
+    assert.equal(restored.versionId, published.id);
+    assert.equal(restored.restoredNodes, 1);
+
+    const system = await drizzleSystemsDriver.getSystemForUser(created.id, ownerId);
+    assert.equal(system.nodes.length, 1);
+    assert.equal(system.nodes[0]?.sequenceId, '1C-1D');
+  } finally {
+    await cleanupUsers([ownerId]);
+  }
+});

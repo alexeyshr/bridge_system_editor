@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AccessDeniedError, RevisionConflictError } from '../../lib/server/systems-service';
+import { AccessDeniedError, InvalidStateError, RevisionConflictError } from '../../lib/server/systems-service';
 import { createBiddingRouter } from '../../lib/trpc/routers/bidding';
 import { TRPCError } from '@trpc/server';
 
@@ -51,6 +51,44 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
         displayName: 'User 2',
         telegramUsername: null,
       },
+    }),
+    listSystemVersions: async () => [],
+    publishSystemVersion: async (_systemId: string, _userId: string, input: { label?: string | null; notes?: string | null }) => ({
+      id: 'ver-1',
+      systemId: 'sys-1',
+      versionNumber: 1,
+      label: input.label ?? null,
+      notes: input.notes ?? null,
+      sourceRevision: 2,
+      publishedAt: new Date().toISOString(),
+    }),
+    createDraftFromVersion: async (_systemId: string, _userId: string, versionId: string) => ({
+      systemId: 'sys-1',
+      versionId,
+      versionNumber: 1,
+      revision: 3,
+      restoredNodes: 12,
+    }),
+    listTournamentBindings: async () => [],
+    upsertTournamentBinding: async (_systemId: string, _userId: string, input: { tournamentId: string; scopeType: 'global' | 'pair' | 'team'; scopeId?: string; versionId: string }) => ({
+      id: 'bind-1',
+      tournamentId: input.tournamentId,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId ?? '',
+      status: 'active' as const,
+      systemId: 'sys-1',
+      versionId: input.versionId,
+      versionNumber: 1,
+      boundAt: new Date().toISOString(),
+      frozenAt: null,
+      updatedAt: new Date().toISOString(),
+    }),
+    freezeTournamentBinding: async (systemId: string, _userId: string, bindingId: string) => ({
+      id: bindingId,
+      status: 'frozen' as const,
+      frozenAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      systemId,
     }),
     listInvitesForSystem: async () => [],
     createInviteForSystem: async (_systemId: string, _ownerId: string, _input: { channel: 'email' | 'internal' | 'telegram'; role: 'viewer' | 'editor'; targetEmail?: string; targetUserId?: string; targetTelegramUsername?: string; expiresInHours: number }) => ({
@@ -134,6 +172,38 @@ test('bidding.nodes.sync maps revision conflict to CONFLICT', async () => {
           nodes: [{ sequenceId: '1C', payload: { foo: 'bar' } }],
           baseRevision: 1,
         },
+      }),
+    (error: unknown) => error instanceof TRPCError && error.code === 'CONFLICT',
+  );
+});
+
+test('bidding.lifecycle.publish returns published version payload', async () => {
+  const caller = createCaller('user-1');
+  const result = await caller.lifecycle.publish({
+    systemId: 'sys-1',
+    data: {
+      label: 'v1',
+      notes: 'Initial publish',
+    },
+  });
+
+  assert.equal(result.version.systemId, 'sys-1');
+  assert.equal(result.version.versionNumber, 1);
+  assert.equal(result.version.label, 'v1');
+});
+
+test('bidding.bindings.freeze maps invalid state to CONFLICT', async () => {
+  const caller = createCaller('user-1', {
+    freezeTournamentBinding: async () => {
+      throw new InvalidStateError('Binding is already frozen');
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      caller.bindings.freeze({
+        systemId: 'sys-1',
+        data: { bindingId: 'bind-1' },
       }),
     (error: unknown) => error instanceof TRPCError && error.code === 'CONFLICT',
   );

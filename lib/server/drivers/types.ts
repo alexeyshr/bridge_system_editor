@@ -8,6 +8,8 @@ export type ResolvedAccess = {
 export type ShareRole = 'viewer' | 'editor';
 export type InviteChannel = 'email' | 'internal' | 'telegram';
 export type InviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+export type TournamentBindingScope = 'global' | 'pair' | 'team';
+export type TournamentBindingStatus = 'active' | 'frozen';
 
 export interface SystemsDriver {
   resolveSystemAccess(systemId: string, userId: string): Promise<ResolvedAccess>;
@@ -94,6 +96,101 @@ export interface SystemsDriver {
       displayName: string | null;
       telegramUsername: string | null;
     };
+  }>;
+  listSystemVersions(
+    systemId: string,
+    userId: string,
+  ): Promise<Array<{
+    id: string;
+    systemId: string;
+    versionNumber: number;
+    label: string | null;
+    notes: string | null;
+    sourceRevision: number;
+    publishedAt: string;
+    publishedBy: {
+      id: string;
+      email: string | null;
+      displayName: string | null;
+    };
+  }>>;
+  publishSystemVersion(
+    systemId: string,
+    userId: string,
+    input: {
+      label?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<{
+    id: string;
+    systemId: string;
+    versionNumber: number;
+    label: string | null;
+    notes: string | null;
+    sourceRevision: number;
+    publishedAt: string;
+  }>;
+  createDraftFromVersion(
+    systemId: string,
+    userId: string,
+    versionId: string,
+  ): Promise<{
+    systemId: string;
+    versionId: string;
+    versionNumber: number;
+    revision: number;
+    restoredNodes: number;
+  }>;
+  listTournamentBindings(
+    systemId: string,
+    userId: string,
+    input?: {
+      tournamentId?: string;
+    },
+  ): Promise<Array<{
+    id: string;
+    tournamentId: string;
+    scopeType: TournamentBindingScope;
+    scopeId: string;
+    status: TournamentBindingStatus;
+    systemId: string;
+    versionId: string;
+    versionNumber: number;
+    boundAt: string;
+    frozenAt: string | null;
+    updatedAt: string;
+  }>>;
+  upsertTournamentBinding(
+    systemId: string,
+    userId: string,
+    input: {
+      tournamentId: string;
+      scopeType: TournamentBindingScope;
+      scopeId?: string;
+      versionId: string;
+    },
+  ): Promise<{
+    id: string;
+    tournamentId: string;
+    scopeType: TournamentBindingScope;
+    scopeId: string;
+    status: TournamentBindingStatus;
+    systemId: string;
+    versionId: string;
+    versionNumber: number;
+    boundAt: string;
+    frozenAt: string | null;
+    updatedAt: string;
+  }>;
+  freezeTournamentBinding(
+    systemId: string,
+    userId: string,
+    bindingId: string,
+  ): Promise<{
+    id: string;
+    status: 'frozen';
+    frozenAt: string;
+    updatedAt: string;
   }>;
 }
 

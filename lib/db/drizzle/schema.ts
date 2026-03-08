@@ -14,6 +14,8 @@ import {
 export const shareRoleEnum = pgEnum('share_role', ['viewer', 'editor']);
 export const inviteChannelEnum = pgEnum('invite_channel', ['email', 'internal', 'telegram']);
 export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'revoked', 'expired']);
+export const tournamentBindingScopeEnum = pgEnum('tournament_binding_scope', ['global', 'pair', 'team']);
+export const tournamentBindingStatusEnum = pgEnum('tournament_binding_status', ['active', 'frozen']);
 
 export const users = pgTable('users', {
   id: varchar('id', { length: 191 }).primaryKey(),
@@ -112,6 +114,60 @@ export const systemRevisions = pgTable('system_revisions', {
   systemIdIdx: index('system_revisions_system_id_idx').on(table.systemId),
 }));
 
+export const systemVersions = pgTable('system_versions', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  versionNumber: integer('version_number').notNull(),
+  label: varchar('label', { length: 120 }),
+  notes: text('notes'),
+  sourceRevision: integer('source_revision').notNull(),
+  snapshot: jsonb('snapshot').notNull(),
+  publishedById: varchar('published_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  systemVersionUnique: uniqueIndex('system_versions_system_version_unique').on(table.systemId, table.versionNumber),
+  systemIdIdx: index('system_versions_system_id_idx').on(table.systemId),
+  publishedByIdIdx: index('system_versions_published_by_id_idx').on(table.publishedById),
+}));
+
+export const systemDrafts = pgTable('system_drafts', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  baseVersionId: varchar('base_version_id', { length: 191 }).references(() => systemVersions.id, { onDelete: 'set null' }),
+  draftRevision: integer('draft_revision').notNull().default(1),
+  updatedById: varchar('updated_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  systemUnique: uniqueIndex('system_drafts_system_unique').on(table.systemId),
+  baseVersionIdIdx: index('system_drafts_base_version_id_idx').on(table.baseVersionId),
+  updatedByIdIdx: index('system_drafts_updated_by_id_idx').on(table.updatedById),
+}));
+
+export const tournamentSystemBindings = pgTable('tournament_system_bindings', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  tournamentId: varchar('tournament_id', { length: 191 }).notNull(),
+  scopeType: tournamentBindingScopeEnum('scope_type').notNull().default('global'),
+  scopeId: varchar('scope_id', { length: 191 }).notNull().default(''),
+  versionId: varchar('version_id', { length: 191 }).notNull().references(() => systemVersions.id, { onDelete: 'restrict' }),
+  status: tournamentBindingStatusEnum('status').notNull().default('active'),
+  boundById: varchar('bound_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  boundAt: timestamp('bound_at', { withTimezone: true }).notNull().defaultNow(),
+  frozenAt: timestamp('frozen_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueBindingScope: uniqueIndex('tournament_system_bindings_unique_scope').on(
+    table.systemId,
+    table.tournamentId,
+    table.scopeType,
+    table.scopeId,
+  ),
+  systemTournamentIdx: index('tournament_system_bindings_system_tournament_idx').on(table.systemId, table.tournamentId),
+  versionIdIdx: index('tournament_system_bindings_version_id_idx').on(table.versionId),
+  boundByIdIdx: index('tournament_system_bindings_bound_by_id_idx').on(table.boundById),
+}));
+
 export const schema = {
   users,
   authAccounts,
@@ -120,8 +176,13 @@ export const schema = {
   systemShares,
   shareInvites,
   systemRevisions,
+  systemVersions,
+  systemDrafts,
+  tournamentSystemBindings,
 };
 
 export type ShareRole = (typeof shareRoleEnum.enumValues)[number];
 export type InviteChannel = (typeof inviteChannelEnum.enumValues)[number];
 export type InviteStatus = (typeof inviteStatusEnum.enumValues)[number];
+export type TournamentBindingScope = (typeof tournamentBindingScopeEnum.enumValues)[number];
+export type TournamentBindingStatus = (typeof tournamentBindingStatusEnum.enumValues)[number];

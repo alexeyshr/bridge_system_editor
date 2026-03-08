@@ -10,10 +10,10 @@ Plan: `specs/008-systems-lifecycle-and-tournament-usage/plan.md`
 
 ## F01 Data Model + Contracts
 
-- [ ] T1101 Add entities for system lifecycle (`system`, `draft`, `version`).
-- [ ] T1102 Add tournament binding entities (`systemId + versionId`, scope, freeze state).
-- [ ] T1103 [P] Define tRPC procedures and zod schemas for lifecycle and bindings.
-- [ ] T1104 Add migration and compatibility tests.
+- [x] T1101 Add entities for system lifecycle (`system`, `draft`, `version`).
+- [x] T1102 Add tournament binding entities (`systemId + versionId`, scope, freeze state).
+- [x] T1103 [P] Define tRPC procedures and zod schemas for lifecycle and bindings.
+- [x] T1104 Add migration and compatibility tests.
 
 ## F02 Systems Hub
 

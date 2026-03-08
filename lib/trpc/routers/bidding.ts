@@ -2,21 +2,33 @@ import { createInviteForSystem, listInvitesForSystem, acceptInviteToken } from '
 import { searchUsers } from '@/lib/server/users-service';
 import {
   AccessDeniedError,
+  InvalidStateError,
   NotFoundError,
   RevisionConflictError,
   UserLookupError,
+  createDraftFromVersion,
   createSystemForUser,
+  freezeTournamentBinding,
   getSystemForUser,
+  listSystemVersions,
+  listTournamentBindings,
   listSystemShares,
   listSystemsForUser,
+  publishSystemVersion,
   updateSystemMetadata,
+  upsertTournamentBinding,
   upsertSystemNodes,
   upsertSystemShare,
 } from '@/lib/server/systems-service';
 import { createInviteSchema } from '@/lib/validation/invites';
 import {
+  createDraftFromVersionSchema,
   createSystemSchema,
+  freezeTournamentBindingSchema,
+  listTournamentBindingsSchema,
+  publishSystemVersionSchema,
   updateSystemSchema,
+  upsertTournamentBindingSchema,
   upsertNodesSchema,
   upsertShareSchema,
 } from '@/lib/validation/systems';
@@ -39,6 +51,12 @@ export interface BiddingRouterDeps {
   upsertSystemNodes: typeof upsertSystemNodes;
   listSystemShares: typeof listSystemShares;
   upsertSystemShare: typeof upsertSystemShare;
+  listSystemVersions: typeof listSystemVersions;
+  publishSystemVersion: typeof publishSystemVersion;
+  createDraftFromVersion: typeof createDraftFromVersion;
+  listTournamentBindings: typeof listTournamentBindings;
+  upsertTournamentBinding: typeof upsertTournamentBinding;
+  freezeTournamentBinding: typeof freezeTournamentBinding;
   listInvitesForSystem: typeof listInvitesForSystem;
   createInviteForSystem: typeof createInviteForSystem;
   acceptInviteToken: typeof acceptInviteToken;
@@ -53,6 +71,9 @@ function mapServiceError(error: unknown): never {
     throw new TRPCError({ code: 'NOT_FOUND', message: error.message });
   }
   if (error instanceof RevisionConflictError) {
+    throw new TRPCError({ code: 'CONFLICT', message: error.message });
+  }
+  if (error instanceof InvalidStateError) {
     throw new TRPCError({ code: 'CONFLICT', message: error.message });
   }
   if (error instanceof UserLookupError) {
@@ -73,6 +94,12 @@ const defaultDeps: BiddingRouterDeps = {
   upsertSystemNodes,
   listSystemShares,
   upsertSystemShare,
+  listSystemVersions,
+  publishSystemVersion,
+  createDraftFromVersion,
+  listTournamentBindings,
+  upsertTournamentBinding,
+  freezeTournamentBinding,
   listInvitesForSystem,
   createInviteForSystem,
   acceptInviteToken,
@@ -165,6 +192,103 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
           try {
             const share = await deps.upsertSystemShare(input.systemId, ctx.userId, input.data);
             return { share };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+    }),
+    lifecycle: router({
+      versions: protectedProcedure
+        .input(z.object({ systemId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          try {
+            const versions = await deps.listSystemVersions(input.systemId, ctx.userId);
+            return { versions };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      publish: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: publishSystemVersionSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const version = await deps.publishSystemVersion(input.systemId, ctx.userId, input.data);
+            return { version };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      createDraft: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: createDraftFromVersionSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const draft = await deps.createDraftFromVersion(
+              input.systemId,
+              ctx.userId,
+              input.data.versionId,
+            );
+            return { draft };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+    }),
+    bindings: router({
+      list: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: listTournamentBindingsSchema.optional(),
+          }),
+        )
+        .query(async ({ ctx, input }) => {
+          try {
+            const bindings = await deps.listTournamentBindings(input.systemId, ctx.userId, input.data);
+            return { bindings };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      upsert: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: upsertTournamentBindingSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const binding = await deps.upsertTournamentBinding(input.systemId, ctx.userId, input.data);
+            return { binding };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      freeze: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: freezeTournamentBindingSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const binding = await deps.freezeTournamentBinding(
+              input.systemId,
+              ctx.userId,
+              input.data.bindingId,
+            );
+            return { binding };
           } catch (error) {
             mapServiceError(error);
           }

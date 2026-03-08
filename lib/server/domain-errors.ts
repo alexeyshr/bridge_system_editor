@@ -21,3 +21,9 @@ export class UserLookupError extends Error {
     super(message);
   }
 }
+
+export class InvalidStateError extends Error {
+  constructor(message = 'Invalid state transition') {
+    super(message);
+  }
+}

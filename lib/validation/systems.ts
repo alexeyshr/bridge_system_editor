@@ -35,3 +35,37 @@ export const upsertShareSchema = z
   .refine((value) => !!value.userId || !!value.email, {
     message: 'Either userId or email must be provided',
   });
+
+export const publishSystemVersionSchema = z.object({
+  label: z.string().trim().min(1).max(120).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+});
+
+export const createDraftFromVersionSchema = z.object({
+  versionId: z.string().trim().min(1),
+});
+
+export const listTournamentBindingsSchema = z.object({
+  tournamentId: z.string().trim().min(1).optional(),
+});
+
+export const upsertTournamentBindingSchema = z
+  .object({
+    tournamentId: z.string().trim().min(1),
+    scopeType: z.enum(['global', 'pair', 'team']),
+    scopeId: z.string().trim().min(1).optional(),
+    versionId: z.string().trim().min(1),
+  })
+  .superRefine((value, ctx) => {
+    if (value.scopeType !== 'global' && !value.scopeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scopeId'],
+        message: 'scopeId is required for pair/team scope',
+      });
+    }
+  });
+
+export const freezeTournamentBindingSchema = z.object({
+  bindingId: z.string().trim().min(1),
+});

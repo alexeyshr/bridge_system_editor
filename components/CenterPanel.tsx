@@ -1,17 +1,23 @@
 import { useBiddingStore, BiddingNode } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { SequenceRow } from './SequenceRow';
 import { ChevronsUpDown, ChevronsDownUp, Undo2, Redo2 } from 'lucide-react';
 import { buildSequenceIdFromSteps } from '@/lib/bidding-steps';
 
 type TreeViewMode = 'classic' | 'compact';
 
+interface FlatSectionOption {
+  id: string;
+  pathLabel: string;
+}
+
 export function CenterPanel() {
   const {
     nodes,
     sectionsById,
     selectedNodeId,
+    selectedNodeIds,
     activeRootEntryNodeId,
     searchQuery,
     leftPrimaryMode,
@@ -31,9 +37,18 @@ export function CenterPanel() {
     setActiveRootEntryNodeId,
     setActiveSectionId,
     setActiveSmartViewId,
+    clearNodeSelection,
+    batchAssignNodesToSection,
+    batchSetBookmarks,
+    batchSetRootEntries,
+    batchSetAccepted,
+    getSectionTree,
+    getSectionPath,
   } = useBiddingStore();
   const allNodeIds = Object.keys(nodes);
   const [viewMode, setViewMode] = useState<TreeViewMode>('classic');
+  const [batchSectionId, setBatchSectionId] = useState('');
+  const [batchError, setBatchError] = useState('');
 
   const activeRootNode = activeRootEntryNodeId ? nodes[activeRootEntryNodeId] ?? null : null;
   const effectiveRootEntryNodeId = activeRootNode ? activeRootNode.id : null;
@@ -97,6 +112,26 @@ export function CenterPanel() {
     });
     return ids;
   })();
+
+  const selectedNodeIdsResolved = useMemo(
+    () => selectedNodeIds.filter((nodeId) => !!nodes[nodeId]),
+    [nodes, selectedNodeIds],
+  );
+  const visibleSelectedCount = useMemo(
+    () => selectedNodeIdsResolved.filter((nodeId) => displayNodeIdSet.has(nodeId)).length,
+    [displayNodeIdSet, selectedNodeIdsResolved],
+  );
+  const sectionOptions = useMemo(() => {
+    const flatten = (tree: ReturnType<typeof getSectionTree>, acc: FlatSectionOption[] = []) => {
+      tree.forEach((item) => {
+        const pathLabel = getSectionPath(item.section.id).map((entry) => entry.name).join(' / ');
+        acc.push({ id: item.section.id, pathLabel });
+        flatten(item.children, acc);
+      });
+      return acc;
+    };
+    return flatten(getSectionTree());
+  }, [getSectionPath, getSectionTree]);
 
   const effectiveSelectedNode =
     selectedNodeId && displayNodeIdSet.has(selectedNodeId) ? nodes[selectedNodeId] ?? null : null;
@@ -162,6 +197,47 @@ export function CenterPanel() {
     }
     return visible;
   })();
+
+  const applyBatchAssignSection = () => {
+    if (!batchSectionId) {
+      setBatchError('Select section first.');
+      return;
+    }
+    const result = batchAssignNodesToSection(selectedNodeIdsResolved, batchSectionId);
+    if (!result.ok) {
+      setBatchError(result.error || 'Failed to assign section.');
+      return;
+    }
+    setBatchError('');
+  };
+
+  const applyBatchBookmark = (bookmarked: boolean) => {
+    const result = batchSetBookmarks(selectedNodeIdsResolved, bookmarked);
+    if (!result.ok) {
+      setBatchError(result.error || 'Failed to update bookmarks.');
+      return;
+    }
+    setBatchError('');
+  };
+
+  const applyBatchRootState = (enabled: boolean) => {
+    const result = batchSetRootEntries(selectedNodeIdsResolved, enabled);
+    if (!result.ok) {
+      setBatchError(result.error || 'Failed to update root state.');
+      return;
+    }
+    setBatchError('');
+  };
+
+  const applyBatchAccepted = (accepted: boolean) => {
+    const result = batchSetAccepted(selectedNodeIdsResolved, accepted);
+    if (!result.ok) {
+      setBatchError(result.error || 'Failed to update accepted state.');
+      return;
+    }
+    setBatchError('');
+  };
+
   const depthBase = 0;
 
   return (
@@ -251,6 +327,87 @@ export function CenterPanel() {
           </button>
         </div>
       </div>
+
+      {selectedNodeIdsResolved.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-200 bg-blue-50/50">
+          <div className="text-xs font-medium text-blue-900">
+            Selected: {selectedNodeIdsResolved.length}
+            <span className="text-slate-500 ml-1">visible {visibleSelectedCount}</span>
+          </div>
+          <div className="h-4 w-px bg-blue-200" />
+          <select
+            value={batchSectionId}
+            onChange={(event) => setBatchSectionId(event.target.value)}
+            className="h-7 min-w-[180px] rounded-md border border-blue-200 bg-white px-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Assign section...</option>
+            {sectionOptions.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.pathLabel}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={applyBatchAssignSection}
+            className="h-7 px-2.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+          >
+            Assign
+          </button>
+          <button
+            type="button"
+            onClick={() => applyBatchBookmark(true)}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Bookmark
+          </button>
+          <button
+            type="button"
+            onClick={() => applyBatchBookmark(false)}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Unbookmark
+          </button>
+          <button
+            type="button"
+            onClick={() => applyBatchRootState(true)}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Pin root
+          </button>
+          <button
+            type="button"
+            onClick={() => applyBatchRootState(false)}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Unpin root
+          </button>
+          <button
+            type="button"
+            onClick={() => applyBatchAccepted(true)}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Accept
+          </button>
+          <button
+            type="button"
+            onClick={() => applyBatchAccepted(false)}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Unaccept
+          </button>
+          <button
+            type="button"
+            onClick={clearNodeSelection}
+            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Clear
+          </button>
+          {batchError && (
+            <span className="text-xs text-rose-600">{batchError}</span>
+          )}
+        </div>
+      )}
 
       <div className="px-4 py-2 border-b border-slate-200 bg-slate-50/70 shrink-0">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Current Sequence</div>

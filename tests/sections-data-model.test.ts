@@ -462,6 +462,61 @@ test('import clears undo/redo history stacks', () => {
   assert.equal(state.canRedo, false);
 });
 
+test('multi-select batch actions update nodes in one flow', () => {
+  const state0 = useBiddingStore.getState();
+  const nodeA = nid('1C');
+  const nodeB = nid('1C 1D');
+
+  state0.setNodeSelection([nodeA, nodeB]);
+  assert.deepEqual(new Set(useBiddingStore.getState().selectedNodeIds), new Set([nodeA, nodeB]));
+
+  const section = useBiddingStore.getState().createSection('Batch');
+  assert.equal(section.ok, true);
+  const sectionId = section.sectionId as string;
+
+  const assign = useBiddingStore.getState().batchAssignNodesToSection([nodeA, nodeB], sectionId);
+  assert.equal(assign.ok, true);
+  assert.equal(assign.updatedCount, 2);
+
+  const bookmark = useBiddingStore.getState().batchSetBookmarks([nodeA, nodeB], true);
+  assert.equal(bookmark.ok, true);
+  assert.equal(bookmark.updatedCount, 2);
+
+  const accept = useBiddingStore.getState().batchSetAccepted([nodeA, nodeB], true);
+  assert.equal(accept.ok, true);
+  assert.equal((accept.updatedCount ?? 0) >= 1, true);
+
+  const pinRoots = useBiddingStore.getState().batchSetRootEntries([nodeA, nodeB], true);
+  assert.equal(pinRoots.ok, true);
+  assert.equal((pinRoots.updatedCount ?? 0) >= 1, true);
+
+  const state = useBiddingStore.getState();
+  assert.equal(state.getEffectiveSectionIds(nodeA).includes(sectionId), true);
+  assert.equal(state.getEffectiveSectionIds(nodeB).includes(sectionId), true);
+  assert.equal(!!state.nodes[nodeA].isBookmarked, true);
+  assert.equal(!!state.nodes[nodeB].isBookmarked, true);
+  assert.equal(!!state.nodes[nodeA].meaning?.accepted, true);
+  assert.equal(!!state.nodes[nodeB].meaning?.accepted, true);
+  assert.equal(state.rootEntryNodeIds.includes(nodeA), true);
+  assert.equal(state.rootEntryNodeIds.includes(nodeB), true);
+});
+
+test('batch mutation can be undone as a single step', () => {
+  const nodeA = nid('1C');
+  const nodeB = nid('1C 1D');
+  const state0 = useBiddingStore.getState();
+
+  const result = state0.batchSetBookmarks([nodeA, nodeB], true);
+  assert.equal(result.ok, true);
+  assert.equal(result.updatedCount, 2);
+  assert.equal(useBiddingStore.getState().canUndo, true);
+
+  useBiddingStore.getState().undo();
+  const state = useBiddingStore.getState();
+  assert.equal(!!state.nodes[nodeA].isBookmarked, false);
+  assert.equal(!!state.nodes[nodeB].isBookmarked, false);
+});
+
 test('adding top-level node auto-creates root entry and selecting root is persisted', () => {
   useBiddingStore.getState().addNode(null, '2D');
   const rootId = nid('2D');

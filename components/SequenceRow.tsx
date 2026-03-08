@@ -61,7 +61,10 @@ export function SequenceRow({
 }) {
   const {
     selectedNodeId,
+    selectedNodeIds,
     selectNode,
+    toggleNodeSelection,
+    setNodeSelection,
     toggleExpand,
     toggleBookmark,
     addNode,
@@ -80,6 +83,7 @@ export function SequenceRow({
   const [continuationError, setContinuationError] = useState('');
 
   const isSelected = selectedNodeId === node.id;
+  const isMultiSelected = selectedNodeIds.includes(node.id);
   const seq = node.context.sequence;
   const sequencePathLabel = `${seq.map((step) => (
     step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)
@@ -98,7 +102,7 @@ export function SequenceRow({
   const compactLeftTitle = 'Opener';
   const compactRightTitle = 'Responder';
   const compactCallTextClass = isOpponentStep ? 'text-slate-500' : getSuitColor(lastCall);
-  const showRowActions = isHovered || isSelected || isAddFormOpen || isSectionAssignOpen || isDeleteDialogOpen;
+  const showRowActions = isHovered || isSelected || isMultiSelected || isAddFormOpen || isSectionAssignOpen || isDeleteDialogOpen;
   const isRootEntry = rootEntryNodeIds.includes(node.id);
   
   // Check if node has children
@@ -209,18 +213,41 @@ export function SequenceRow({
     setIsDeleteDialogOpen(false);
   };
 
+  const handleRowClick = (event: React.MouseEvent) => {
+    const isMultiToggle = event.metaKey || event.ctrlKey;
+    if (isMultiToggle) {
+      toggleNodeSelection(node.id);
+      selectNode(node.id);
+      return;
+    }
+    setNodeSelection([node.id]);
+    selectNode(node.id);
+  };
+
   return (
     <div 
       className={`flex flex-col md:flex-row md:items-center px-4 py-2 md:py-1.5 border-b border-slate-100 cursor-pointer text-sm transition-colors group ${
-        isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'
+        (isSelected || isMultiSelected) ? 'bg-blue-50' : 'hover:bg-slate-50'
       }`}
-      onClick={() => selectNode(node.id)}
+      onClick={handleRowClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Sequence Column */}
       <div className="flex-1 min-w-[200px] md:min-w-[300px] flex items-center font-mono text-[13px]">
         <div style={{ width: `${depth * 20}px` }} className="shrink-0 border-l border-slate-200 h-full ml-2" />
+
+        <input
+          type="checkbox"
+          checked={isMultiSelected}
+          onChange={() => {
+            toggleNodeSelection(node.id);
+            selectNode(node.id);
+          }}
+          onClick={(event) => event.stopPropagation()}
+          className="mr-1.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          title="Select for batch actions"
+        />
         
         <button 
           className={`w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 shrink-0 ${hasChildren ? 'text-slate-500' : 'opacity-0 cursor-default'}`}

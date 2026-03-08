@@ -131,6 +131,12 @@ export interface RootEntryMutationResult {
   error?: string;
 }
 
+export interface BatchMutationResult {
+  ok: boolean;
+  updatedCount?: number;
+  error?: string;
+}
+
 interface DraftPayload {
   version: number;
   savedAt: string;
@@ -154,6 +160,7 @@ interface DraftPayload {
 interface EditorHistorySnapshot {
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
   rootEntryNodeIds: string[];
   activeRootEntryNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
@@ -192,6 +199,7 @@ interface ExportSchemaV2 {
 interface BiddingState {
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
   rootEntryNodeIds: string[];
   activeRootEntryNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
@@ -231,6 +239,9 @@ interface BiddingState {
   renameNode: (id: string, newCall: string) => void;
   deleteNode: (id: string) => void;
   selectNode: (id: string | null) => void;
+  toggleNodeSelection: (id: string) => void;
+  setNodeSelection: (nodeIds: string[]) => void;
+  clearNodeSelection: () => void;
   toggleExpand: (id: string) => void;
   setSearchQuery: (query: string) => void;
   toggleBookmark: (id: string) => void;
@@ -277,6 +288,10 @@ interface BiddingState {
   setLeftPrimaryMode: (mode: LeftPrimaryMode) => void;
   addRootEntry: (nodeId: string) => RootEntryMutationResult;
   removeRootEntry: (nodeId: string) => RootEntryMutationResult;
+  batchAssignNodesToSection: (nodeIds: string[], sectionId: string) => BatchMutationResult;
+  batchSetBookmarks: (nodeIds: string[], bookmarked: boolean) => BatchMutationResult;
+  batchSetRootEntries: (nodeIds: string[], enabled: boolean) => BatchMutationResult;
+  batchSetAccepted: (nodeIds: string[], accepted: boolean) => BatchMutationResult;
   setActiveRootEntryNodeId: (nodeId: string | null) => void;
   setActiveSectionId: (sectionId: string | null) => void;
   setActiveSmartViewId: (smartViewId: string | null) => void;
@@ -470,6 +485,7 @@ function createHistorySnapshot(state: BiddingState): EditorHistorySnapshot {
   return deepClone({
     nodes: state.nodes,
     selectedNodeId: state.selectedNodeId,
+    selectedNodeIds: state.selectedNodeIds,
     rootEntryNodeIds: state.rootEntryNodeIds,
     activeRootEntryNodeId: state.activeRootEntryNodeId,
     sectionsById: state.sectionsById,
@@ -492,6 +508,7 @@ function applyHistorySnapshot(snapshot: EditorHistorySnapshot): Partial<BiddingS
   return {
     nodes: next.nodes,
     selectedNodeId: next.selectedNodeId,
+    selectedNodeIds: next.selectedNodeIds,
     rootEntryNodeIds: next.rootEntryNodeIds,
     activeRootEntryNodeId: next.activeRootEntryNodeId,
     sectionsById: next.sectionsById,
@@ -1679,6 +1696,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
   return {
     nodes: initialNodes,
     selectedNodeId: initialSelectedNodeId && initialNodes[initialSelectedNodeId] ? initialSelectedNodeId : null,
+    selectedNodeIds: initialSelectedNodeId && initialNodes[initialSelectedNodeId] ? [initialSelectedNodeId] : [],
     rootEntryNodeIds: initialRootEntryNodeIds,
     activeRootEntryNodeId: initialActiveRootEntryNodeId,
     sectionsById: initialSectionsById,
@@ -1789,6 +1807,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         set({
           nodes: nodesById,
           selectedNodeId: null,
+          selectedNodeIds: [],
           rootEntryNodeIds,
           activeRootEntryNodeId,
           sectionsById: payload.sectionsById,
@@ -1931,6 +1950,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
             [id]: touchedAt,
           },
           selectedNodeId: id,
+          selectedNodeIds: [id],
           hasUnsavedChanges: true,
           serverSyncError: null,
         });
@@ -2067,6 +2087,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
             : state.selectedNodeId?.startsWith(prefix)
               ? newPrefix + state.selectedNodeId.substring(prefix.length)
               : state.selectedNodeId,
+          selectedNodeIds: normalizeSectionIdList(
+            state.selectedNodeIds.map((selectedId) => {
+              if (selectedId === canonicalId) return newId;
+              if (selectedId.startsWith(prefix)) return newPrefix + selectedId.substring(prefix.length);
+              return selectedId;
+            }),
+          ),
         });
       });
 
@@ -2120,13 +2147,48 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId: state.selectedNodeId === canonicalId || state.selectedNodeId?.startsWith(prefix)
             ? null
             : state.selectedNodeId,
+          selectedNodeIds: state.selectedNodeIds.filter((selectedId) => !isNodeWithinSubtree(selectedId, canonicalId)),
         });
       });
 
       if (didDelete) queueDraftSave();
     },
 
-    selectNode: (id: string | null) => set({ selectedNodeId: id ? canonicalizeNodeId(id) : null }),
+    selectNode: (id: string | null) => set((state) => {
+      if (!id) {
+        return { selectedNodeId: null, selectedNodeIds: [] };
+      }
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
+      return { selectedNodeId: canonicalId, selectedNodeIds: [canonicalId] };
+    }),
+
+    toggleNodeSelection: (id: string) => set((state) => {
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
+      const exists = state.selectedNodeIds.includes(canonicalId);
+      const selectedNodeIds = exists
+        ? state.selectedNodeIds.filter((item) => item !== canonicalId)
+        : normalizeSectionIdList([...state.selectedNodeIds, canonicalId]);
+      return {
+        selectedNodeIds,
+        selectedNodeId: selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null,
+      };
+    }),
+
+    setNodeSelection: (nodeIds: string[]) => set((state) => {
+      const selectedNodeIds = normalizeSectionIdList(
+        nodeIds
+          .map((nodeId) => canonicalizeNodeId(nodeId))
+          .filter((nodeId) => !!state.nodes[nodeId]),
+      );
+      return {
+        selectedNodeIds,
+        selectedNodeId: selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null,
+      };
+    }),
+
+    clearNodeSelection: () => set({ selectedNodeIds: [], selectedNodeId: null }),
 
     toggleExpand: (id: string) => set((state) => {
       const canonicalId = canonicalizeNodeId(id);
@@ -2201,6 +2263,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         return {
           nodes: remoteNodes,
           selectedNodeId,
+          selectedNodeIds: selectedNodeId ? [selectedNodeId] : [],
           rootEntryNodeIds,
           activeRootEntryNodeId,
           sectionsById: {},
@@ -2932,6 +2995,199 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       });
 
       if (didRemove) queueDraftSave();
+      return result;
+    },
+
+    batchAssignNodesToSection: (nodeIds: string[], sectionId: string) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to assign nodes to section.' };
+      let didUpdate = false;
+
+      set((state) => {
+        if (!state.sectionsById[sectionId]) {
+          result = { ok: false, error: 'Section not found.' };
+          return state;
+        }
+
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextNodeSectionIds = { ...state.nodeSectionIds };
+        let updatedCount = 0;
+        canonicalIds.forEach((nodeId) => {
+          const existing = nextNodeSectionIds[nodeId] ?? [];
+          if (existing.includes(sectionId)) return;
+          nextNodeSectionIds[nodeId] = normalizeSectionIdList([...existing, sectionId]);
+          updatedCount += 1;
+        });
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          nodeSectionIds: nextNodeSectionIds,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    batchSetBookmarks: (nodeIds: string[], bookmarked: boolean) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to update bookmarks.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextNodes = { ...state.nodes };
+        let updatedCount = 0;
+        canonicalIds.forEach((nodeId) => {
+          const current = nextNodes[nodeId];
+          if (!current || !!current.isBookmarked === bookmarked) return;
+          nextNodes[nodeId] = { ...current, isBookmarked: bookmarked };
+          updatedCount += 1;
+        });
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          nodes: nextNodes,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    batchSetRootEntries: (nodeIds: string[], enabled: boolean) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to update roots.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const beforeSet = new Set(state.rootEntryNodeIds);
+        const nextRootEntryNodeIds = enabled
+          ? sortNodeIdsBySequence(normalizeSectionIdList([...state.rootEntryNodeIds, ...canonicalIds]), state.nodes)
+          : state.rootEntryNodeIds.filter((rootId) => !canonicalIds.includes(rootId));
+        const afterSet = new Set(nextRootEntryNodeIds);
+
+        const updatedCount = canonicalIds.reduce((acc, nodeId) => {
+          const before = beforeSet.has(nodeId);
+          const after = afterSet.has(nodeId);
+          return before === after ? acc : acc + 1;
+        }, 0);
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId && afterSet.has(state.activeRootEntryNodeId)
+          ? state.activeRootEntryNodeId
+          : nextRootEntryNodeIds[0] ?? null;
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    batchSetAccepted: (nodeIds: string[], accepted: boolean) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to update accepted status.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextNodes = { ...state.nodes };
+        const nextNodeTouchedAtById = { ...state.nodeTouchedAtById };
+        const touchedAt = new Date().toISOString();
+        let updatedCount = 0;
+
+        canonicalIds.forEach((nodeId) => {
+          const node = nextNodes[nodeId];
+          const currentAccepted = !!node?.meaning?.accepted;
+          if (!node || currentAccepted === accepted) return;
+          nextNodes[nodeId] = {
+            ...node,
+            meaning: {
+              ...(node.meaning || {}),
+              accepted,
+            },
+          };
+          nextNodeTouchedAtById[nodeId] = touchedAt;
+          updatedCount += 1;
+        });
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          nodes: nextNodes,
+          nodeTouchedAtById: nextNodeTouchedAtById,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
       return result;
     },
 

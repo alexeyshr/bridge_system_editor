@@ -23,11 +23,11 @@ Plan: `specs/007-editor-surface-v2/plan.md`
 
 ## F03 Multi-Select + Batch Actions
 
-- [ ] T1020 Add center-row multi-select model and selection scope indicator.
-- [ ] T1021 Implement batch assign section action.
-- [ ] T1022 Implement batch bookmark and root pin/unpin actions.
-- [ ] T1023 Implement batch accepted/unaccepted action.
-- [ ] T1024 [P] Add batch action tests and UX safety prompts.
+- [x] T1020 Add center-row multi-select model and selection scope indicator.
+- [x] T1021 Implement batch assign section action.
+- [x] T1022 Implement batch bookmark and root pin/unpin actions.
+- [x] T1023 Implement batch accepted/unaccepted action.
+- [x] T1024 [P] Add batch action tests and UX safety prompts.
 
 ## F04 Sections Drag/Drop
 

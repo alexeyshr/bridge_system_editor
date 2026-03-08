@@ -1,10 +1,22 @@
 import { create } from 'zustand';
 import yaml from 'js-yaml';
+import {
+  buildSequenceIdFromSteps,
+  canonicalizeNodeId,
+  normalizeBiddingCall,
+  normalizeBiddingStep,
+  normalizeStepSequence,
+  parseSequenceIdToSteps,
+  toLegacyCallSequence,
+  type BiddingActor,
+  type BiddingStep,
+} from '@/lib/bidding-steps';
+import { compareStepSequences } from '@/lib/utils';
 
 export interface BiddingNode {
   id: string;
   context: {
-    sequence: string[];
+    sequence: BiddingStep[];
   };
   meaning?: {
     type?: string;
@@ -39,6 +51,7 @@ export interface BiddingNode {
 }
 
 export type LeftPrimaryMode = 'roots' | 'sections' | 'smartViews';
+export type EditorTreeViewMode = 'classic' | 'compact';
 
 export interface SectionRecord {
   id: string;
@@ -80,7 +93,14 @@ export type BuiltInSmartViewId =
   | 'sv_bookmarked'
   | 'sv_no_notes'
   | 'sv_unaccepted'
-  | 'sv_recently_edited';
+  | 'sv_recently_edited'
+  | 'sv_competitive_only'
+  | 'sv_has_opponent_action'
+  | 'sv_dead_ends'
+  | 'sv_no_meaning'
+  | 'sv_no_hcp'
+  | 'sv_no_forcing'
+  | 'sv_conflict_tags';
 
 export type CustomSmartViewField = 'all' | 'sequence' | 'notes' | 'shows';
 
@@ -111,11 +131,25 @@ export interface SmartViewMutationResult {
   error?: string;
 }
 
+export interface RootEntryMutationResult {
+  ok: boolean;
+  nodeId?: string;
+  error?: string;
+}
+
+export interface BatchMutationResult {
+  ok: boolean;
+  updatedCount?: number;
+  error?: string;
+}
+
 interface DraftPayload {
   version: number;
   savedAt: string;
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
+  rootEntryNodeIds?: string[];
+  activeRootEntryNodeId?: string | null;
   sectionsById?: Record<string, SectionRecord>;
   sectionRootOrder?: string[];
   nodeSectionIds?: Record<string, string[]>;
@@ -124,15 +158,42 @@ interface DraftPayload {
   customSmartViewOrder?: string[];
   smartViewPinnedById?: Record<string, boolean>;
   nodeTouchedAtById?: Record<string, string>;
+  sectionExpandedById?: Record<string, boolean>;
   leftPrimaryMode?: LeftPrimaryMode;
   activeSectionId?: string | null;
   activeSmartViewId?: string | null;
+  searchQuery?: string;
+  isLeftPanelOpen?: boolean;
+  isRightPanelOpen?: boolean;
+  treeViewMode?: EditorTreeViewMode;
+}
+
+interface EditorHistorySnapshot {
+  nodes: Record<string, BiddingNode>;
+  selectedNodeId: string | null;
+  selectedNodeIds: string[];
+  rootEntryNodeIds: string[];
+  activeRootEntryNodeId: string | null;
+  sectionsById: Record<string, SectionRecord>;
+  sectionRootOrder: string[];
+  nodeSectionIds: Record<string, string[]>;
+  subtreeRulesById: Record<string, SubtreeRuleRecord>;
+  customSmartViewsById: Record<string, CustomSmartViewRecord>;
+  customSmartViewOrder: string[];
+  smartViewPinnedById: Record<string, boolean>;
+  nodeTouchedAtById: Record<string, string>;
+  sectionExpandedById: Record<string, boolean>;
+  leftPrimaryMode: LeftPrimaryMode;
+  activeSectionId: string | null;
+  activeSmartViewId: string | null;
 }
 
 interface ExportSchemaV2 {
   schemaVersion: number;
   exportedAt: string;
   nodes: BiddingNode[];
+  rootEntryNodeIds: string[];
+  activeRootEntryNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
   sectionRootOrder: string[];
   nodeSectionIds: Record<string, string[]>;
@@ -149,6 +210,9 @@ interface ExportSchemaV2 {
 interface BiddingState {
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
+  rootEntryNodeIds: string[];
+  activeRootEntryNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
   sectionRootOrder: string[];
   nodeSectionIds: Record<string, string[]>;
@@ -166,6 +230,7 @@ interface BiddingState {
   searchQuery: string;
   isLeftPanelOpen: boolean;
   isRightPanelOpen: boolean;
+  treeViewMode: EditorTreeViewMode;
   hasUnsavedChanges: boolean;
   isDraftSaving: boolean;
   isServerSyncing: boolean;
@@ -173,20 +238,28 @@ interface BiddingState {
   lastDraftSavedAt: string | null;
   lastServerSavedAt: string | null;
   lastExportedAt: string | null;
+  undoStack: EditorHistorySnapshot[];
+  redoStack: EditorHistorySnapshot[];
+  canUndo: boolean;
+  canRedo: boolean;
 
   // Actions
   importYaml: (yamlString: string) => void;
   exportYaml: (options?: { legacy?: boolean }) => string;
-  addNode: (parentId: string | null, call: string) => void;
+  addNode: (parentId: string | null, call: string, actor?: BiddingActor) => void;
   updateNode: (id: string, updates: Partial<BiddingNode>) => void;
   renameNode: (id: string, newCall: string) => void;
   deleteNode: (id: string) => void;
   selectNode: (id: string | null) => void;
+  toggleNodeSelection: (id: string) => void;
+  setNodeSelection: (nodeIds: string[]) => void;
+  clearNodeSelection: () => void;
   toggleExpand: (id: string) => void;
   setSearchQuery: (query: string) => void;
   toggleBookmark: (id: string) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
+  setTreeViewMode: (mode: EditorTreeViewMode) => void;
   expandAll: () => void;
   collapseAll: () => void;
   expandToDepth: (depth: number) => void;
@@ -226,6 +299,13 @@ interface BiddingState {
   deleteCustomSmartView: (smartViewId: string) => SmartViewMutationResult;
   toggleSmartViewPinned: (smartViewId: string) => SmartViewMutationResult;
   setLeftPrimaryMode: (mode: LeftPrimaryMode) => void;
+  addRootEntry: (nodeId: string) => RootEntryMutationResult;
+  removeRootEntry: (nodeId: string) => RootEntryMutationResult;
+  batchAssignNodesToSection: (nodeIds: string[], sectionId: string) => BatchMutationResult;
+  batchSetBookmarks: (nodeIds: string[], bookmarked: boolean) => BatchMutationResult;
+  batchSetRootEntries: (nodeIds: string[], enabled: boolean) => BatchMutationResult;
+  batchSetAccepted: (nodeIds: string[], accepted: boolean) => BatchMutationResult;
+  setActiveRootEntryNodeId: (nodeId: string | null) => void;
   setActiveSectionId: (sectionId: string | null) => void;
   setActiveSmartViewId: (smartViewId: string | null) => void;
   toggleSectionExpanded: (sectionId: string) => void;
@@ -241,6 +321,8 @@ interface BiddingState {
   getSmartViews: () => SmartViewDescriptor[];
   evalSmartView: (nodeId: string, smartViewId: string) => boolean;
   getSmartViewCount: (smartViewId: string) => number;
+  undo: () => void;
+  redo: () => void;
   flushDraftSave: () => void;
   clearDraft: () => void;
 }
@@ -253,6 +335,7 @@ const SECTION_NAME_MAX_LENGTH = 64;
 const SMART_VIEW_NAME_MAX_LENGTH = 64;
 const SMART_VIEW_QUERY_MAX_LENGTH = 160;
 const RECENTLY_EDITED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const HISTORY_LIMIT = 120;
 let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: number }> = [
@@ -261,6 +344,13 @@ const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: 
   { id: 'sv_no_notes', name: 'No notes', order: 2 },
   { id: 'sv_unaccepted', name: 'Unaccepted', order: 3 },
   { id: 'sv_recently_edited', name: 'Recently edited', order: 4 },
+  { id: 'sv_competitive_only', name: 'Competitive only', order: 5 },
+  { id: 'sv_has_opponent_action', name: 'Has opponent action', order: 6 },
+  { id: 'sv_dead_ends', name: 'Dead ends', order: 7 },
+  { id: 'sv_no_meaning', name: 'No meaning', order: 8 },
+  { id: 'sv_no_hcp', name: 'No HCP', order: 9 },
+  { id: 'sv_no_forcing', name: 'No forcing', order: 10 },
+  { id: 'sv_conflict_tags', name: 'Conflict tags', order: 11 },
 ];
 const SECTION_ROOT_KEY = '__root__';
 
@@ -405,6 +495,134 @@ function isNodeWithinSubtree(nodeId: string, rootNodeId: string): boolean {
   return nodeId.startsWith(`${rootNodeId} `);
 }
 
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function createHistorySnapshot(state: BiddingState): EditorHistorySnapshot {
+  return deepClone({
+    nodes: state.nodes,
+    selectedNodeId: state.selectedNodeId,
+    selectedNodeIds: state.selectedNodeIds,
+    rootEntryNodeIds: state.rootEntryNodeIds,
+    activeRootEntryNodeId: state.activeRootEntryNodeId,
+    sectionsById: state.sectionsById,
+    sectionRootOrder: state.sectionRootOrder,
+    nodeSectionIds: state.nodeSectionIds,
+    subtreeRulesById: state.subtreeRulesById,
+    customSmartViewsById: state.customSmartViewsById,
+    customSmartViewOrder: state.customSmartViewOrder,
+    smartViewPinnedById: state.smartViewPinnedById,
+    nodeTouchedAtById: state.nodeTouchedAtById,
+    sectionExpandedById: state.sectionExpandedById,
+    leftPrimaryMode: state.leftPrimaryMode,
+    activeSectionId: state.activeSectionId,
+    activeSmartViewId: state.activeSmartViewId,
+  });
+}
+
+function applyHistorySnapshot(snapshot: EditorHistorySnapshot): Partial<BiddingState> {
+  const next = deepClone(snapshot);
+  return {
+    nodes: next.nodes,
+    selectedNodeId: next.selectedNodeId,
+    selectedNodeIds: next.selectedNodeIds,
+    rootEntryNodeIds: next.rootEntryNodeIds,
+    activeRootEntryNodeId: next.activeRootEntryNodeId,
+    sectionsById: next.sectionsById,
+    sectionRootOrder: next.sectionRootOrder,
+    nodeSectionIds: next.nodeSectionIds,
+    subtreeRulesById: next.subtreeRulesById,
+    customSmartViewsById: next.customSmartViewsById,
+    customSmartViewOrder: next.customSmartViewOrder,
+    smartViewPinnedById: next.smartViewPinnedById,
+    nodeTouchedAtById: next.nodeTouchedAtById,
+    sectionExpandedById: next.sectionExpandedById,
+    leftPrimaryMode: next.leftPrimaryMode,
+    activeSectionId: next.activeSectionId,
+    activeSmartViewId: next.activeSmartViewId,
+  };
+}
+
+function pushUndoStack(
+  stack: EditorHistorySnapshot[],
+  snapshot: EditorHistorySnapshot,
+): EditorHistorySnapshot[] {
+  const next = [...stack, snapshot];
+  if (next.length > HISTORY_LIMIT) {
+    next.splice(0, next.length - HISTORY_LIMIT);
+  }
+  return next;
+}
+
+function sortNodeIdsBySequence(
+  nodeIds: string[],
+  nodes: Record<string, BiddingNode>,
+): string[] {
+  return [...nodeIds].sort((nodeIdA, nodeIdB) => {
+    const nodeA = nodes[nodeIdA];
+    const nodeB = nodes[nodeIdB];
+    if (!nodeA && !nodeB) return nodeIdA.localeCompare(nodeIdB);
+    if (!nodeA) return 1;
+    if (!nodeB) return -1;
+    return compareStepSequences(nodeA.context.sequence, nodeB.context.sequence)
+      || nodeIdA.localeCompare(nodeIdB);
+  });
+}
+
+function getNodeSubtreeIds(
+  rootNodeId: string,
+  nodes: Record<string, BiddingNode>,
+): string[] {
+  const prefix = `${rootNodeId} `;
+  const subtreeNodeIds = Object.keys(nodes).filter((nodeId) => (
+    nodeId === rootNodeId || nodeId.startsWith(prefix)
+  ));
+  return sortNodeIdsBySequence(subtreeNodeIds, nodes);
+}
+
+function getDefaultRootEntryNodeIds(nodes: Record<string, BiddingNode>): string[] {
+  const depthOneIds = Object.values(nodes)
+    .filter((node) => node.context.sequence.length === 1)
+    .map((node) => node.id);
+  return sortNodeIdsBySequence(depthOneIds, nodes);
+}
+
+function normalizeRootEntryNodeIds(
+  rawRootEntryNodeIds: unknown,
+  nodes: Record<string, BiddingNode>,
+  warnings: string[],
+): string[] {
+  if (!Array.isArray(rawRootEntryNodeIds)) {
+    return getDefaultRootEntryNodeIds(nodes);
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  let dropped = 0;
+  rawRootEntryNodeIds.forEach((rawNodeId) => {
+    if (typeof rawNodeId !== 'string') {
+      dropped += 1;
+      return;
+    }
+    const canonicalNodeId = canonicalizeNodeId(rawNodeId);
+    if (!canonicalNodeId || !nodes[canonicalNodeId] || seen.has(canonicalNodeId)) {
+      dropped += 1;
+      return;
+    }
+    seen.add(canonicalNodeId);
+    normalized.push(canonicalNodeId);
+  });
+
+  if (dropped > 0) {
+    warnings.push(`dropped ${dropped} invalid root entry reference(s)`);
+  }
+  if (normalized.length === 0) {
+    return getDefaultRootEntryNodeIds(nodes);
+  }
+  return sortNodeIdsBySequence(normalized, nodes);
+}
+
 function remapNodeIdMapForRename<T>(
   map: Record<string, T>,
   oldRootNodeId: string,
@@ -428,6 +646,21 @@ function remapNodeIdMapForRename<T>(
   return nextMap;
 }
 
+function remapNodeIdListForRename(
+  nodeIds: string[],
+  oldRootNodeId: string,
+  newRootNodeId: string,
+): string[] {
+  const oldPrefix = `${oldRootNodeId} `;
+  const newPrefix = `${newRootNodeId} `;
+  return nodeIds.map((nodeId) => {
+    if (nodeId === oldRootNodeId) return newRootNodeId;
+    if (!nodeId.startsWith(oldPrefix)) return nodeId;
+    const suffix = nodeId.slice(oldPrefix.length);
+    return `${newPrefix}${suffix}`;
+  });
+}
+
 function normalizeSmartViewName(input: string): string {
   return input.trim().replace(/\s+/g, ' ');
 }
@@ -445,7 +678,9 @@ function nextCustomSmartViewId(customSmartViewsById: Record<string, CustomSmartV
 }
 
 function buildNodeTextForSmartQuery(node: BiddingNode, field: CustomSmartViewField): string {
-  const sequenceText = node.context.sequence.join(' ');
+  const sequenceText = node.context.sequence.map((step) => (
+    step.actor === 'opp' ? `(${step.call})` : step.call
+  )).join(' ');
   const notesText = node.meaning?.notes || '';
   const showsText = node.meaning?.shows?.join(' ') || '';
   switch (field) {
@@ -526,6 +761,79 @@ function buildSmartViews(
   });
 }
 
+function hasMeaningContent(node: BiddingNode): boolean {
+  const meaning = node.meaning;
+  if (!meaning) return false;
+  if (typeof meaning.type === 'string' && meaning.type.trim()) return true;
+  if (typeof meaning.forcing === 'string' && meaning.forcing.trim()) return true;
+  if (typeof meaning.notes === 'string' && meaning.notes.trim()) return true;
+  if (Array.isArray(meaning.shows) && meaning.shows.some((item) => typeof item === 'string' && item.trim())) return true;
+  if (typeof meaning.alert === 'boolean') return true;
+  if (typeof meaning.natural === 'boolean') return true;
+  if (typeof meaning.accepted === 'boolean') return true;
+  if (Array.isArray(meaning.comments) && meaning.comments.length > 0) return true;
+  const hcp = meaning.hcp;
+  if (hcp && (hcp.min !== undefined || hcp.max !== undefined)) return true;
+  const shape = meaning.shape;
+  if (!shape) return false;
+  if (shape.balanced !== undefined) return true;
+  if (
+    typeof shape.S === 'string'
+    || typeof shape.H === 'string'
+    || typeof shape.D === 'string'
+    || typeof shape.C === 'string'
+  ) {
+    return true;
+  }
+  if (Array.isArray(shape.patterns) && shape.patterns.some((item) => typeof item === 'string' && item.trim())) return true;
+  if (Array.isArray(shape.constraints) && shape.constraints.some((item) => typeof item === 'string' && item.trim())) return true;
+  return false;
+}
+
+function hasHcpInfo(node: BiddingNode): boolean {
+  const hcp = node.meaning?.hcp;
+  if (!hcp) return false;
+  const hasMin = hcp.min !== undefined && String(hcp.min).trim() !== '';
+  const hasMax = hcp.max !== undefined && String(hcp.max).trim() !== '';
+  return hasMin || hasMax;
+}
+
+function hasForcingInfo(node: BiddingNode): boolean {
+  const forcing = node.meaning?.forcing;
+  return typeof forcing === 'string' && forcing.trim() !== '';
+}
+
+function hasConflictTags(node: BiddingNode): boolean {
+  const meaning = node.meaning;
+  if (!meaning) return false;
+
+  const hcp = meaning.hcp;
+  if (hcp && hcp.min !== undefined && hcp.max !== undefined) {
+    const minValue = Number(String(hcp.min).trim());
+    const maxValue = Number(String(hcp.max).trim());
+    if (!Number.isNaN(minValue) && !Number.isNaN(maxValue) && minValue > maxValue) return true;
+  }
+
+  const forcing = typeof meaning.forcing === 'string' ? meaning.forcing.trim().toUpperCase() : '';
+  if (forcing) {
+    const knownForcingTags = new Set(['NF', 'INV', 'F1', '1RF', 'FG', 'GF', 'SL']);
+    if (!knownForcingTags.has(forcing)) return true;
+  }
+
+  const duplicateShows = new Set<string>();
+  let hasDuplicateShows = false;
+  (meaning.shows ?? []).forEach((item) => {
+    const key = String(item).trim().toLocaleLowerCase();
+    if (!key) return;
+    if (duplicateShows.has(key)) {
+      hasDuplicateShows = true;
+      return;
+    }
+    duplicateShows.add(key);
+  });
+  return hasDuplicateShows;
+}
+
 function evalSmartViewById(
   nodeId: string,
   smartViewId: string,
@@ -538,6 +846,7 @@ function evalSmartViewById(
     | 'customSmartViewsById'
   > & {
     effectiveSectionIdsByNode?: Record<string, string[]>;
+    nodeChildCountById?: Record<string, number>;
   },
 ): boolean {
   const node = state.nodes[nodeId];
@@ -565,6 +874,29 @@ function evalSmartViewById(
       const touchedMs = new Date(touchedAt).getTime();
       if (Number.isNaN(touchedMs)) return false;
       return Date.now() - touchedMs <= RECENTLY_EDITED_WINDOW_MS;
+    }
+    if (smartViewId === 'sv_has_opponent_action') {
+      return node.context.sequence.some((step) => step.actor === 'opp');
+    }
+    if (smartViewId === 'sv_competitive_only') {
+      const hasOur = node.context.sequence.some((step) => step.actor === 'our');
+      const hasOpp = node.context.sequence.some((step) => step.actor === 'opp');
+      return hasOur && hasOpp;
+    }
+    if (smartViewId === 'sv_dead_ends') {
+      return (state.nodeChildCountById?.[nodeId] ?? 0) === 0;
+    }
+    if (smartViewId === 'sv_no_meaning') {
+      return !hasMeaningContent(node);
+    }
+    if (smartViewId === 'sv_no_hcp') {
+      return !hasHcpInfo(node);
+    }
+    if (smartViewId === 'sv_no_forcing') {
+      return !hasForcingInfo(node);
+    }
+    if (smartViewId === 'sv_conflict_tags') {
+      return hasConflictTags(node);
     }
     return false;
   }
@@ -594,6 +926,7 @@ function buildDisplayNodeIdsWithAncestors(
 interface DerivedIndexes {
   rulesByRootNodeId: Record<string, SubtreeRuleRecord[]>;
   nodeParentById: Record<string, string | null>;
+  nodeChildCountById: Record<string, number>;
   sectionChildIdsByParentId: Record<string, string[]>;
   effectiveSectionIdsByNode: Record<string, string[]>;
   sectionNodeCountBySectionId: Record<string, number>;
@@ -619,17 +952,16 @@ function normalizeImportedNodes(rawNodes: unknown, warnings: string[]): Record<s
     }
 
     const rawContext = isPlainRecord(rawNode.context) ? rawNode.context : {};
-    const rawSequence = Array.isArray(rawContext.sequence)
-      ? rawContext.sequence.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
+    const rawSequence = normalizeStepSequence(rawContext.sequence);
     const fallbackId = typeof rawNode.id === 'string' ? rawNode.id.trim() : '';
-    const sequence = rawSequence.length > 0 ? rawSequence : fallbackId.split(' ').filter(Boolean);
+    const fallbackSequence = fallbackId ? parseSequenceIdToSteps(fallbackId) : [];
+    const sequence = rawSequence.length > 0 ? rawSequence : fallbackSequence;
     if (sequence.length === 0) {
       dropped += 1;
       return;
     }
 
-    const id = sequence.join(' ');
+    const id = buildSequenceIdFromSteps(sequence);
     const rawIsExpanded = typeof rawNode.isExpanded === 'boolean' ? rawNode.isExpanded : sequence.length <= 2;
     const rawIsBookmarked = typeof rawNode.isBookmarked === 'boolean' ? rawNode.isBookmarked : false;
 
@@ -739,7 +1071,8 @@ function normalizeImportedV2Payload(
       : {};
   const nodeSectionIds: Record<string, string[]> = {};
   let droppedNodeSectionRefs = 0;
-  Object.entries(rawNodeSectionIds).forEach(([nodeId, rawSectionIds]) => {
+  Object.entries(rawNodeSectionIds).forEach(([rawNodeId, rawSectionIds]) => {
+    const nodeId = canonicalizeNodeId(rawNodeId);
     if (!nodes[nodeId] || !Array.isArray(rawSectionIds)) return;
     const normalized = normalizeSectionIdList(
       rawSectionIds
@@ -767,7 +1100,9 @@ function normalizeImportedV2Payload(
       return;
     }
     const sectionId = typeof rawRule.sectionId === 'string' ? rawRule.sectionId : '';
-    const rootNodeId = typeof rawRule.rootNodeId === 'string' ? rawRule.rootNodeId : '';
+    const rootNodeId = typeof rawRule.rootNodeId === 'string'
+      ? canonicalizeNodeId(rawRule.rootNodeId)
+      : '';
     if (!sectionId || !rootNodeId || !orderedSectionsById[sectionId] || !nodes[rootNodeId]) {
       droppedRules += 1;
       return;
@@ -850,7 +1185,8 @@ function normalizeImportedV2Payload(
       ? ((input.data as Record<string, unknown>).nodeTouchedAtById as Record<string, unknown>)
       : {};
   const nodeTouchedAtById: Record<string, string> = {};
-  Object.entries(rawTouched).forEach(([nodeId, touchedAt]) => {
+  Object.entries(rawTouched).forEach(([rawNodeId, touchedAt]) => {
+    const nodeId = canonicalizeNodeId(rawNodeId);
     if (!nodes[nodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
     nodeTouchedAtById[nodeId] = touchedAt;
   });
@@ -866,6 +1202,25 @@ function normalizeImportedV2Payload(
   }
 
   const nestedData = isPlainRecord(input.data) ? input.data : {};
+  const rawRootEntryNodeIds = Array.isArray(input.rootEntryNodeIds)
+    ? input.rootEntryNodeIds
+    : Array.isArray(nestedData.rootEntryNodeIds)
+      ? nestedData.rootEntryNodeIds
+      : [];
+  const rootEntryNodeIds = normalizeRootEntryNodeIds(rawRootEntryNodeIds, nodes, warnings);
+  const rawActiveRootEntryNodeId = typeof input.activeRootEntryNodeId === 'string'
+    ? input.activeRootEntryNodeId
+    : typeof nestedData.activeRootEntryNodeId === 'string'
+      ? nestedData.activeRootEntryNodeId
+      : null;
+  const activeRootEntryNodeId = rawActiveRootEntryNodeId
+    ? (() => {
+      const canonicalNodeId = canonicalizeNodeId(rawActiveRootEntryNodeId);
+      if (!nodes[canonicalNodeId]) return null;
+      if (!rootEntryNodeIds.includes(canonicalNodeId)) return null;
+      return canonicalNodeId;
+    })()
+    : null;
   const rawMode = typeof input.leftPrimaryMode === 'string'
     ? input.leftPrimaryMode
     : typeof nestedData.leftPrimaryMode === 'string'
@@ -897,6 +1252,8 @@ function normalizeImportedV2Payload(
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: typeof input.exportedAt === 'string' && input.exportedAt ? input.exportedAt : now,
     nodes: Object.values(nodes),
+    rootEntryNodeIds,
+    activeRootEntryNodeId: activeRootEntryNodeId ?? rootEntryNodeIds[0] ?? null,
     sectionsById: orderedSectionsById,
     sectionRootOrder: normalizedSectionRootOrder,
     nodeSectionIds,
@@ -938,9 +1295,14 @@ function buildDerivedIndexes(
 
   const nodeIds = Object.keys(nodes);
   const nodeParentById: Record<string, string | null> = {};
+  const nodeChildCountById: Record<string, number> = {};
   nodeIds.forEach((nodeId) => {
     const sequence = nodeId.split(' ').filter(Boolean);
-    nodeParentById[nodeId] = sequence.length > 1 ? sequence.slice(0, -1).join(' ') : null;
+    const parentId = sequence.length > 1 ? sequence.slice(0, -1).join(' ') : null;
+    nodeParentById[nodeId] = parentId;
+    if (parentId) {
+      nodeChildCountById[parentId] = (nodeChildCountById[parentId] ?? 0) + 1;
+    }
   });
 
   const rulesByRootNodeId: Record<string, SubtreeRuleRecord[]> = {};
@@ -980,6 +1342,7 @@ function buildDerivedIndexes(
   return {
     rulesByRootNodeId,
     nodeParentById,
+    nodeChildCountById,
     sectionChildIdsByParentId,
     effectiveSectionIdsByNode,
     sectionNodeCountBySectionId,
@@ -1052,28 +1415,29 @@ const defaultSystem = `
 `;
 
 function parseDefaultNodes(): Record<string, BiddingNode> {
-  const parsedNodes: Record<string, BiddingNode> = {};
+  const warnings: string[] = [];
   try {
-    const parsed = yaml.load(defaultSystem) as any[];
-    if (Array.isArray(parsed)) {
-      parsed.forEach((node) => {
-        if (node.id && node.context?.sequence) {
-          parsedNodes[node.id] = {
-            ...node,
-            isExpanded: true,
-            isBookmarked: false,
-          };
-        }
-      });
+    const parsed = yaml.load(defaultSystem);
+    const normalized = normalizeImportedNodes(parsed, warnings);
+    Object.values(normalized).forEach((node) => {
+      normalized[node.id] = {
+        ...node,
+        isExpanded: true,
+        isBookmarked: false,
+      };
+    });
+    if (warnings.length > 0) {
+      console.warn('[parseDefaultNodes] normalization warnings:', warnings);
     }
+    return normalized;
   } catch (e) {
     console.error('Failed to parse default system', e);
+    return {};
   }
-  return parsedNodes;
 }
 
 function toNodeFromRemote(sequenceId: string, payload: unknown): BiddingNode {
-  const fallbackSequence = sequenceId.split(' ').filter(Boolean);
+  const fallbackSequence = parseSequenceIdToSteps(sequenceId);
   const payloadObj =
     payload && typeof payload === 'object' && !Array.isArray(payload)
       ? (payload as Record<string, unknown>)
@@ -1084,12 +1448,10 @@ function toNodeFromRemote(sequenceId: string, payload: unknown): BiddingNode {
       ? (payloadObj.context as Record<string, unknown>)
       : {};
 
-  const payloadSequence = Array.isArray(contextObj.sequence)
-    ? contextObj.sequence.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    : [];
+  const payloadSequence = normalizeStepSequence(contextObj.sequence);
 
   const sequence = payloadSequence.length > 0 ? payloadSequence : fallbackSequence;
-  const nodeId = sequence.join(' ');
+  const nodeId = buildSequenceIdFromSteps(sequence);
 
   const baseNode = payloadObj as Partial<BiddingNode>;
 
@@ -1136,9 +1498,13 @@ function removeDraftPayload(): void {
 }
 
 const initialDraft = loadDraftPayload();
+const initialDraftWarnings: string[] = [];
 const initialNodes = initialDraft?.nodes && Object.keys(initialDraft.nodes).length > 0
-  ? initialDraft.nodes
+  ? normalizeImportedNodes(Object.values(initialDraft.nodes), initialDraftWarnings)
   : parseDefaultNodes();
+if (initialDraftWarnings.length > 0) {
+  console.warn('[loadDraftPayload] normalization warnings:', initialDraftWarnings);
+}
 const initialSectionsById = initialDraft?.sectionsById && typeof initialDraft.sectionsById === 'object'
   ? initialDraft.sectionsById
   : {};
@@ -1147,13 +1513,14 @@ const initialNodeSectionIdsRaw = initialDraft?.nodeSectionIds && typeof initialD
   : {};
 const initialNodeSectionIds: Record<string, string[]> = {};
 Object.entries(initialNodeSectionIdsRaw).forEach(([nodeId, sectionIds]) => {
-  if (!initialNodes[nodeId] || !Array.isArray(sectionIds)) return;
+  const canonicalNodeId = canonicalizeNodeId(nodeId);
+  if (!initialNodes[canonicalNodeId] || !Array.isArray(sectionIds)) return;
   const normalized = normalizeSectionIdList(
     sectionIds.filter((sectionId): sectionId is string => typeof sectionId === 'string')
       .filter((sectionId) => !!initialSectionsById[sectionId]),
   );
   if (normalized.length > 0) {
-    initialNodeSectionIds[nodeId] = normalized;
+    initialNodeSectionIds[canonicalNodeId] = normalized;
   }
 });
 const initialSubtreeRulesRaw = initialDraft?.subtreeRulesById && typeof initialDraft.subtreeRulesById === 'object'
@@ -1164,12 +1531,13 @@ Object.entries(initialSubtreeRulesRaw).forEach(([ruleId, maybeRule]) => {
   const rule = maybeRule as Partial<SubtreeRuleRecord>;
   if (!rule || typeof rule !== 'object') return;
   if (!rule.sectionId || !initialSectionsById[rule.sectionId]) return;
-  if (!rule.rootNodeId || !initialNodes[rule.rootNodeId]) return;
+  const canonicalRootNodeId = typeof rule.rootNodeId === 'string' ? canonicalizeNodeId(rule.rootNodeId) : '';
+  if (!canonicalRootNodeId || !initialNodes[canonicalRootNodeId]) return;
   const timestamp = typeof rule.createdAt === 'string' && rule.createdAt ? rule.createdAt : new Date().toISOString();
   initialSubtreeRulesById[ruleId] = {
     id: ruleId,
     sectionId: rule.sectionId,
-    rootNodeId: rule.rootNodeId,
+    rootNodeId: canonicalRootNodeId,
     includeFutureDescendants: rule.includeFutureDescendants !== false,
     createdAt: timestamp,
     updatedAt: typeof rule.updatedAt === 'string' && rule.updatedAt ? rule.updatedAt : timestamp,
@@ -1219,12 +1587,28 @@ const initialNodeTouchedRaw = initialDraft?.nodeTouchedAtById && typeof initialD
   : {};
 const initialNodeTouchedAtById: Record<string, string> = {};
 Object.entries(initialNodeTouchedRaw).forEach(([nodeId, touchedAt]) => {
-  if (!initialNodes[nodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
-  initialNodeTouchedAtById[nodeId] = touchedAt;
+  const canonicalNodeId = canonicalizeNodeId(nodeId);
+  if (!initialNodes[canonicalNodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
+  initialNodeTouchedAtById[canonicalNodeId] = touchedAt;
 });
 const initialSectionRootOrder = initialDraft?.sectionRootOrder && Array.isArray(initialDraft.sectionRootOrder)
   ? initialDraft.sectionRootOrder.filter((sectionId) => !!initialSectionsById[sectionId])
   : getSectionRootOrder(initialSectionsById);
+const initialRootEntryNodeIds = normalizeRootEntryNodeIds(
+  initialDraft?.rootEntryNodeIds,
+  initialNodes,
+  initialDraftWarnings,
+);
+const initialActiveRootEntryNodeId = (() => {
+  if (typeof initialDraft?.activeRootEntryNodeId === 'string') {
+    const canonicalNodeId = canonicalizeNodeId(initialDraft.activeRootEntryNodeId);
+    if (initialNodes[canonicalNodeId] && initialRootEntryNodeIds.includes(canonicalNodeId)) {
+      return canonicalNodeId;
+    }
+  }
+  if (initialRootEntryNodeIds.length > 0) return initialRootEntryNodeIds[0];
+  return null;
+})();
 const initialLeftPrimaryModeRaw: LeftPrimaryMode = initialDraft?.leftPrimaryMode ?? 'roots';
 const initialActiveSectionId = initialDraft?.activeSectionId && initialSectionsById[initialDraft.activeSectionId]
   ? initialDraft.activeSectionId
@@ -1234,15 +1618,38 @@ const initialActiveSmartViewId = initialDraft?.activeSmartViewId
     || initialCustomSmartViewsById[initialDraft.activeSmartViewId])
   ? initialDraft.activeSmartViewId
   : null;
+const initialSelectedNodeId = initialDraft?.selectedNodeId
+  ? canonicalizeNodeId(initialDraft.selectedNodeId)
+  : null;
 const initialLeftPrimaryMode: LeftPrimaryMode =
   initialLeftPrimaryModeRaw === 'sections' && !initialActiveSectionId
     ? 'roots'
     : initialLeftPrimaryModeRaw === 'smartViews' && !initialActiveSmartViewId
       ? 'roots'
       : initialLeftPrimaryModeRaw;
+const initialSectionExpandedByIdRaw = initialDraft?.sectionExpandedById
+  && typeof initialDraft.sectionExpandedById === 'object'
+  ? initialDraft.sectionExpandedById
+  : {};
 const initialSectionExpandedById: Record<string, boolean> = Object.fromEntries(
-  Object.keys(initialSectionsById).map((sectionId) => [sectionId, true]),
+  Object.keys(initialSectionsById).map((sectionId) => {
+    const draftValue = initialSectionExpandedByIdRaw[sectionId];
+    return [sectionId, typeof draftValue === 'boolean' ? draftValue : true];
+  }),
 );
+const initialSearchQuery = typeof initialDraft?.searchQuery === 'string'
+  ? initialDraft.searchQuery
+  : '';
+const initialIsLeftPanelOpen = typeof initialDraft?.isLeftPanelOpen === 'boolean'
+  ? initialDraft.isLeftPanelOpen
+  : true;
+const initialIsRightPanelOpen = typeof initialDraft?.isRightPanelOpen === 'boolean'
+  ? initialDraft.isRightPanelOpen
+  : true;
+const initialTreeViewMode: EditorTreeViewMode =
+  initialDraft?.treeViewMode === 'compact'
+    ? 'compact'
+    : 'classic';
 
 export const useBiddingStore = create<BiddingState>((set, get) => {
   const queueDraftSave = () => {
@@ -1262,6 +1669,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         savedAt,
         nodes: state.nodes,
         selectedNodeId: state.selectedNodeId,
+        rootEntryNodeIds: state.rootEntryNodeIds,
+        activeRootEntryNodeId: state.activeRootEntryNodeId,
         sectionsById: state.sectionsById,
         sectionRootOrder: state.sectionRootOrder,
         nodeSectionIds: state.nodeSectionIds,
@@ -1270,9 +1679,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         customSmartViewOrder: state.customSmartViewOrder,
         smartViewPinnedById: state.smartViewPinnedById,
         nodeTouchedAtById: state.nodeTouchedAtById,
+        sectionExpandedById: state.sectionExpandedById,
         leftPrimaryMode: state.leftPrimaryMode,
         activeSectionId: state.activeSectionId,
         activeSmartViewId: state.activeSmartViewId,
+        searchQuery: state.searchQuery,
+        isLeftPanelOpen: state.isLeftPanelOpen,
+        isRightPanelOpen: state.isRightPanelOpen,
+        treeViewMode: state.treeViewMode,
       });
       set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
       draftSaveTimer = null;
@@ -1294,6 +1708,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       savedAt,
       nodes: state.nodes,
       selectedNodeId: state.selectedNodeId,
+      rootEntryNodeIds: state.rootEntryNodeIds,
+      activeRootEntryNodeId: state.activeRootEntryNodeId,
       sectionsById: state.sectionsById,
       sectionRootOrder: state.sectionRootOrder,
       nodeSectionIds: state.nodeSectionIds,
@@ -1302,9 +1718,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       customSmartViewOrder: state.customSmartViewOrder,
       smartViewPinnedById: state.smartViewPinnedById,
       nodeTouchedAtById: state.nodeTouchedAtById,
+      sectionExpandedById: state.sectionExpandedById,
       leftPrimaryMode: state.leftPrimaryMode,
       activeSectionId: state.activeSectionId,
       activeSmartViewId: state.activeSmartViewId,
+      searchQuery: state.searchQuery,
+      isLeftPanelOpen: state.isLeftPanelOpen,
+      isRightPanelOpen: state.isRightPanelOpen,
+      treeViewMode: state.treeViewMode,
     });
     set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
   };
@@ -1384,6 +1805,30 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       if (Number.isNaN(touchedMs)) return acc;
       return acc + (Date.now() - touchedMs <= RECENTLY_EDITED_WINDOW_MS ? 1 : 0);
     }, 0);
+    counts.sv_has_opponent_action = nodeIds.reduce((acc, nodeId) => (
+      state.nodes[nodeId].context.sequence.some((step) => step.actor === 'opp') ? acc + 1 : acc
+    ), 0);
+    counts.sv_competitive_only = nodeIds.reduce((acc, nodeId) => {
+      const sequence = state.nodes[nodeId].context.sequence;
+      const hasOur = sequence.some((step) => step.actor === 'our');
+      const hasOpp = sequence.some((step) => step.actor === 'opp');
+      return hasOur && hasOpp ? acc + 1 : acc;
+    }, 0);
+    counts.sv_dead_ends = nodeIds.reduce((acc, nodeId) => (
+      (derived.nodeChildCountById[nodeId] ?? 0) === 0 ? acc + 1 : acc
+    ), 0);
+    counts.sv_no_meaning = nodeIds.reduce((acc, nodeId) => (
+      hasMeaningContent(state.nodes[nodeId]) ? acc : acc + 1
+    ), 0);
+    counts.sv_no_hcp = nodeIds.reduce((acc, nodeId) => (
+      hasHcpInfo(state.nodes[nodeId]) ? acc : acc + 1
+    ), 0);
+    counts.sv_no_forcing = nodeIds.reduce((acc, nodeId) => (
+      hasForcingInfo(state.nodes[nodeId]) ? acc : acc + 1
+    ), 0);
+    counts.sv_conflict_tags = nodeIds.reduce((acc, nodeId) => (
+      hasConflictTags(state.nodes[nodeId]) ? acc + 1 : acc
+    ), 0);
 
     Object.values(state.customSmartViewsById).forEach((smartView) => {
       counts[smartView.id] = nodeIds.reduce((acc, nodeId) => (
@@ -1404,9 +1849,26 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     return counts;
   };
 
+  const withHistoryMutation = (
+    state: BiddingState,
+    patch: Partial<BiddingState>,
+  ): Partial<BiddingState> => {
+    const nextUndoStack = pushUndoStack(state.undoStack, createHistorySnapshot(state));
+    return {
+      ...patch,
+      undoStack: nextUndoStack,
+      redoStack: [],
+      canUndo: nextUndoStack.length > 0,
+      canRedo: false,
+    };
+  };
+
   return {
     nodes: initialNodes,
-    selectedNodeId: initialDraft?.selectedNodeId ?? null,
+    selectedNodeId: initialSelectedNodeId && initialNodes[initialSelectedNodeId] ? initialSelectedNodeId : null,
+    selectedNodeIds: initialSelectedNodeId && initialNodes[initialSelectedNodeId] ? [initialSelectedNodeId] : [],
+    rootEntryNodeIds: initialRootEntryNodeIds,
+    activeRootEntryNodeId: initialActiveRootEntryNodeId,
     sectionsById: initialSectionsById,
     sectionRootOrder: initialSectionRootOrder,
     nodeSectionIds: initialNodeSectionIds,
@@ -1421,9 +1883,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     activeSmartViewId: initialActiveSmartViewId,
     activeSystemId: null,
     activeSystemRevision: null,
-    searchQuery: '',
-    isLeftPanelOpen: true,
-    isRightPanelOpen: true,
+    searchQuery: initialSearchQuery,
+    isLeftPanelOpen: initialIsLeftPanelOpen,
+    isRightPanelOpen: initialIsRightPanelOpen,
+    treeViewMode: initialTreeViewMode,
     hasUnsavedChanges: !!initialDraft,
     isDraftSaving: false,
     isServerSyncing: false,
@@ -1431,6 +1894,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     lastDraftSavedAt: initialDraft?.savedAt ?? null,
     lastServerSavedAt: null,
     lastExportedAt: null,
+    undoStack: [],
+    redoStack: [],
+    canUndo: false,
+    canRedo: false,
 
     importYaml: (yamlString: string) => {
       try {
@@ -1441,10 +1908,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         if (Array.isArray(parsed)) {
           const legacyNodes = normalizeImportedNodes(parsed, warnings);
+          const rootEntryNodeIds = getDefaultRootEntryNodeIds(legacyNodes);
           payload = {
             schemaVersion: EXPORT_SCHEMA_VERSION,
             exportedAt: now,
             nodes: Object.values(legacyNodes),
+            rootEntryNodeIds,
+            activeRootEntryNodeId: rootEntryNodeIds[0] ?? null,
             sectionsById: {},
             sectionRootOrder: [],
             nodeSectionIds: {},
@@ -1461,10 +1931,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           const legacyWrappedNodes = Array.isArray(parsed.data) ? parsed.data : null;
           if (legacyWrappedNodes) {
             const migratedNodes = normalizeImportedNodes(legacyWrappedNodes, warnings);
+            const rootEntryNodeIds = getDefaultRootEntryNodeIds(migratedNodes);
             payload = {
               schemaVersion: EXPORT_SCHEMA_VERSION,
               exportedAt: now,
               nodes: Object.values(migratedNodes),
+              rootEntryNodeIds,
+              activeRootEntryNodeId: rootEntryNodeIds[0] ?? null,
               sectionsById: {},
               sectionRootOrder: [],
               nodeSectionIds: {},
@@ -1495,9 +1968,19 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           Object.keys(payload.sectionsById).map((sectionId) => [sectionId, true]),
         );
 
+        const rootEntryNodeIds = normalizeRootEntryNodeIds(payload.rootEntryNodeIds, nodesById, warnings);
+        const activeRootEntryNodeId = payload.activeRootEntryNodeId
+          && nodesById[payload.activeRootEntryNodeId]
+          && rootEntryNodeIds.includes(payload.activeRootEntryNodeId)
+          ? payload.activeRootEntryNodeId
+          : rootEntryNodeIds[0] ?? null;
+
         set({
           nodes: nodesById,
           selectedNodeId: null,
+          selectedNodeIds: [],
+          rootEntryNodeIds,
+          activeRootEntryNodeId,
           sectionsById: payload.sectionsById,
           sectionRootOrder,
           nodeSectionIds: payload.nodeSectionIds,
@@ -1513,6 +1996,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           hasUnsavedChanges: true,
           serverSyncError: null,
           lastExportedAt: null,
+          undoStack: [],
+          redoStack: [],
+          canUndo: false,
+          canRedo: false,
         });
         if (warnings.length > 0) {
           console.warn('[importYaml] Migration warnings:', warnings);
@@ -1533,7 +2020,15 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       if (useLegacyFormat) {
         const legacyData = Object.values(state.nodes).map((node) => {
           const { isExpanded, isBookmarked, ...rest } = node;
-          return rest;
+          const legacySequence = toLegacyCallSequence(node.context.sequence);
+          return {
+            ...rest,
+            id: legacySequence.join(' '),
+            context: {
+              ...rest.context,
+              sequence: legacySequence,
+            },
+          };
         });
         output = yaml.dump(legacyData);
       } else {
@@ -1541,6 +2036,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           schemaVersion: EXPORT_SCHEMA_VERSION,
           exportedAt,
           nodes: Object.values(state.nodes),
+          rootEntryNodeIds: state.rootEntryNodeIds,
+          activeRootEntryNodeId: state.activeRootEntryNodeId,
           sectionsById: state.sectionsById,
           sectionRootOrder: state.sectionRootOrder,
           nodeSectionIds: state.nodeSectionIds,
@@ -1561,13 +2058,19 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return output;
     },
 
-    addNode: (parentId: string | null, call: string) => {
+    addNode: (parentId: string | null, call: string, actor: BiddingActor = 'our') => {
       let didAdd = false;
 
       set((state) => {
-        const parentNode = parentId ? state.nodes[parentId] : null;
-        const sequence = parentNode ? [...parentNode.context.sequence, call] : [call];
-        const id = sequence.join(' ');
+        const normalizedCall = normalizeBiddingCall(call);
+        if (!normalizedCall) return state;
+
+        const canonicalParentId = parentId ? canonicalizeNodeId(parentId) : null;
+        const parentNode = canonicalParentId ? state.nodes[canonicalParentId] : null;
+        const sequence = parentNode
+          ? [...parentNode.context.sequence, { call: normalizedCall, actor }]
+          : [{ call: normalizedCall, actor }];
+        const id = buildSequenceIdFromSteps(sequence);
 
         if (state.nodes[id]) return state;
 
@@ -1583,8 +2086,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         };
 
         const updatedNodes = { ...state.nodes, [id]: newNode };
-        if (parentId && updatedNodes[parentId]) {
-          updatedNodes[parentId] = { ...updatedNodes[parentId], isExpanded: true };
+        if (canonicalParentId && updatedNodes[canonicalParentId]) {
+          updatedNodes[canonicalParentId] = { ...updatedNodes[canonicalParentId], isExpanded: true };
         }
         const touchedAt = new Date().toISOString();
         const nextNodeSectionIds = { ...state.nodeSectionIds };
@@ -1596,19 +2099,32 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           const existing = nextNodeSectionIds[id] ?? [];
           nextNodeSectionIds[id] = normalizeSectionIdList([...existing, state.activeSectionId]);
         }
+        const shouldPromoteToRootEntry = !canonicalParentId;
+        const nextRootEntryNodeIds = shouldPromoteToRootEntry
+          ? sortNodeIdsBySequence(
+            normalizeSectionIdList([...state.rootEntryNodeIds, id]),
+            updatedNodes,
+          )
+          : state.rootEntryNodeIds;
+        const nextActiveRootEntryNodeId = shouldPromoteToRootEntry
+          ? id
+          : state.activeRootEntryNodeId;
 
         didAdd = true;
-        return {
+        return withHistoryMutation(state, {
           nodes: updatedNodes,
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
           nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: {
             ...state.nodeTouchedAtById,
             [id]: touchedAt,
           },
           selectedNodeId: id,
+          selectedNodeIds: [id],
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didAdd) queueDraftSave();
@@ -1618,22 +2134,23 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didUpdate = false;
 
       set((state) => {
-        if (!state.nodes[id]) return state;
+        const canonicalId = canonicalizeNodeId(id);
+        if (!state.nodes[canonicalId]) return state;
         didUpdate = true;
         const touchedAt = new Date().toISOString();
 
-        return {
+        return withHistoryMutation(state, {
           nodes: {
             ...state.nodes,
-            [id]: { ...state.nodes[id], ...updates },
+            [canonicalId]: { ...state.nodes[canonicalId], ...updates },
           },
           nodeTouchedAtById: {
             ...state.nodeTouchedAtById,
-            [id]: touchedAt,
+            [canonicalId]: touchedAt,
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didUpdate) queueDraftSave();
@@ -1643,43 +2160,52 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didRename = false;
 
       set((state) => {
-        if (!state.nodes[id]) return state;
+        const canonicalId = canonicalizeNodeId(id);
+        if (!state.nodes[canonicalId]) return state;
+        const normalizedCall = normalizeBiddingCall(newCall);
+        if (!normalizedCall) return state;
 
-        const node = state.nodes[id];
+        const node = state.nodes[canonicalId];
         const oldSequence = [...node.context.sequence];
         const newSequence = [...oldSequence];
-        newSequence[newSequence.length - 1] = newCall;
+        newSequence[newSequence.length - 1] = {
+          ...newSequence[newSequence.length - 1],
+          call: normalizedCall,
+        };
 
-        const newId = newSequence.join(' ');
+        const newId = buildSequenceIdFromSteps(newSequence);
 
-        if (state.nodes[newId] && newId !== id) {
+        if (state.nodes[newId] && newId !== canonicalId) {
           alert('A sequence with this call already exists.');
           return state;
         }
 
         const newNodes = { ...state.nodes };
 
-        const prefix = id + ' ';
+        const prefix = canonicalId + ' ';
         const newPrefix = newId + ' ';
 
         Object.keys(state.nodes).forEach((key) => {
-          if (key === id) {
+          if (key === canonicalId) {
             newNodes[newId] = {
-              ...state.nodes[id],
+              ...state.nodes[canonicalId],
               id: newId,
               context: {
-                ...state.nodes[id].context,
+                ...state.nodes[canonicalId].context,
                 sequence: newSequence,
               },
             };
-            delete newNodes[id];
+            delete newNodes[canonicalId];
           } else if (key.startsWith(prefix)) {
             const suffix = key.substring(prefix.length);
             const childNewId = newPrefix + suffix;
             const childOldSequence = state.nodes[key].context.sequence;
 
             const childNewSequence = [...childOldSequence];
-            childNewSequence[newSequence.length - 1] = newCall;
+            childNewSequence[newSequence.length - 1] = {
+              ...childNewSequence[newSequence.length - 1],
+              call: normalizedCall,
+            };
 
             newNodes[childNewId] = {
               ...state.nodes[key],
@@ -1693,11 +2219,20 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           }
         });
 
-        const nextNodeSectionIds = remapNodeIdMapForRename(state.nodeSectionIds, id, newId);
-        const nextNodeTouchedAtById = remapNodeIdMapForRename(state.nodeTouchedAtById, id, newId);
+        const nextNodeSectionIds = remapNodeIdMapForRename(state.nodeSectionIds, canonicalId, newId);
+        const nextNodeTouchedAtById = remapNodeIdMapForRename(state.nodeTouchedAtById, canonicalId, newId);
+        const nextRootEntryNodeIds = sortNodeIdsBySequence(
+          normalizeSectionIdList(remapNodeIdListForRename(state.rootEntryNodeIds, canonicalId, newId)),
+          newNodes,
+        );
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId === canonicalId
+          ? newId
+          : state.activeRootEntryNodeId?.startsWith(prefix)
+            ? newPrefix + state.activeRootEntryNodeId.substring(prefix.length)
+            : state.activeRootEntryNodeId;
         const nextSubtreeRulesById = Object.fromEntries(
           Object.entries(state.subtreeRulesById).map(([ruleId, rule]) => {
-            if (rule.rootNodeId === id) {
+            if (rule.rootNodeId === canonicalId) {
               return [ruleId, { ...rule, rootNodeId: newId, updatedAt: new Date().toISOString() }];
             }
             if (rule.rootNodeId.startsWith(prefix)) {
@@ -1709,19 +2244,28 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         ) as Record<string, SubtreeRuleRecord>;
 
         didRename = true;
-        return {
+        return withHistoryMutation(state, {
           nodes: newNodes,
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
           nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: nextNodeTouchedAtById,
           subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
-          selectedNodeId: state.selectedNodeId === id
+          selectedNodeId: state.selectedNodeId === canonicalId
             ? newId
             : state.selectedNodeId?.startsWith(prefix)
               ? newPrefix + state.selectedNodeId.substring(prefix.length)
               : state.selectedNodeId,
-        };
+          selectedNodeIds: normalizeSectionIdList(
+            state.selectedNodeIds.map((selectedId) => {
+              if (selectedId === canonicalId) return newId;
+              if (selectedId.startsWith(prefix)) return newPrefix + selectedId.substring(prefix.length);
+              return selectedId;
+            }),
+          ),
+        });
       });
 
       if (didRename) queueDraftSave();
@@ -1731,11 +2275,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didDelete = false;
 
       set((state) => {
+        const canonicalId = canonicalizeNodeId(id);
         const newNodes = { ...state.nodes };
-        const prefix = id + ' ';
+        const prefix = canonicalId + ' ';
 
         Object.keys(newNodes).forEach((key) => {
-          if (key === id || key.startsWith(prefix)) {
+          if (key === canonicalId || key.startsWith(prefix)) {
             delete newNodes[key];
             didDelete = true;
           }
@@ -1744,58 +2289,129 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         if (!didDelete) return state;
 
         const nextNodeSectionIds = Object.fromEntries(
-          Object.entries(state.nodeSectionIds).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, id)),
+          Object.entries(state.nodeSectionIds).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, canonicalId)),
         ) as Record<string, string[]>;
 
         const nextSubtreeRulesById = Object.fromEntries(
-          Object.entries(state.subtreeRulesById).filter(([, rule]) => !isNodeWithinSubtree(rule.rootNodeId, id)),
+          Object.entries(state.subtreeRulesById).filter(([, rule]) => !isNodeWithinSubtree(rule.rootNodeId, canonicalId)),
         ) as Record<string, SubtreeRuleRecord>;
         const nextNodeTouchedAtById = Object.fromEntries(
-          Object.entries(state.nodeTouchedAtById).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, id)),
+          Object.entries(state.nodeTouchedAtById).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, canonicalId)),
         ) as Record<string, string>;
+        const nextRootEntryNodeIds = state.rootEntryNodeIds.filter(
+          (nodeId) => !isNodeWithinSubtree(nodeId, canonicalId),
+        );
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId
+          && isNodeWithinSubtree(state.activeRootEntryNodeId, canonicalId)
+          ? nextRootEntryNodeIds[0] ?? null
+          : state.activeRootEntryNodeId;
 
-        return {
+        return withHistoryMutation(state, {
           nodes: newNodes,
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
           nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: nextNodeTouchedAtById,
           subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
-          selectedNodeId: state.selectedNodeId === id || state.selectedNodeId?.startsWith(prefix)
+          selectedNodeId: state.selectedNodeId === canonicalId || state.selectedNodeId?.startsWith(prefix)
             ? null
             : state.selectedNodeId,
-        };
+          selectedNodeIds: state.selectedNodeIds.filter((selectedId) => !isNodeWithinSubtree(selectedId, canonicalId)),
+        });
       });
 
       if (didDelete) queueDraftSave();
     },
 
-    selectNode: (id: string | null) => set({ selectedNodeId: id }),
+    selectNode: (id: string | null) => set((state) => {
+      if (!id) {
+        return { selectedNodeId: null, selectedNodeIds: [] };
+      }
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
+      return { selectedNodeId: canonicalId, selectedNodeIds: [canonicalId] };
+    }),
+
+    toggleNodeSelection: (id: string) => set((state) => {
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
+      const subtreeNodeIds = getNodeSubtreeIds(canonicalId, state.nodes);
+      if (subtreeNodeIds.length === 0) return state;
+      const selectedSet = new Set(state.selectedNodeIds);
+      const hasFullSubtreeSelected = subtreeNodeIds.every((nodeId) => selectedSet.has(nodeId));
+      const selectedNodeIds = hasFullSubtreeSelected
+        ? state.selectedNodeIds.filter((item) => !subtreeNodeIds.includes(item))
+        : sortNodeIdsBySequence(
+          normalizeSectionIdList([...state.selectedNodeIds, ...subtreeNodeIds]),
+          state.nodes,
+        );
+      return {
+        selectedNodeIds,
+        selectedNodeId: hasFullSubtreeSelected
+          ? (selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null)
+          : canonicalId,
+      };
+    }),
+
+    setNodeSelection: (nodeIds: string[]) => set((state) => {
+      const selectedNodeIds = normalizeSectionIdList(
+        nodeIds
+          .map((nodeId) => canonicalizeNodeId(nodeId))
+          .filter((nodeId) => !!state.nodes[nodeId]),
+      );
+      return {
+        selectedNodeIds,
+        selectedNodeId: selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null,
+      };
+    }),
+
+    clearNodeSelection: () => set({ selectedNodeIds: [], selectedNodeId: null }),
 
     toggleExpand: (id: string) => set((state) => {
-      if (!state.nodes[id]) return state;
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
       return {
         nodes: {
           ...state.nodes,
-          [id]: { ...state.nodes[id], isExpanded: !state.nodes[id].isExpanded },
+          [canonicalId]: { ...state.nodes[canonicalId], isExpanded: !state.nodes[canonicalId].isExpanded },
         },
       };
     }),
 
-    setSearchQuery: (query: string) => set({ searchQuery: query }),
+    setSearchQuery: (query: string) => {
+      const nextQuery = query ?? '';
+      if (get().searchQuery === nextQuery) return;
+      set({ searchQuery: nextQuery });
+      queueDraftSave();
+    },
 
     toggleBookmark: (id: string) => set((state) => {
-      if (!state.nodes[id]) return state;
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
       return {
         nodes: {
           ...state.nodes,
-          [id]: { ...state.nodes[id], isBookmarked: !state.nodes[id].isBookmarked },
+          [canonicalId]: { ...state.nodes[canonicalId], isBookmarked: !state.nodes[canonicalId].isBookmarked },
         },
       };
     }),
 
-    toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
-    toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
+    toggleLeftPanel: () => {
+      set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen }));
+      queueDraftSave();
+    },
+    toggleRightPanel: () => {
+      set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen }));
+      queueDraftSave();
+    },
+    setTreeViewMode: (mode: EditorTreeViewMode) => {
+      const normalizedMode: EditorTreeViewMode = mode === 'compact' ? 'compact' : 'classic';
+      if (get().treeViewMode === normalizedMode) return;
+      set({ treeViewMode: normalizedMode });
+      queueDraftSave();
+    },
 
     expandAll: () => set((state) => {
       const newNodes = { ...state.nodes };
@@ -1837,10 +2453,15 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         }
 
         const selectedNodeId = state.selectedNodeId && remoteNodes[state.selectedNodeId] ? state.selectedNodeId : null;
+        const rootEntryNodeIds = getDefaultRootEntryNodeIds(remoteNodes);
+        const activeRootEntryNodeId = rootEntryNodeIds[0] ?? null;
 
         return {
           nodes: remoteNodes,
           selectedNodeId,
+          selectedNodeIds: selectedNodeId ? [selectedNodeId] : [],
+          rootEntryNodeIds,
+          activeRootEntryNodeId,
           sectionsById: {},
           sectionRootOrder: [],
           nodeSectionIds: {},
@@ -1859,6 +2480,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           isServerSyncing: false,
           serverSyncError: null,
           lastServerSavedAt: new Date().toISOString(),
+          undoStack: [],
+          redoStack: [],
+          canUndo: false,
+          canRedo: false,
         };
       }),
 
@@ -1920,7 +2545,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didCreate = true;
         result = { ok: true, sectionId };
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           sectionExpandedById: {
@@ -1931,7 +2556,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSectionId: sectionId,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didCreate) queueDraftSave();
@@ -1979,12 +2604,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didRename = true;
         result = { ok: true, sectionId };
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didRename) queueDraftSave();
@@ -2039,12 +2664,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didMove = true;
         result = { ok: true, sectionId };
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didMove) queueDraftSave();
@@ -2096,7 +2721,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextSubtreeRulesById = Object.fromEntries(
           Object.entries(state.subtreeRulesById).filter(([, rule]) => rule.sectionId !== sectionId),
         ) as Record<string, SubtreeRuleRecord>;
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           nodeSectionIds: nextNodeSectionIds,
@@ -2105,7 +2730,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSectionId: state.activeSectionId === sectionId ? targetParentId : state.activeSectionId,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2117,7 +2742,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didAssign = false;
 
       set((state) => {
-        if (!state.nodes[nodeId]) {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
           result = { ok: false, error: 'Node not found.' };
           return state;
         }
@@ -2126,7 +2752,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           return state;
         }
 
-        const existing = state.nodeSectionIds[nodeId] ?? [];
+        const existing = state.nodeSectionIds[canonicalNodeId] ?? [];
         if (existing.includes(sectionId)) {
           result = { ok: true };
           return state;
@@ -2134,14 +2760,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didAssign = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           nodeSectionIds: {
             ...state.nodeSectionIds,
-            [nodeId]: [...existing, sectionId],
+            [canonicalNodeId]: [...existing, sectionId],
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didAssign) queueDraftSave();
@@ -2153,7 +2779,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didUnassign = false;
 
       set((state) => {
-        if (!state.nodes[nodeId]) {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
           result = { ok: false, error: 'Node not found.' };
           return state;
         }
@@ -2162,7 +2789,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           return state;
         }
 
-        const existing = state.nodeSectionIds[nodeId] ?? [];
+        const existing = state.nodeSectionIds[canonicalNodeId] ?? [];
         if (!existing.includes(sectionId)) {
           result = { ok: true };
           return state;
@@ -2171,18 +2798,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextIds = existing.filter((id) => id !== sectionId);
         const nextNodeSectionIds = { ...state.nodeSectionIds };
         if (nextIds.length > 0) {
-          nextNodeSectionIds[nodeId] = nextIds;
+          nextNodeSectionIds[canonicalNodeId] = nextIds;
         } else {
-          delete nextNodeSectionIds[nodeId];
+          delete nextNodeSectionIds[canonicalNodeId];
         }
 
         didUnassign = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           nodeSectionIds: nextNodeSectionIds,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didUnassign) queueDraftSave();
@@ -2194,7 +2821,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didSet = false;
 
       set((state) => {
-        if (!state.nodes[nodeId]) {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
           result = { ok: false, error: 'Node not found.' };
           return state;
         }
@@ -2206,7 +2834,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           return state;
         }
 
-        const previous = state.nodeSectionIds[nodeId] ?? [];
+        const previous = state.nodeSectionIds[canonicalNodeId] ?? [];
         if (previous.length === normalized.length && previous.every((id, index) => id === normalized[index])) {
           result = { ok: true };
           return state;
@@ -2214,18 +2842,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         const nextNodeSectionIds = { ...state.nodeSectionIds };
         if (normalized.length > 0) {
-          nextNodeSectionIds[nodeId] = normalized;
+          nextNodeSectionIds[canonicalNodeId] = normalized;
         } else {
-          delete nextNodeSectionIds[nodeId];
+          delete nextNodeSectionIds[canonicalNodeId];
         }
 
         didSet = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           nodeSectionIds: nextNodeSectionIds,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didSet) queueDraftSave();
@@ -2237,17 +2865,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didCreate = false;
 
       set((state) => {
+        const canonicalRootNodeId = canonicalizeNodeId(rootNodeId);
         if (!state.sectionsById[sectionId]) {
           result = { ok: false, error: 'Section not found.' };
           return state;
         }
-        if (!state.nodes[rootNodeId]) {
+        if (!state.nodes[canonicalRootNodeId]) {
           result = { ok: false, error: 'Root node not found.' };
           return state;
         }
 
         const existingRule = Object.values(state.subtreeRulesById).find(
-          (rule) => rule.sectionId === sectionId && rule.rootNodeId === rootNodeId,
+          (rule) => rule.sectionId === sectionId && rule.rootNodeId === canonicalRootNodeId,
         );
         if (existingRule) {
           result = { ok: true, ruleId: existingRule.id };
@@ -2259,13 +2888,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didCreate = true;
         result = { ok: true, ruleId };
 
-        return {
+        return withHistoryMutation(state, {
           subtreeRulesById: {
             ...state.subtreeRulesById,
             [ruleId]: {
               id: ruleId,
               sectionId,
-              rootNodeId,
+              rootNodeId: canonicalRootNodeId,
               includeFutureDescendants,
               createdAt: timestamp,
               updatedAt: timestamp,
@@ -2273,7 +2902,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didCreate) queueDraftSave();
@@ -2295,11 +2924,11 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didDelete = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           subtreeRulesById: nextRules,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2342,7 +2971,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didCreate = true;
         result = { ok: true, smartViewId };
 
-        return {
+        return withHistoryMutation(state, {
           customSmartViewsById: {
             ...state.customSmartViewsById,
             [smartViewId]: {
@@ -2360,7 +2989,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSmartViewId: smartViewId,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didCreate) queueDraftSave();
@@ -2413,7 +3042,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didUpdate = true;
         result = { ok: true, smartViewId };
-        return {
+        return withHistoryMutation(state, {
           customSmartViewsById: {
             ...state.customSmartViewsById,
             [smartViewId]: {
@@ -2426,7 +3055,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didUpdate) queueDraftSave();
@@ -2450,7 +3079,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didDelete = true;
         result = { ok: true, smartViewId };
-        return {
+        return withHistoryMutation(state, {
           customSmartViewsById: nextById,
           customSmartViewOrder: nextOrder,
           smartViewPinnedById: nextPinnedById,
@@ -2461,7 +3090,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
               : state.leftPrimaryMode,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2481,54 +3110,380 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextPinned = !state.smartViewPinnedById[smartViewId];
         didToggle = true;
         result = { ok: true, smartViewId };
-        return {
+        return withHistoryMutation(state, {
           smartViewPinnedById: {
             ...state.smartViewPinnedById,
             [smartViewId]: nextPinned,
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didToggle) queueDraftSave();
       return result;
     },
 
-    setLeftPrimaryMode: (mode: LeftPrimaryMode) => set({ leftPrimaryMode: mode }),
+    setLeftPrimaryMode: (mode: LeftPrimaryMode) => {
+      if (get().leftPrimaryMode === mode) return;
+      set({ leftPrimaryMode: mode });
+      queueDraftSave();
+    },
 
-    setActiveSectionId: (sectionId: string | null) => set((state) => {
-      if (sectionId && !state.sectionsById[sectionId]) return state;
-      return { activeSectionId: sectionId };
-    }),
+    addRootEntry: (nodeId: string) => {
+      let result: RootEntryMutationResult = { ok: false, error: 'Failed to add root entry.' };
+      let didAdd = false;
 
-    setActiveSmartViewId: (smartViewId: string | null) => set((state) => {
-      if (!smartViewId) return { activeSmartViewId: null };
-      const knownSmartView = isBuiltInSmartViewId(smartViewId) || !!state.customSmartViewsById[smartViewId];
-      if (!knownSmartView) return state;
-      return { activeSmartViewId: smartViewId };
-    }),
+      set((state) => {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
+          result = { ok: false, error: 'Node not found.' };
+          return state;
+        }
+        if (state.rootEntryNodeIds.includes(canonicalNodeId)) {
+          result = { ok: true, nodeId: canonicalNodeId };
+          return state;
+        }
 
-    toggleSectionExpanded: (sectionId: string) => set((state) => {
-      if (!state.sectionsById[sectionId]) return state;
-      const isExpanded = state.sectionExpandedById[sectionId] ?? true;
-      return {
-        sectionExpandedById: {
-          ...state.sectionExpandedById,
-          [sectionId]: !isExpanded,
-        },
-      };
-    }),
+        const nextRootEntryNodeIds = sortNodeIdsBySequence(
+          normalizeSectionIdList([...state.rootEntryNodeIds, canonicalNodeId]),
+          state.nodes,
+        );
+        didAdd = true;
+        result = { ok: true, nodeId: canonicalNodeId };
+        return withHistoryMutation(state, {
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: canonicalNodeId,
+          leftPrimaryMode: 'roots' as LeftPrimaryMode,
+          activeSectionId: null,
+          activeSmartViewId: null,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
 
-    setSectionExpanded: (sectionId: string, expanded: boolean) => set((state) => {
-      if (!state.sectionsById[sectionId]) return state;
-      return {
-        sectionExpandedById: {
-          ...state.sectionExpandedById,
-          [sectionId]: expanded,
-        },
-      };
-    }),
+      if (didAdd) queueDraftSave();
+      return result;
+    },
+
+    removeRootEntry: (nodeId: string) => {
+      let result: RootEntryMutationResult = { ok: false, error: 'Root entry not found.' };
+      let didRemove = false;
+
+      set((state) => {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.rootEntryNodeIds.includes(canonicalNodeId)) {
+          result = { ok: false, error: 'Root entry not found.' };
+          return state;
+        }
+        const nextRootEntryNodeIds = state.rootEntryNodeIds.filter((id) => id !== canonicalNodeId);
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId === canonicalNodeId
+          ? nextRootEntryNodeIds[0] ?? null
+          : state.activeRootEntryNodeId;
+        didRemove = true;
+        result = { ok: true, nodeId: canonicalNodeId };
+        return withHistoryMutation(state, {
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
+          leftPrimaryMode:
+            state.leftPrimaryMode === 'roots' && !nextActiveRootEntryNodeId
+              ? 'roots'
+              : state.leftPrimaryMode,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didRemove) queueDraftSave();
+      return result;
+    },
+
+    batchAssignNodesToSection: (nodeIds: string[], sectionId: string) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to assign nodes to section.' };
+      let didUpdate = false;
+
+      set((state) => {
+        if (!state.sectionsById[sectionId]) {
+          result = { ok: false, error: 'Section not found.' };
+          return state;
+        }
+
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextNodeSectionIds = { ...state.nodeSectionIds };
+        let updatedCount = 0;
+        canonicalIds.forEach((nodeId) => {
+          const existing = nextNodeSectionIds[nodeId] ?? [];
+          if (existing.includes(sectionId)) return;
+          nextNodeSectionIds[nodeId] = normalizeSectionIdList([...existing, sectionId]);
+          updatedCount += 1;
+        });
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          nodeSectionIds: nextNodeSectionIds,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    batchSetBookmarks: (nodeIds: string[], bookmarked: boolean) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to update bookmarks.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextNodes = { ...state.nodes };
+        let updatedCount = 0;
+        canonicalIds.forEach((nodeId) => {
+          const current = nextNodes[nodeId];
+          if (!current || !!current.isBookmarked === bookmarked) return;
+          nextNodes[nodeId] = { ...current, isBookmarked: bookmarked };
+          updatedCount += 1;
+        });
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          nodes: nextNodes,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    batchSetRootEntries: (nodeIds: string[], enabled: boolean) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to update roots.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const beforeSet = new Set(state.rootEntryNodeIds);
+        const nextRootEntryNodeIds = enabled
+          ? sortNodeIdsBySequence(normalizeSectionIdList([...state.rootEntryNodeIds, ...canonicalIds]), state.nodes)
+          : state.rootEntryNodeIds.filter((rootId) => !canonicalIds.includes(rootId));
+        const afterSet = new Set(nextRootEntryNodeIds);
+
+        const updatedCount = canonicalIds.reduce((acc, nodeId) => {
+          const before = beforeSet.has(nodeId);
+          const after = afterSet.has(nodeId);
+          return before === after ? acc : acc + 1;
+        }, 0);
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId && afterSet.has(state.activeRootEntryNodeId)
+          ? state.activeRootEntryNodeId
+          : nextRootEntryNodeIds[0] ?? null;
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    batchSetAccepted: (nodeIds: string[], accepted: boolean) => {
+      let result: BatchMutationResult = { ok: false, error: 'Failed to update accepted status.' };
+      let didUpdate = false;
+
+      set((state) => {
+        const canonicalIds = normalizeSectionIdList(
+          nodeIds
+            .map((nodeId) => canonicalizeNodeId(nodeId))
+            .filter((nodeId) => !!state.nodes[nodeId]),
+        );
+        if (canonicalIds.length === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        const nextNodes = { ...state.nodes };
+        const nextNodeTouchedAtById = { ...state.nodeTouchedAtById };
+        const touchedAt = new Date().toISOString();
+        let updatedCount = 0;
+
+        canonicalIds.forEach((nodeId) => {
+          const node = nextNodes[nodeId];
+          const currentAccepted = !!node?.meaning?.accepted;
+          if (!node || currentAccepted === accepted) return;
+          nextNodes[nodeId] = {
+            ...node,
+            meaning: {
+              ...(node.meaning || {}),
+              accepted,
+            },
+          };
+          nextNodeTouchedAtById[nodeId] = touchedAt;
+          updatedCount += 1;
+        });
+
+        if (updatedCount === 0) {
+          result = { ok: true, updatedCount: 0 };
+          return state;
+        }
+
+        didUpdate = true;
+        result = { ok: true, updatedCount };
+        return withHistoryMutation(state, {
+          nodes: nextNodes,
+          nodeTouchedAtById: nextNodeTouchedAtById,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        });
+      });
+
+      if (didUpdate) queueDraftSave();
+      return result;
+    },
+
+    setActiveRootEntryNodeId: (nodeId: string | null) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!nodeId) {
+          if (state.activeRootEntryNodeId === null) return state;
+          didUpdate = true;
+          return { activeRootEntryNodeId: null };
+        }
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.rootEntryNodeIds.includes(canonicalNodeId)) return state;
+
+        const pathTokens = canonicalNodeId.split(' ').filter(Boolean);
+        let nextNodes = state.nodes;
+        let didExpandPath = false;
+        for (let i = 1; i <= pathTokens.length; i += 1) {
+          const pathNodeId = pathTokens.slice(0, i).join(' ');
+          const pathNode = nextNodes[pathNodeId];
+          if (!pathNode || pathNode.isExpanded) continue;
+          if (!didExpandPath) {
+            nextNodes = { ...nextNodes };
+            didExpandPath = true;
+          }
+          nextNodes[pathNodeId] = { ...pathNode, isExpanded: true };
+        }
+
+        if (state.activeRootEntryNodeId === canonicalNodeId && !didExpandPath) return state;
+        didUpdate = true;
+        return {
+          activeRootEntryNodeId: canonicalNodeId,
+          ...(didExpandPath ? { nodes: nextNodes } : {}),
+        };
+      });
+      if (didUpdate) queueDraftSave();
+    },
+
+    setActiveSectionId: (sectionId: string | null) => {
+      let didUpdate = false;
+      set((state) => {
+        if (sectionId && !state.sectionsById[sectionId]) return state;
+        if (state.activeSectionId === sectionId) return state;
+        didUpdate = true;
+        return { activeSectionId: sectionId };
+      });
+      if (didUpdate) queueDraftSave();
+    },
+
+    setActiveSmartViewId: (smartViewId: string | null) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!smartViewId) {
+          if (state.activeSmartViewId === null) return state;
+          didUpdate = true;
+          return { activeSmartViewId: null };
+        }
+        const knownSmartView = isBuiltInSmartViewId(smartViewId) || !!state.customSmartViewsById[smartViewId];
+        if (!knownSmartView || state.activeSmartViewId === smartViewId) return state;
+        didUpdate = true;
+        return { activeSmartViewId: smartViewId };
+      });
+      if (didUpdate) queueDraftSave();
+    },
+
+    toggleSectionExpanded: (sectionId: string) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!state.sectionsById[sectionId]) return state;
+        const isExpanded = state.sectionExpandedById[sectionId] ?? true;
+        didUpdate = true;
+        return {
+          sectionExpandedById: {
+            ...state.sectionExpandedById,
+            [sectionId]: !isExpanded,
+          },
+        };
+      });
+      if (didUpdate) queueDraftSave();
+    },
+
+    setSectionExpanded: (sectionId: string, expanded: boolean) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!state.sectionsById[sectionId]) return state;
+        if ((state.sectionExpandedById[sectionId] ?? true) === expanded) return state;
+        didUpdate = true;
+        return {
+          sectionExpandedById: {
+            ...state.sectionExpandedById,
+            [sectionId]: expanded,
+          },
+        };
+      });
+      if (didUpdate) queueDraftSave();
+    },
 
     getSectionChildren: (parentId: string | null) => {
       const state = get();
@@ -2559,15 +3514,17 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     getEffectiveSectionIds: (nodeId: string) => {
       const state = get();
-      if (!nodeId || !state.nodes[nodeId]) return [];
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
+      if (!canonicalNodeId || !state.nodes[canonicalNodeId]) return [];
       const derived = getDerivedIndexes(state);
-      return derived.effectiveSectionIdsByNode[nodeId] ?? [];
+      return derived.effectiveSectionIdsByNode[canonicalNodeId] ?? [];
     },
 
     getSubtreeRulesForNode: (nodeId: string) => {
       const state = get();
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
       const derived = getDerivedIndexes(state);
-      return (derived.rulesByRootNodeId[nodeId] ?? [])
+      return (derived.rulesByRootNodeId[canonicalNodeId] ?? [])
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     },
 
@@ -2575,6 +3532,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       const state = get();
       const derived = getDerivedIndexes(state);
       const nodeIds = Object.keys(state.nodes);
+      if (
+        state.leftPrimaryMode === 'roots'
+        && state.activeRootEntryNodeId
+        && state.nodes[state.activeRootEntryNodeId]
+      ) {
+        return nodeIds.filter((nodeId) => isNodeWithinSubtree(nodeId, state.activeRootEntryNodeId as string));
+      }
       if (state.leftPrimaryMode === 'sections' && state.activeSectionId && state.sectionsById[state.activeSectionId]) {
         return nodeIds.filter((nodeId) =>
           (derived.effectiveSectionIdsByNode[nodeId] ?? []).includes(state.activeSectionId as string),
@@ -2584,6 +3548,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         return nodeIds.filter((nodeId) => evalSmartViewById(nodeId, state.activeSmartViewId as string, {
           ...state,
           effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
+          nodeChildCountById: derived.nodeChildCountById,
         }));
       }
       return nodeIds;
@@ -2592,6 +3557,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     getDisplayNodeIdsWithAncestors: () => {
       const state = get();
       const matchedNodeIds = state.getPrimaryMatchedNodeIds();
+      if (
+        state.leftPrimaryMode === 'roots'
+        && state.activeRootEntryNodeId
+        && state.nodes[state.activeRootEntryNodeId]
+      ) {
+        return matchedNodeIds;
+      }
       return buildDisplayNodeIdsWithAncestors(matchedNodeIds, state.nodes);
     },
 
@@ -2602,10 +3574,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     evalSmartView: (nodeId: string, smartViewId: string) => {
       const state = get();
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
+      if (!state.nodes[canonicalNodeId]) return false;
       const derived = getDerivedIndexes(state);
-      return evalSmartViewById(nodeId, smartViewId, {
+      return evalSmartViewById(canonicalNodeId, smartViewId, {
         ...state,
         effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
+        nodeChildCountById: derived.nodeChildCountById,
       });
     },
 
@@ -2613,6 +3588,50 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       const state = get();
       const countMap = getSmartViewCountMap(state);
       return countMap[smartViewId] ?? 0;
+    },
+
+    undo: () => {
+      let didUndo = false;
+      set((state) => {
+        if (state.undoStack.length === 0) return state;
+        const previousSnapshot = state.undoStack[state.undoStack.length - 1];
+        const currentSnapshot = createHistorySnapshot(state);
+        const nextUndoStack = state.undoStack.slice(0, -1);
+        const nextRedoStack = pushUndoStack(state.redoStack, currentSnapshot);
+        didUndo = true;
+        return {
+          ...applyHistorySnapshot(previousSnapshot),
+          undoStack: nextUndoStack,
+          redoStack: nextRedoStack,
+          canUndo: nextUndoStack.length > 0,
+          canRedo: nextRedoStack.length > 0,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+      if (didUndo) queueDraftSave();
+    },
+
+    redo: () => {
+      let didRedo = false;
+      set((state) => {
+        if (state.redoStack.length === 0) return state;
+        const nextSnapshot = state.redoStack[state.redoStack.length - 1];
+        const currentSnapshot = createHistorySnapshot(state);
+        const nextRedoStack = state.redoStack.slice(0, -1);
+        const nextUndoStack = pushUndoStack(state.undoStack, currentSnapshot);
+        didRedo = true;
+        return {
+          ...applyHistorySnapshot(nextSnapshot),
+          undoStack: nextUndoStack,
+          redoStack: nextRedoStack,
+          canUndo: nextUndoStack.length > 0,
+          canRedo: nextRedoStack.length > 0,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+      if (didRedo) queueDraftSave();
     },
 
     flushDraftSave,
@@ -2623,7 +3642,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         draftSaveTimer = null;
       }
       removeDraftPayload();
-      set({ lastDraftSavedAt: null, isDraftSaving: false });
+      set({
+        lastDraftSavedAt: null,
+        isDraftSaving: false,
+        undoStack: [],
+        redoStack: [],
+        canUndo: false,
+        canRedo: false,
+      });
     },
   };
 });

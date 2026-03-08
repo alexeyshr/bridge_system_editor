@@ -1,0 +1,29 @@
+openapi: 3.1.0
+info:
+  title: Bridge System Editor Auth API
+  version: 0.1.0
+paths:
+  /api/auth/providers:
+    get:
+      summary: List enabled authentication providers
+      responses:
+        "200":
+          description: Providers (credentials, telegram)
+  /api/auth/session:
+    get:
+      summary: Get current user session
+      responses:
+        "200":
+          description: Session details
+        "401":
+          description: Not authenticated
+  /api/auth/link/telegram:
+    post:
+      summary: Link Telegram identity to current authenticated user
+      responses:
+        "200":
+          description: Telegram account linked
+        "401":
+          description: Not authenticated
+        "409":
+          description: Telegram identity already linked to another account

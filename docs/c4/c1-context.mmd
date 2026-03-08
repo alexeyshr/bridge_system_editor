@@ -1,0 +1,24 @@
+flowchart LR
+  player["Bridge Player"]
+  captain["Partnership Captain"]
+  coach["Coach or Club Admin"]
+
+  portal["BridgeHub Portal (System Under Design)"]
+
+  telegram["Telegram Platform (Login Widget, Mini App, Bot API)"]
+  email["Email Provider"]
+  storage["Object Storage (MinIO or S3)"]
+  db["PostgreSQL"]
+  cache["Redis"]
+  search["Meilisearch"]
+
+  player -->|uses web and mobile| portal
+  captain -->|manages systems and sharing| portal
+  coach -->|reviews and teaches| portal
+
+  portal -->|telegram login, bot notifications| telegram
+  portal -->|transactional and account emails| email
+  portal -->|stores assets and exports| storage
+  portal -->|reads and writes data| db
+  portal -->|session and cache| cache
+  portal -->|indexes and queries| search

@@ -2,8 +2,8 @@
 * @alexeyshr
 
 # SDD-critical areas
-/features/ @alexeyshr
-/features/left-panel/ @alexeyshr
+/specs/ @alexeyshr
+/specs/004-left-panel-evolution/ @alexeyshr
 /store/ @alexeyshr
 /components/ @alexeyshr
 /app/ @alexeyshr

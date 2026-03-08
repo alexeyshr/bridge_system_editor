@@ -117,6 +117,59 @@ test('supports reorder and move while preserving stable order values', () => {
   });
 });
 
+test('moveSection rejects invalid hierarchy targets (self and descendant)', () => {
+  const root = useBiddingStore.getState().createSection('Openings');
+  assert.equal(root.ok, true);
+  const rootId = root.sectionId as string;
+
+  const child = useBiddingStore.getState().createSection('Responses', rootId);
+  assert.equal(child.ok, true);
+  const childId = child.sectionId as string;
+
+  const grandChild = useBiddingStore.getState().createSection('Competitive', childId);
+  assert.equal(grandChild.ok, true);
+  const grandChildId = grandChild.sectionId as string;
+
+  const moveIntoSelf = useBiddingStore.getState().moveSection(childId, childId, 0);
+  assert.equal(moveIntoSelf.ok, false);
+
+  const moveIntoDescendant = useBiddingStore.getState().moveSection(rootId, grandChildId, 0);
+  assert.equal(moveIntoDescendant.ok, false);
+
+  const state = useBiddingStore.getState();
+  assert.equal(state.sectionsById[rootId].parentId, null);
+  assert.equal(state.sectionsById[childId].parentId, rootId);
+  assert.equal(state.sectionsById[grandChildId].parentId, childId);
+});
+
+test('moveSection preserves source and target sibling integrity during reparent', () => {
+  const a = useBiddingStore.getState().createSection('A');
+  const b = useBiddingStore.getState().createSection('B');
+  const c = useBiddingStore.getState().createSection('C');
+  assert.equal(a.ok && b.ok && c.ok, true);
+  const aId = a.sectionId as string;
+  const bId = b.sectionId as string;
+  const cId = c.sectionId as string;
+
+  const b1 = useBiddingStore.getState().createSection('B1', bId);
+  const b2 = useBiddingStore.getState().createSection('B2', bId);
+  assert.equal(b1.ok && b2.ok, true);
+  const b1Id = b1.sectionId as string;
+  const b2Id = b2.sectionId as string;
+
+  const moveResult = useBiddingStore.getState().moveSection(cId, bId, 1);
+  assert.equal(moveResult.ok, true);
+
+  const rootsAfterMove = useBiddingStore.getState().getSectionChildren(null);
+  assert.deepEqual(rootsAfterMove.map((section) => section.id), [aId, bId]);
+
+  const bChildrenAfterMove = useBiddingStore.getState().getSectionChildren(bId);
+  assert.deepEqual(bChildrenAfterMove.map((section) => section.id), [b1Id, cId, b2Id]);
+  bChildrenAfterMove.forEach((section, index) => {
+    assert.equal(section.order, index);
+  });
+});
+
 test('deleting section moves children to parent and does not delete bidding nodes', () => {
   const beforeNodeCount = Object.keys(useBiddingStore.getState().nodes).length;
   useBiddingStore.getState().addNode(null, '2C');

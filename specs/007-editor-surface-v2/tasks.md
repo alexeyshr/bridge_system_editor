@@ -31,10 +31,10 @@ Plan: `specs/007-editor-surface-v2/plan.md`
 
 ## F04 Sections Drag/Drop
 
-- [ ] T1030 Add section DnD reorder for siblings.
-- [ ] T1031 Add section DnD reparent to another section/root.
-- [ ] T1032 Enforce invalid move constraints and surface errors.
-- [ ] T1033 [P] Add hierarchy integrity tests.
+- [x] T1030 Add section DnD reorder for siblings.
+- [x] T1031 Add section DnD reparent to another section/root.
+- [x] T1032 Enforce invalid move constraints and surface errors.
+- [x] T1033 [P] Add hierarchy integrity tests.
 
 ## F05 Persisted UI + Domain UX
 

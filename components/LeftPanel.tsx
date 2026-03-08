@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
 import {
   useBiddingStore,
   type CustomSmartViewField,
@@ -55,6 +55,20 @@ const ROOT_DISPLAY_SUITS = ['NT', 'S', 'H', 'D', 'C'] as const;
 const ROOT_DISPLAY_LEVELS = [1, 2, 3, 4, 5, 6, 7] as const;
 type RootViewMode = 'matrix' | 'list';
 type RootPickerMode = 'single' | 'sequence';
+type SectionDropPlacement = 'before' | 'inside' | 'after';
+type SectionDropHint = {
+  targetSectionId: string;
+  placement: SectionDropPlacement;
+} | null;
+
+function getSectionDropPlacement(event: DragEvent<HTMLElement>): SectionDropPlacement {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const relativeY = event.clientY - bounds.top;
+  const threshold = Math.max(bounds.height * 0.28, 6);
+  if (relativeY < threshold) return 'before';
+  if (relativeY > bounds.height - threshold) return 'after';
+  return 'inside';
+}
 
 function isBidCall(call: string): boolean {
   return /^([1-7])(C|D|H|S|NT)$/.test(call);
@@ -123,6 +137,7 @@ export function LeftPanel() {
     sectionExpandedById,
     createSection,
     renameSection,
+    moveSection,
     reorderSection,
     deleteSection,
     createCustomSmartView,
@@ -134,6 +149,8 @@ export function LeftPanel() {
     setActiveSmartViewId,
     toggleSectionExpanded,
     setActiveRootEntryNodeId,
+    sectionsById,
+    getSectionChildren,
     getSectionTree,
     getSectionNodeCount,
     getSmartViews,
@@ -167,6 +184,9 @@ export function LeftPanel() {
   const [rootPickerError, setRootPickerError] = useState('');
   const [rootDeleteDialog, setRootDeleteDialog] = useState<RootDeleteDialogState>(null);
   const [rootViewMode, setRootViewMode] = useState<RootViewMode>('matrix');
+  const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
+  const [sectionDropHint, setSectionDropHint] = useState<SectionDropHint>(null);
+  const [sectionDragError, setSectionDragError] = useState('');
 
   const roots = useMemo(
     () => rootEntryNodeIds
@@ -522,10 +542,109 @@ export function LeftPanel() {
   const reorderSectionFromMenu = (sectionId: string, targetIndex: number) => {
     const result = reorderSection(sectionId, targetIndex);
     if (!result.ok) {
-      alert(result.error || 'Failed to reorder section.');
+      setSectionDragError(result.error || 'Failed to reorder section.');
       return;
     }
+    setSectionDragError('');
     setActionMenuSectionId(null);
+  };
+
+  const resolveSectionDropDestination = (
+    sourceSectionId: string,
+    targetSectionId: string,
+    placement: SectionDropPlacement,
+  ): { targetParentId: string | null; targetIndex: number } | null => {
+    const source = sectionsById[sourceSectionId];
+    const target = sectionsById[targetSectionId];
+    if (!source || !target) return null;
+
+    if (placement === 'inside') {
+      const childCount = getSectionChildren(targetSectionId).length;
+      return {
+        targetParentId: targetSectionId,
+        targetIndex: childCount,
+      };
+    }
+
+    const targetParentId = target.parentId;
+    const siblings = getSectionChildren(targetParentId).filter((section) => !(
+      source.parentId === targetParentId && section.id === sourceSectionId
+    ));
+    const targetIndexInSiblings = siblings.findIndex((section) => section.id === targetSectionId);
+    if (targetIndexInSiblings === -1) return null;
+
+    return {
+      targetParentId,
+      targetIndex: placement === 'before' ? targetIndexInSiblings : targetIndexInSiblings + 1,
+    };
+  };
+
+  const handleSectionDragStart = (event: DragEvent<HTMLButtonElement>, sectionId: string) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', sectionId);
+    setDraggingSectionId(sectionId);
+    setSectionDropHint(null);
+    setSectionDragError('');
+    setActionMenuSectionId(null);
+  };
+
+  const handleSectionDragOver = (event: DragEvent<HTMLButtonElement>, sectionId: string) => {
+    const sourceSectionId = draggingSectionId;
+    if (!sourceSectionId) return;
+    event.preventDefault();
+
+    if (sourceSectionId === sectionId) {
+      setSectionDropHint(null);
+      return;
+    }
+
+    const placement = getSectionDropPlacement(event);
+    setSectionDropHint((prev) => (
+      prev?.targetSectionId === sectionId && prev.placement === placement
+        ? prev
+        : { targetSectionId: sectionId, placement }
+    ));
+  };
+
+  const handleSectionDragLeave = (event: DragEvent<HTMLButtonElement>, sectionId: string) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    setSectionDropHint((prev) => (prev?.targetSectionId === sectionId ? null : prev));
+  };
+
+  const handleSectionDrop = (event: DragEvent<HTMLButtonElement>, targetSectionId: string) => {
+    event.preventDefault();
+    const sourceSectionId = draggingSectionId || event.dataTransfer.getData('text/plain');
+    if (!sourceSectionId || sourceSectionId === targetSectionId) {
+      setSectionDropHint(null);
+      setDraggingSectionId(null);
+      return;
+    }
+
+    const placement = sectionDropHint?.targetSectionId === targetSectionId
+      ? sectionDropHint.placement
+      : getSectionDropPlacement(event);
+    const destination = resolveSectionDropDestination(sourceSectionId, targetSectionId, placement);
+    if (!destination) {
+      setSectionDropHint(null);
+      setDraggingSectionId(null);
+      setSectionDragError('Cannot resolve section move target.');
+      return;
+    }
+
+    const result = moveSection(sourceSectionId, destination.targetParentId, destination.targetIndex);
+    if (!result.ok) {
+      setSectionDragError(result.error || 'Failed to move section.');
+    } else {
+      setSectionDragError('');
+    }
+    setSectionDropHint(null);
+    setDraggingSectionId(null);
+  };
+
+  const handleSectionDragEnd = () => {
+    setDraggingSectionId(null);
+    setSectionDropHint(null);
   };
 
   const openCreateSmartViewModal = () => {
@@ -614,19 +733,38 @@ export function LeftPanel() {
       const sectionFontSizePx = Math.max(13 - depth, 11);
       const canMoveUp = index > 0;
       const canMoveDown = index < items.length - 1;
+      const isDragging = draggingSectionId === section.id;
+      const activeDropPlacement = sectionDropHint?.targetSectionId === section.id
+        ? sectionDropHint.placement
+        : null;
 
       return (
         <li key={section.id} className="relative">
+          {activeDropPlacement === 'before' && (
+            <div className="pointer-events-none absolute left-2 right-2 -top-0.5 h-0.5 rounded-full bg-blue-500" />
+          )}
           <div className="group flex items-center gap-1">
             <button
               type="button"
+              draggable
+              onDragStart={(event) => handleSectionDragStart(event, section.id)}
+              onDragOver={(event) => handleSectionDragOver(event, section.id)}
+              onDragLeave={(event) => handleSectionDragLeave(event, section.id)}
+              onDrop={(event) => handleSectionDrop(event, section.id)}
+              onDragEnd={handleSectionDragEnd}
               onClick={() => {
                 setLeftPrimaryMode('sections');
                 setActiveSectionId(section.id);
                 setActiveSmartViewId(null);
               }}
-              className={`flex-1 min-w-0 text-left rounded-md transition-colors ${
-                isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+              className={`flex-1 min-w-0 text-left rounded-md transition-colors cursor-grab active:cursor-grabbing ${
+                activeDropPlacement === 'inside'
+                  ? 'bg-blue-50 text-blue-900 ring-1 ring-blue-300'
+                  : isActive
+                    ? 'bg-blue-100 text-blue-900'
+                    : 'hover:bg-slate-200 text-slate-700'
+              } ${
+                isDragging ? 'opacity-60' : ''
               }`}
               style={{
                 padding: `6px 8px 6px ${8 + depth * 14}px`,
@@ -671,6 +809,10 @@ export function LeftPanel() {
               <MoreHorizontal className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {activeDropPlacement === 'after' && (
+            <div className="pointer-events-none absolute left-2 right-2 -bottom-0.5 h-0.5 rounded-full bg-blue-500" />
+          )}
 
           {actionMenuSectionId === section.id && (
             <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
@@ -1175,6 +1317,14 @@ export function LeftPanel() {
 
         {isSectionsOpen && (
           <>
+            <div className="mb-2 text-[10px] text-slate-400">
+              Drag sections to reorder or move into another section.
+            </div>
+            {sectionDragError && (
+              <div className="mb-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-700">
+                {sectionDragError}
+              </div>
+            )}
             {sectionTree.length === 0 ? (
               <div className="rounded-md border border-dashed border-slate-300 bg-white p-3">
                 <div className="text-xs text-slate-500">No sections yet</div>

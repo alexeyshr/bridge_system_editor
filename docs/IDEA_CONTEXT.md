@@ -1,6 +1,6 @@
 # Idea Context and Traceability
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 This document keeps product context aligned between early drafts and current architecture/spec work.
 
@@ -9,6 +9,7 @@ This document keeps product context aligned between early drafts and current arc
 - Primary idea bank: `docs/source/IDEAS.md`
 - Priority layering: `docs/source/PRIORITIES.md`
 - Historical draft archive: `docs/archive/TZ.md`
+- Triage decisions by cycle: `docs/TRIAGE.md`
 
 ## How We Interpret These Inputs
 

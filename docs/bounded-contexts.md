@@ -1,6 +1,6 @@
 # Bounded Contexts
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 This document defines domain boundaries so models do not collapse into one mixed schema.
 
@@ -30,18 +30,42 @@ This document defines domain boundaries so models do not collapse into one mixed
 - Owns:
   - domain rules for legal continuations and node metadata.
 
-## 3) Collaboration and Sharing
+## 3) System Lifecycle and Versioning
+
+- Responsibility:
+  - system-level catalog (`Systems Hub`),
+  - draft vs published lifecycle,
+  - version compare and rollback semantics.
+- Core entities:
+  - `System`, `SystemDraft`, `SystemVersion`, `VersionDiff`.
+- Owns:
+  - publication flow and immutable version contracts.
+
+## 4) Tournament Usage Binding
+
+- Responsibility:
+  - bind system versions to tournament contexts,
+  - pair/team-specific assignment,
+  - freeze rules after tournament start.
+- Core entities:
+  - `TournamentSystemBinding`, `BindingScope`, `BindingFreezePolicy`.
+- Owns:
+  - stable usage contract (`systemId + versionId`) for competitions.
+
+## 5) Collaboration and Sharing
 
 - Responsibility:
   - invites,
   - access grants,
-  - sharing flows by email/internal lookup/Telegram.
+  - sharing flows by email/internal lookup/Telegram,
+  - discussion threads and mentions.
 - Core entities:
-  - `Invite`, `ShareGrant`, `PermissionSet`.
+  - `Invite`, `ShareGrant`, `PermissionSet`, `DiscussionThread`, `DiscussionMessage`.
 - Owns:
-  - collaboration lifecycle and invitation status.
+  - collaboration lifecycle and invitation status,
+  - conversation domain around systems and nodes.
 
-## 4) Discovery and Search
+## 6) Discovery and Search
 
 - Responsibility:
   - indexing and search over systems and notes,
@@ -51,7 +75,7 @@ This document defines domain boundaries so models do not collapse into one mixed
 - Owns:
   - search schema and ranking behavior.
 
-## 5) Notification and Bot Integration
+## 7) Notification and Bot Integration
 
 - Responsibility:
   - Telegram bot events,
@@ -74,6 +98,8 @@ This document defines domain boundaries so models do not collapse into one mixed
 Near-term execution focuses on:
 1. Identity and Access
 2. Bidding System Editor
-3. Collaboration and Sharing
+3. System Lifecycle and Versioning
+4. Tournament Usage Binding
+5. Collaboration and Sharing
 
 Search and bot contexts can evolve incrementally after persistence/auth baseline is stable.

@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-09 01:38 +03:00
+Updated: 2026-03-09 01:40 +03:00
 
 ## Active Context
 
@@ -40,7 +40,7 @@ Updated: 2026-03-09 01:38 +03:00
 
 - Start: 2026-03-09 01:17
 - End: 2026-03-09 01:38
-- Commit: pending
+- Commit: `02d29bf`
 - Result:
   - Added remove/freeze-tournament binding contracts in service/router/validation.
   - Added Drizzle transition checks for frozen bindings (no update/remove on frozen).

@@ -2,11 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import yaml from 'js-yaml';
 import { useBiddingStore } from '../store/useBiddingStore';
+import { canonicalizeNodeId } from '../lib/bidding-steps';
 
 const baseline = useBiddingStore.getState();
 
 function deepCopy<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function nid(path: string): string {
+  return canonicalizeNodeId(path);
 }
 
 function resetStoreState(): void {
@@ -15,6 +20,8 @@ function resetStoreState(): void {
       ...baseline,
       nodes: deepCopy(baseline.nodes),
       selectedNodeId: null,
+      rootEntryNodeIds: [],
+      activeRootEntryNodeId: null,
       sectionsById: {},
       sectionRootOrder: [],
       nodeSectionIds: {},
@@ -205,7 +212,7 @@ test('deleting section removes related node assignments and subtree rules', () =
 
   const state = useBiddingStore.getState();
   assert.equal(state.sectionsById[secAId], undefined);
-  assert.deepEqual(state.nodeSectionIds['1C'], [secBId]);
+  assert.deepEqual(state.nodeSectionIds[nid('1C')], [secBId]);
   assert.equal(
     Object.values(state.subtreeRulesById).some((rule) => rule.sectionId === secAId),
     false,
@@ -223,10 +230,10 @@ test('renaming node remaps direct assignment and subtree rule roots', () => {
   useBiddingStore.getState().renameNode('1C 1D', '1H');
   const state = useBiddingStore.getState();
 
-  assert.equal(state.nodeSectionIds['1C 1D'], undefined);
-  assert.deepEqual(state.nodeSectionIds['1C 1H'], [sectionId]);
+  assert.equal(state.nodeSectionIds[nid('1C 1D')], undefined);
+  assert.deepEqual(state.nodeSectionIds[nid('1C 1H')], [sectionId]);
   assert.equal(
-    Object.values(state.subtreeRulesById).some((rule) => rule.rootNodeId === '1C 1H'),
+    Object.values(state.subtreeRulesById).some((rule) => rule.rootNodeId === nid('1C 1H')),
     true,
   );
 });
@@ -271,17 +278,17 @@ test('custom smart view supports create, eval, pin and delete', () => {
 });
 
 test('recently edited smart view reacts to node changes', () => {
-  const beforeUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
+  const beforeUpdate = useBiddingStore.getState().evalSmartView(nid('1C'), 'sv_recently_edited');
   assert.equal(beforeUpdate, false);
 
-  useBiddingStore.getState().updateNode('1C', {
+  useBiddingStore.getState().updateNode(nid('1C'), {
     meaning: {
-      ...(useBiddingStore.getState().nodes['1C'].meaning || {}),
+      ...(useBiddingStore.getState().nodes[nid('1C')].meaning || {}),
       notes: 'Updated now',
     },
   });
 
-  const afterUpdate = useBiddingStore.getState().evalSmartView('1C', 'sv_recently_edited');
+  const afterUpdate = useBiddingStore.getState().evalSmartView(nid('1C'), 'sv_recently_edited');
   assert.equal(afterUpdate, true);
 });
 
@@ -295,13 +302,13 @@ test('primary section filter returns matched ids and display includes ancestors'
   useBiddingStore.getState().setActiveSectionId(sectionId);
 
   const matched = useBiddingStore.getState().getPrimaryMatchedNodeIds();
-  assert.deepEqual(matched, ['1C 1D 1H 2D']);
+  assert.deepEqual(matched, [nid('1C 1D 1H 2D')]);
 
   const display = new Set(useBiddingStore.getState().getDisplayNodeIdsWithAncestors());
-  assert.equal(display.has('1C'), true);
-  assert.equal(display.has('1C 1D'), true);
-  assert.equal(display.has('1C 1D 1H'), true);
-  assert.equal(display.has('1C 1D 1H 2D'), true);
+  assert.equal(display.has(nid('1C')), true);
+  assert.equal(display.has(nid('1C 1D')), true);
+  assert.equal(display.has(nid('1C 1D 1H')), true);
+  assert.equal(display.has(nid('1C 1D 1H 2D')), true);
 });
 
 test('primary smart view filter returns matched ids and display includes ancestors', () => {
@@ -313,13 +320,13 @@ test('primary smart view filter returns matched ids and display includes ancesto
   useBiddingStore.getState().setActiveSmartViewId(smartViewId);
 
   const matchedSet = new Set(useBiddingStore.getState().getPrimaryMatchedNodeIds());
-  assert.equal(matchedSet.has('1C 1D 1H 1NT'), true);
+  assert.equal(matchedSet.has(nid('1C 1D 1H 1NT')), true);
 
   const display = new Set(useBiddingStore.getState().getDisplayNodeIdsWithAncestors());
-  assert.equal(display.has('1C'), true);
-  assert.equal(display.has('1C 1D'), true);
-  assert.equal(display.has('1C 1D 1H'), true);
-  assert.equal(display.has('1C 1D 1H 1NT'), true);
+  assert.equal(display.has(nid('1C')), true);
+  assert.equal(display.has(nid('1C 1D')), true);
+  assert.equal(display.has(nid('1C 1D 1H')), true);
+  assert.equal(display.has(nid('1C 1D 1H 1NT')), true);
 });
 
 test('addNode auto-assigns active section when section filter is active', () => {
@@ -331,7 +338,7 @@ test('addNode auto-assigns active section when section filter is active', () => 
   useBiddingStore.getState().setActiveSectionId(sectionId);
 
   useBiddingStore.getState().addNode('1C 1D 1H 2D', '2S');
-  const newNodeId = '1C 1D 1H 2D 2S';
+  const newNodeId = nid('1C 1D 1H 2D 2S');
 
   assert.deepEqual(useBiddingStore.getState().nodeSectionIds[newNodeId], [sectionId]);
   assert.equal(
@@ -340,16 +347,50 @@ test('addNode auto-assigns active section when section filter is active', () => 
   );
 });
 
+test('roots can point to full sequences and filter subtree from that entry', () => {
+  const rootResult = useBiddingStore.getState().addRootEntry(nid('1C 1D 1H'));
+  assert.equal(rootResult.ok, true);
+
+  useBiddingStore.getState().setLeftPrimaryMode('roots');
+  useBiddingStore.getState().setActiveRootEntryNodeId(nid('1C 1D 1H'));
+
+  const matched = new Set(useBiddingStore.getState().getPrimaryMatchedNodeIds());
+  assert.equal(matched.has(nid('1C 1D')), false);
+  assert.equal(matched.has(nid('1C 1D 1H')), true);
+  assert.equal(matched.has(nid('1C 1D 1H 1S')), true);
+  assert.equal(matched.has(nid('1C 1D 1H 1NT')), true);
+  assert.equal(matched.has(nid('1C 1D 1H 2D')), true);
+});
+
+test('removing root entry does not delete bidding nodes', () => {
+  const rootId = nid('1C 1D 1H');
+  useBiddingStore.getState().addRootEntry(rootId);
+  const removeResult = useBiddingStore.getState().removeRootEntry(rootId);
+  assert.equal(removeResult.ok, true);
+  assert.equal(!!useBiddingStore.getState().nodes[rootId], true);
+  assert.equal(useBiddingStore.getState().rootEntryNodeIds.includes(rootId), false);
+});
+
+test('adding top-level node auto-creates root entry and selecting root is persisted', () => {
+  useBiddingStore.getState().addNode(null, '2D');
+  const rootId = nid('2D');
+  const state = useBiddingStore.getState();
+  assert.equal(state.rootEntryNodeIds.includes(rootId), true);
+  assert.equal(state.activeRootEntryNodeId, rootId);
+});
+
 test('export defaults to schema v2 and preserves sections/smart views after import', () => {
   const section = useBiddingStore.getState().createSection('Roundtrip');
   assert.equal(section.ok, true);
   const sectionId = section.sectionId as string;
 
-  useBiddingStore.getState().assignNodeToSection('1C', sectionId);
+  useBiddingStore.getState().assignNodeToSection(nid('1C'), sectionId);
   const custom = useBiddingStore.getState().createCustomSmartView('RT', 'weak', 'all');
   assert.equal(custom.ok, true);
   const smartViewId = custom.smartViewId as string;
   useBiddingStore.getState().toggleSmartViewPinned(smartViewId);
+  useBiddingStore.getState().addRootEntry(nid('1C 1D 1H'));
+  useBiddingStore.getState().setActiveRootEntryNodeId(nid('1C 1D 1H'));
 
   const serialized = useBiddingStore.getState().exportYaml();
   const parsed = yaml.load(serialized) as Record<string, unknown>;
@@ -360,9 +401,11 @@ test('export defaults to schema v2 and preserves sections/smart views after impo
   const state = useBiddingStore.getState();
 
   assert.equal(!!state.sectionsById[sectionId], true);
-  assert.deepEqual(state.nodeSectionIds['1C'], [sectionId]);
+  assert.deepEqual(state.nodeSectionIds[nid('1C')], [sectionId]);
   assert.equal(!!state.customSmartViewsById[smartViewId], true);
   assert.equal(state.smartViewPinnedById[smartViewId], true);
+  assert.equal(state.rootEntryNodeIds.includes(nid('1C 1D 1H')), true);
+  assert.equal(state.activeRootEntryNodeId, nid('1C 1D 1H'));
 });
 
 test('legacy array import and legacy export mode remain supported', () => {
@@ -374,7 +417,7 @@ test('legacy array import and legacy export mode remain supported', () => {
     type: opening
 `;
   useBiddingStore.getState().importYaml(legacyYaml);
-  assert.equal(!!useBiddingStore.getState().nodes['1C'], true);
+  assert.equal(!!useBiddingStore.getState().nodes[nid('1C')], true);
   assert.equal(Object.keys(useBiddingStore.getState().sectionsById).length, 0);
 
   const legacyOut = useBiddingStore.getState().exportYaml({ legacy: true });

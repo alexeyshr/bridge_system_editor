@@ -1,10 +1,22 @@
 import { create } from 'zustand';
 import yaml from 'js-yaml';
+import {
+  buildSequenceIdFromSteps,
+  canonicalizeNodeId,
+  normalizeBiddingCall,
+  normalizeBiddingStep,
+  normalizeStepSequence,
+  parseSequenceIdToSteps,
+  toLegacyCallSequence,
+  type BiddingActor,
+  type BiddingStep,
+} from '@/lib/bidding-steps';
+import { compareStepSequences } from '@/lib/utils';
 
 export interface BiddingNode {
   id: string;
   context: {
-    sequence: string[];
+    sequence: BiddingStep[];
   };
   meaning?: {
     type?: string;
@@ -80,7 +92,9 @@ export type BuiltInSmartViewId =
   | 'sv_bookmarked'
   | 'sv_no_notes'
   | 'sv_unaccepted'
-  | 'sv_recently_edited';
+  | 'sv_recently_edited'
+  | 'sv_competitive_only'
+  | 'sv_has_opponent_action';
 
 export type CustomSmartViewField = 'all' | 'sequence' | 'notes' | 'shows';
 
@@ -111,11 +125,19 @@ export interface SmartViewMutationResult {
   error?: string;
 }
 
+export interface RootEntryMutationResult {
+  ok: boolean;
+  nodeId?: string;
+  error?: string;
+}
+
 interface DraftPayload {
   version: number;
   savedAt: string;
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
+  rootEntryNodeIds?: string[];
+  activeRootEntryNodeId?: string | null;
   sectionsById?: Record<string, SectionRecord>;
   sectionRootOrder?: string[];
   nodeSectionIds?: Record<string, string[]>;
@@ -133,6 +155,8 @@ interface ExportSchemaV2 {
   schemaVersion: number;
   exportedAt: string;
   nodes: BiddingNode[];
+  rootEntryNodeIds: string[];
+  activeRootEntryNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
   sectionRootOrder: string[];
   nodeSectionIds: Record<string, string[]>;
@@ -149,6 +173,8 @@ interface ExportSchemaV2 {
 interface BiddingState {
   nodes: Record<string, BiddingNode>;
   selectedNodeId: string | null;
+  rootEntryNodeIds: string[];
+  activeRootEntryNodeId: string | null;
   sectionsById: Record<string, SectionRecord>;
   sectionRootOrder: string[];
   nodeSectionIds: Record<string, string[]>;
@@ -177,7 +203,7 @@ interface BiddingState {
   // Actions
   importYaml: (yamlString: string) => void;
   exportYaml: (options?: { legacy?: boolean }) => string;
-  addNode: (parentId: string | null, call: string) => void;
+  addNode: (parentId: string | null, call: string, actor?: BiddingActor) => void;
   updateNode: (id: string, updates: Partial<BiddingNode>) => void;
   renameNode: (id: string, newCall: string) => void;
   deleteNode: (id: string) => void;
@@ -226,6 +252,9 @@ interface BiddingState {
   deleteCustomSmartView: (smartViewId: string) => SmartViewMutationResult;
   toggleSmartViewPinned: (smartViewId: string) => SmartViewMutationResult;
   setLeftPrimaryMode: (mode: LeftPrimaryMode) => void;
+  addRootEntry: (nodeId: string) => RootEntryMutationResult;
+  removeRootEntry: (nodeId: string) => RootEntryMutationResult;
+  setActiveRootEntryNodeId: (nodeId: string | null) => void;
   setActiveSectionId: (sectionId: string | null) => void;
   setActiveSmartViewId: (smartViewId: string | null) => void;
   toggleSectionExpanded: (sectionId: string) => void;
@@ -261,6 +290,8 @@ const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: 
   { id: 'sv_no_notes', name: 'No notes', order: 2 },
   { id: 'sv_unaccepted', name: 'Unaccepted', order: 3 },
   { id: 'sv_recently_edited', name: 'Recently edited', order: 4 },
+  { id: 'sv_competitive_only', name: 'Competitive only', order: 5 },
+  { id: 'sv_has_opponent_action', name: 'Has opponent action', order: 6 },
 ];
 const SECTION_ROOT_KEY = '__root__';
 
@@ -405,6 +436,63 @@ function isNodeWithinSubtree(nodeId: string, rootNodeId: string): boolean {
   return nodeId.startsWith(`${rootNodeId} `);
 }
 
+function sortNodeIdsBySequence(
+  nodeIds: string[],
+  nodes: Record<string, BiddingNode>,
+): string[] {
+  return [...nodeIds].sort((nodeIdA, nodeIdB) => {
+    const nodeA = nodes[nodeIdA];
+    const nodeB = nodes[nodeIdB];
+    if (!nodeA && !nodeB) return nodeIdA.localeCompare(nodeIdB);
+    if (!nodeA) return 1;
+    if (!nodeB) return -1;
+    return compareStepSequences(nodeA.context.sequence, nodeB.context.sequence)
+      || nodeIdA.localeCompare(nodeIdB);
+  });
+}
+
+function getDefaultRootEntryNodeIds(nodes: Record<string, BiddingNode>): string[] {
+  const depthOneIds = Object.values(nodes)
+    .filter((node) => node.context.sequence.length === 1)
+    .map((node) => node.id);
+  return sortNodeIdsBySequence(depthOneIds, nodes);
+}
+
+function normalizeRootEntryNodeIds(
+  rawRootEntryNodeIds: unknown,
+  nodes: Record<string, BiddingNode>,
+  warnings: string[],
+): string[] {
+  if (!Array.isArray(rawRootEntryNodeIds)) {
+    return getDefaultRootEntryNodeIds(nodes);
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  let dropped = 0;
+  rawRootEntryNodeIds.forEach((rawNodeId) => {
+    if (typeof rawNodeId !== 'string') {
+      dropped += 1;
+      return;
+    }
+    const canonicalNodeId = canonicalizeNodeId(rawNodeId);
+    if (!canonicalNodeId || !nodes[canonicalNodeId] || seen.has(canonicalNodeId)) {
+      dropped += 1;
+      return;
+    }
+    seen.add(canonicalNodeId);
+    normalized.push(canonicalNodeId);
+  });
+
+  if (dropped > 0) {
+    warnings.push(`dropped ${dropped} invalid root entry reference(s)`);
+  }
+  if (normalized.length === 0) {
+    return getDefaultRootEntryNodeIds(nodes);
+  }
+  return sortNodeIdsBySequence(normalized, nodes);
+}
+
 function remapNodeIdMapForRename<T>(
   map: Record<string, T>,
   oldRootNodeId: string,
@@ -428,6 +516,21 @@ function remapNodeIdMapForRename<T>(
   return nextMap;
 }
 
+function remapNodeIdListForRename(
+  nodeIds: string[],
+  oldRootNodeId: string,
+  newRootNodeId: string,
+): string[] {
+  const oldPrefix = `${oldRootNodeId} `;
+  const newPrefix = `${newRootNodeId} `;
+  return nodeIds.map((nodeId) => {
+    if (nodeId === oldRootNodeId) return newRootNodeId;
+    if (!nodeId.startsWith(oldPrefix)) return nodeId;
+    const suffix = nodeId.slice(oldPrefix.length);
+    return `${newPrefix}${suffix}`;
+  });
+}
+
 function normalizeSmartViewName(input: string): string {
   return input.trim().replace(/\s+/g, ' ');
 }
@@ -445,7 +548,9 @@ function nextCustomSmartViewId(customSmartViewsById: Record<string, CustomSmartV
 }
 
 function buildNodeTextForSmartQuery(node: BiddingNode, field: CustomSmartViewField): string {
-  const sequenceText = node.context.sequence.join(' ');
+  const sequenceText = node.context.sequence.map((step) => (
+    step.actor === 'opp' ? `(${step.call})` : step.call
+  )).join(' ');
   const notesText = node.meaning?.notes || '';
   const showsText = node.meaning?.shows?.join(' ') || '';
   switch (field) {
@@ -566,6 +671,14 @@ function evalSmartViewById(
       if (Number.isNaN(touchedMs)) return false;
       return Date.now() - touchedMs <= RECENTLY_EDITED_WINDOW_MS;
     }
+    if (smartViewId === 'sv_has_opponent_action') {
+      return node.context.sequence.some((step) => step.actor === 'opp');
+    }
+    if (smartViewId === 'sv_competitive_only') {
+      const hasOur = node.context.sequence.some((step) => step.actor === 'our');
+      const hasOpp = node.context.sequence.some((step) => step.actor === 'opp');
+      return hasOur && hasOpp;
+    }
     return false;
   }
 
@@ -619,17 +732,16 @@ function normalizeImportedNodes(rawNodes: unknown, warnings: string[]): Record<s
     }
 
     const rawContext = isPlainRecord(rawNode.context) ? rawNode.context : {};
-    const rawSequence = Array.isArray(rawContext.sequence)
-      ? rawContext.sequence.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
+    const rawSequence = normalizeStepSequence(rawContext.sequence);
     const fallbackId = typeof rawNode.id === 'string' ? rawNode.id.trim() : '';
-    const sequence = rawSequence.length > 0 ? rawSequence : fallbackId.split(' ').filter(Boolean);
+    const fallbackSequence = fallbackId ? parseSequenceIdToSteps(fallbackId) : [];
+    const sequence = rawSequence.length > 0 ? rawSequence : fallbackSequence;
     if (sequence.length === 0) {
       dropped += 1;
       return;
     }
 
-    const id = sequence.join(' ');
+    const id = buildSequenceIdFromSteps(sequence);
     const rawIsExpanded = typeof rawNode.isExpanded === 'boolean' ? rawNode.isExpanded : sequence.length <= 2;
     const rawIsBookmarked = typeof rawNode.isBookmarked === 'boolean' ? rawNode.isBookmarked : false;
 
@@ -739,7 +851,8 @@ function normalizeImportedV2Payload(
       : {};
   const nodeSectionIds: Record<string, string[]> = {};
   let droppedNodeSectionRefs = 0;
-  Object.entries(rawNodeSectionIds).forEach(([nodeId, rawSectionIds]) => {
+  Object.entries(rawNodeSectionIds).forEach(([rawNodeId, rawSectionIds]) => {
+    const nodeId = canonicalizeNodeId(rawNodeId);
     if (!nodes[nodeId] || !Array.isArray(rawSectionIds)) return;
     const normalized = normalizeSectionIdList(
       rawSectionIds
@@ -767,7 +880,9 @@ function normalizeImportedV2Payload(
       return;
     }
     const sectionId = typeof rawRule.sectionId === 'string' ? rawRule.sectionId : '';
-    const rootNodeId = typeof rawRule.rootNodeId === 'string' ? rawRule.rootNodeId : '';
+    const rootNodeId = typeof rawRule.rootNodeId === 'string'
+      ? canonicalizeNodeId(rawRule.rootNodeId)
+      : '';
     if (!sectionId || !rootNodeId || !orderedSectionsById[sectionId] || !nodes[rootNodeId]) {
       droppedRules += 1;
       return;
@@ -850,7 +965,8 @@ function normalizeImportedV2Payload(
       ? ((input.data as Record<string, unknown>).nodeTouchedAtById as Record<string, unknown>)
       : {};
   const nodeTouchedAtById: Record<string, string> = {};
-  Object.entries(rawTouched).forEach(([nodeId, touchedAt]) => {
+  Object.entries(rawTouched).forEach(([rawNodeId, touchedAt]) => {
+    const nodeId = canonicalizeNodeId(rawNodeId);
     if (!nodes[nodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
     nodeTouchedAtById[nodeId] = touchedAt;
   });
@@ -866,6 +982,25 @@ function normalizeImportedV2Payload(
   }
 
   const nestedData = isPlainRecord(input.data) ? input.data : {};
+  const rawRootEntryNodeIds = Array.isArray(input.rootEntryNodeIds)
+    ? input.rootEntryNodeIds
+    : Array.isArray(nestedData.rootEntryNodeIds)
+      ? nestedData.rootEntryNodeIds
+      : [];
+  const rootEntryNodeIds = normalizeRootEntryNodeIds(rawRootEntryNodeIds, nodes, warnings);
+  const rawActiveRootEntryNodeId = typeof input.activeRootEntryNodeId === 'string'
+    ? input.activeRootEntryNodeId
+    : typeof nestedData.activeRootEntryNodeId === 'string'
+      ? nestedData.activeRootEntryNodeId
+      : null;
+  const activeRootEntryNodeId = rawActiveRootEntryNodeId
+    ? (() => {
+      const canonicalNodeId = canonicalizeNodeId(rawActiveRootEntryNodeId);
+      if (!nodes[canonicalNodeId]) return null;
+      if (!rootEntryNodeIds.includes(canonicalNodeId)) return null;
+      return canonicalNodeId;
+    })()
+    : null;
   const rawMode = typeof input.leftPrimaryMode === 'string'
     ? input.leftPrimaryMode
     : typeof nestedData.leftPrimaryMode === 'string'
@@ -897,6 +1032,8 @@ function normalizeImportedV2Payload(
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: typeof input.exportedAt === 'string' && input.exportedAt ? input.exportedAt : now,
     nodes: Object.values(nodes),
+    rootEntryNodeIds,
+    activeRootEntryNodeId: activeRootEntryNodeId ?? rootEntryNodeIds[0] ?? null,
     sectionsById: orderedSectionsById,
     sectionRootOrder: normalizedSectionRootOrder,
     nodeSectionIds,
@@ -1052,28 +1189,29 @@ const defaultSystem = `
 `;
 
 function parseDefaultNodes(): Record<string, BiddingNode> {
-  const parsedNodes: Record<string, BiddingNode> = {};
+  const warnings: string[] = [];
   try {
-    const parsed = yaml.load(defaultSystem) as any[];
-    if (Array.isArray(parsed)) {
-      parsed.forEach((node) => {
-        if (node.id && node.context?.sequence) {
-          parsedNodes[node.id] = {
-            ...node,
-            isExpanded: true,
-            isBookmarked: false,
-          };
-        }
-      });
+    const parsed = yaml.load(defaultSystem);
+    const normalized = normalizeImportedNodes(parsed, warnings);
+    Object.values(normalized).forEach((node) => {
+      normalized[node.id] = {
+        ...node,
+        isExpanded: true,
+        isBookmarked: false,
+      };
+    });
+    if (warnings.length > 0) {
+      console.warn('[parseDefaultNodes] normalization warnings:', warnings);
     }
+    return normalized;
   } catch (e) {
     console.error('Failed to parse default system', e);
+    return {};
   }
-  return parsedNodes;
 }
 
 function toNodeFromRemote(sequenceId: string, payload: unknown): BiddingNode {
-  const fallbackSequence = sequenceId.split(' ').filter(Boolean);
+  const fallbackSequence = parseSequenceIdToSteps(sequenceId);
   const payloadObj =
     payload && typeof payload === 'object' && !Array.isArray(payload)
       ? (payload as Record<string, unknown>)
@@ -1084,12 +1222,10 @@ function toNodeFromRemote(sequenceId: string, payload: unknown): BiddingNode {
       ? (payloadObj.context as Record<string, unknown>)
       : {};
 
-  const payloadSequence = Array.isArray(contextObj.sequence)
-    ? contextObj.sequence.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    : [];
+  const payloadSequence = normalizeStepSequence(contextObj.sequence);
 
   const sequence = payloadSequence.length > 0 ? payloadSequence : fallbackSequence;
-  const nodeId = sequence.join(' ');
+  const nodeId = buildSequenceIdFromSteps(sequence);
 
   const baseNode = payloadObj as Partial<BiddingNode>;
 
@@ -1136,9 +1272,13 @@ function removeDraftPayload(): void {
 }
 
 const initialDraft = loadDraftPayload();
+const initialDraftWarnings: string[] = [];
 const initialNodes = initialDraft?.nodes && Object.keys(initialDraft.nodes).length > 0
-  ? initialDraft.nodes
+  ? normalizeImportedNodes(Object.values(initialDraft.nodes), initialDraftWarnings)
   : parseDefaultNodes();
+if (initialDraftWarnings.length > 0) {
+  console.warn('[loadDraftPayload] normalization warnings:', initialDraftWarnings);
+}
 const initialSectionsById = initialDraft?.sectionsById && typeof initialDraft.sectionsById === 'object'
   ? initialDraft.sectionsById
   : {};
@@ -1147,13 +1287,14 @@ const initialNodeSectionIdsRaw = initialDraft?.nodeSectionIds && typeof initialD
   : {};
 const initialNodeSectionIds: Record<string, string[]> = {};
 Object.entries(initialNodeSectionIdsRaw).forEach(([nodeId, sectionIds]) => {
-  if (!initialNodes[nodeId] || !Array.isArray(sectionIds)) return;
+  const canonicalNodeId = canonicalizeNodeId(nodeId);
+  if (!initialNodes[canonicalNodeId] || !Array.isArray(sectionIds)) return;
   const normalized = normalizeSectionIdList(
     sectionIds.filter((sectionId): sectionId is string => typeof sectionId === 'string')
       .filter((sectionId) => !!initialSectionsById[sectionId]),
   );
   if (normalized.length > 0) {
-    initialNodeSectionIds[nodeId] = normalized;
+    initialNodeSectionIds[canonicalNodeId] = normalized;
   }
 });
 const initialSubtreeRulesRaw = initialDraft?.subtreeRulesById && typeof initialDraft.subtreeRulesById === 'object'
@@ -1164,12 +1305,13 @@ Object.entries(initialSubtreeRulesRaw).forEach(([ruleId, maybeRule]) => {
   const rule = maybeRule as Partial<SubtreeRuleRecord>;
   if (!rule || typeof rule !== 'object') return;
   if (!rule.sectionId || !initialSectionsById[rule.sectionId]) return;
-  if (!rule.rootNodeId || !initialNodes[rule.rootNodeId]) return;
+  const canonicalRootNodeId = typeof rule.rootNodeId === 'string' ? canonicalizeNodeId(rule.rootNodeId) : '';
+  if (!canonicalRootNodeId || !initialNodes[canonicalRootNodeId]) return;
   const timestamp = typeof rule.createdAt === 'string' && rule.createdAt ? rule.createdAt : new Date().toISOString();
   initialSubtreeRulesById[ruleId] = {
     id: ruleId,
     sectionId: rule.sectionId,
-    rootNodeId: rule.rootNodeId,
+    rootNodeId: canonicalRootNodeId,
     includeFutureDescendants: rule.includeFutureDescendants !== false,
     createdAt: timestamp,
     updatedAt: typeof rule.updatedAt === 'string' && rule.updatedAt ? rule.updatedAt : timestamp,
@@ -1219,12 +1361,28 @@ const initialNodeTouchedRaw = initialDraft?.nodeTouchedAtById && typeof initialD
   : {};
 const initialNodeTouchedAtById: Record<string, string> = {};
 Object.entries(initialNodeTouchedRaw).forEach(([nodeId, touchedAt]) => {
-  if (!initialNodes[nodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
-  initialNodeTouchedAtById[nodeId] = touchedAt;
+  const canonicalNodeId = canonicalizeNodeId(nodeId);
+  if (!initialNodes[canonicalNodeId] || typeof touchedAt !== 'string' || !touchedAt) return;
+  initialNodeTouchedAtById[canonicalNodeId] = touchedAt;
 });
 const initialSectionRootOrder = initialDraft?.sectionRootOrder && Array.isArray(initialDraft.sectionRootOrder)
   ? initialDraft.sectionRootOrder.filter((sectionId) => !!initialSectionsById[sectionId])
   : getSectionRootOrder(initialSectionsById);
+const initialRootEntryNodeIds = normalizeRootEntryNodeIds(
+  initialDraft?.rootEntryNodeIds,
+  initialNodes,
+  initialDraftWarnings,
+);
+const initialActiveRootEntryNodeId = (() => {
+  if (typeof initialDraft?.activeRootEntryNodeId === 'string') {
+    const canonicalNodeId = canonicalizeNodeId(initialDraft.activeRootEntryNodeId);
+    if (initialNodes[canonicalNodeId] && initialRootEntryNodeIds.includes(canonicalNodeId)) {
+      return canonicalNodeId;
+    }
+  }
+  if (initialRootEntryNodeIds.length > 0) return initialRootEntryNodeIds[0];
+  return null;
+})();
 const initialLeftPrimaryModeRaw: LeftPrimaryMode = initialDraft?.leftPrimaryMode ?? 'roots';
 const initialActiveSectionId = initialDraft?.activeSectionId && initialSectionsById[initialDraft.activeSectionId]
   ? initialDraft.activeSectionId
@@ -1233,6 +1391,9 @@ const initialActiveSmartViewId = initialDraft?.activeSmartViewId
   && (builtInSmartViewIdSet.has(initialDraft.activeSmartViewId as BuiltInSmartViewId)
     || initialCustomSmartViewsById[initialDraft.activeSmartViewId])
   ? initialDraft.activeSmartViewId
+  : null;
+const initialSelectedNodeId = initialDraft?.selectedNodeId
+  ? canonicalizeNodeId(initialDraft.selectedNodeId)
   : null;
 const initialLeftPrimaryMode: LeftPrimaryMode =
   initialLeftPrimaryModeRaw === 'sections' && !initialActiveSectionId
@@ -1262,6 +1423,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         savedAt,
         nodes: state.nodes,
         selectedNodeId: state.selectedNodeId,
+        rootEntryNodeIds: state.rootEntryNodeIds,
+        activeRootEntryNodeId: state.activeRootEntryNodeId,
         sectionsById: state.sectionsById,
         sectionRootOrder: state.sectionRootOrder,
         nodeSectionIds: state.nodeSectionIds,
@@ -1294,6 +1457,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       savedAt,
       nodes: state.nodes,
       selectedNodeId: state.selectedNodeId,
+      rootEntryNodeIds: state.rootEntryNodeIds,
+      activeRootEntryNodeId: state.activeRootEntryNodeId,
       sectionsById: state.sectionsById,
       sectionRootOrder: state.sectionRootOrder,
       nodeSectionIds: state.nodeSectionIds,
@@ -1384,6 +1549,15 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       if (Number.isNaN(touchedMs)) return acc;
       return acc + (Date.now() - touchedMs <= RECENTLY_EDITED_WINDOW_MS ? 1 : 0);
     }, 0);
+    counts.sv_has_opponent_action = nodeIds.reduce((acc, nodeId) => (
+      state.nodes[nodeId].context.sequence.some((step) => step.actor === 'opp') ? acc + 1 : acc
+    ), 0);
+    counts.sv_competitive_only = nodeIds.reduce((acc, nodeId) => {
+      const sequence = state.nodes[nodeId].context.sequence;
+      const hasOur = sequence.some((step) => step.actor === 'our');
+      const hasOpp = sequence.some((step) => step.actor === 'opp');
+      return hasOur && hasOpp ? acc + 1 : acc;
+    }, 0);
 
     Object.values(state.customSmartViewsById).forEach((smartView) => {
       counts[smartView.id] = nodeIds.reduce((acc, nodeId) => (
@@ -1406,7 +1580,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
   return {
     nodes: initialNodes,
-    selectedNodeId: initialDraft?.selectedNodeId ?? null,
+    selectedNodeId: initialSelectedNodeId && initialNodes[initialSelectedNodeId] ? initialSelectedNodeId : null,
+    rootEntryNodeIds: initialRootEntryNodeIds,
+    activeRootEntryNodeId: initialActiveRootEntryNodeId,
     sectionsById: initialSectionsById,
     sectionRootOrder: initialSectionRootOrder,
     nodeSectionIds: initialNodeSectionIds,
@@ -1441,10 +1617,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         if (Array.isArray(parsed)) {
           const legacyNodes = normalizeImportedNodes(parsed, warnings);
+          const rootEntryNodeIds = getDefaultRootEntryNodeIds(legacyNodes);
           payload = {
             schemaVersion: EXPORT_SCHEMA_VERSION,
             exportedAt: now,
             nodes: Object.values(legacyNodes),
+            rootEntryNodeIds,
+            activeRootEntryNodeId: rootEntryNodeIds[0] ?? null,
             sectionsById: {},
             sectionRootOrder: [],
             nodeSectionIds: {},
@@ -1461,10 +1640,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           const legacyWrappedNodes = Array.isArray(parsed.data) ? parsed.data : null;
           if (legacyWrappedNodes) {
             const migratedNodes = normalizeImportedNodes(legacyWrappedNodes, warnings);
+            const rootEntryNodeIds = getDefaultRootEntryNodeIds(migratedNodes);
             payload = {
               schemaVersion: EXPORT_SCHEMA_VERSION,
               exportedAt: now,
               nodes: Object.values(migratedNodes),
+              rootEntryNodeIds,
+              activeRootEntryNodeId: rootEntryNodeIds[0] ?? null,
               sectionsById: {},
               sectionRootOrder: [],
               nodeSectionIds: {},
@@ -1495,9 +1677,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           Object.keys(payload.sectionsById).map((sectionId) => [sectionId, true]),
         );
 
+        const rootEntryNodeIds = normalizeRootEntryNodeIds(payload.rootEntryNodeIds, nodesById, warnings);
+        const activeRootEntryNodeId = payload.activeRootEntryNodeId
+          && nodesById[payload.activeRootEntryNodeId]
+          && rootEntryNodeIds.includes(payload.activeRootEntryNodeId)
+          ? payload.activeRootEntryNodeId
+          : rootEntryNodeIds[0] ?? null;
+
         set({
           nodes: nodesById,
           selectedNodeId: null,
+          rootEntryNodeIds,
+          activeRootEntryNodeId,
           sectionsById: payload.sectionsById,
           sectionRootOrder,
           nodeSectionIds: payload.nodeSectionIds,
@@ -1533,7 +1724,15 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       if (useLegacyFormat) {
         const legacyData = Object.values(state.nodes).map((node) => {
           const { isExpanded, isBookmarked, ...rest } = node;
-          return rest;
+          const legacySequence = toLegacyCallSequence(node.context.sequence);
+          return {
+            ...rest,
+            id: legacySequence.join(' '),
+            context: {
+              ...rest.context,
+              sequence: legacySequence,
+            },
+          };
         });
         output = yaml.dump(legacyData);
       } else {
@@ -1541,6 +1740,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           schemaVersion: EXPORT_SCHEMA_VERSION,
           exportedAt,
           nodes: Object.values(state.nodes),
+          rootEntryNodeIds: state.rootEntryNodeIds,
+          activeRootEntryNodeId: state.activeRootEntryNodeId,
           sectionsById: state.sectionsById,
           sectionRootOrder: state.sectionRootOrder,
           nodeSectionIds: state.nodeSectionIds,
@@ -1561,13 +1762,19 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return output;
     },
 
-    addNode: (parentId: string | null, call: string) => {
+    addNode: (parentId: string | null, call: string, actor: BiddingActor = 'our') => {
       let didAdd = false;
 
       set((state) => {
-        const parentNode = parentId ? state.nodes[parentId] : null;
-        const sequence = parentNode ? [...parentNode.context.sequence, call] : [call];
-        const id = sequence.join(' ');
+        const normalizedCall = normalizeBiddingCall(call);
+        if (!normalizedCall) return state;
+
+        const canonicalParentId = parentId ? canonicalizeNodeId(parentId) : null;
+        const parentNode = canonicalParentId ? state.nodes[canonicalParentId] : null;
+        const sequence = parentNode
+          ? [...parentNode.context.sequence, { call: normalizedCall, actor }]
+          : [{ call: normalizedCall, actor }];
+        const id = buildSequenceIdFromSteps(sequence);
 
         if (state.nodes[id]) return state;
 
@@ -1583,8 +1790,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         };
 
         const updatedNodes = { ...state.nodes, [id]: newNode };
-        if (parentId && updatedNodes[parentId]) {
-          updatedNodes[parentId] = { ...updatedNodes[parentId], isExpanded: true };
+        if (canonicalParentId && updatedNodes[canonicalParentId]) {
+          updatedNodes[canonicalParentId] = { ...updatedNodes[canonicalParentId], isExpanded: true };
         }
         const touchedAt = new Date().toISOString();
         const nextNodeSectionIds = { ...state.nodeSectionIds };
@@ -1596,10 +1803,22 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           const existing = nextNodeSectionIds[id] ?? [];
           nextNodeSectionIds[id] = normalizeSectionIdList([...existing, state.activeSectionId]);
         }
+        const shouldPromoteToRootEntry = !canonicalParentId;
+        const nextRootEntryNodeIds = shouldPromoteToRootEntry
+          ? sortNodeIdsBySequence(
+            normalizeSectionIdList([...state.rootEntryNodeIds, id]),
+            updatedNodes,
+          )
+          : state.rootEntryNodeIds;
+        const nextActiveRootEntryNodeId = shouldPromoteToRootEntry
+          ? id
+          : state.activeRootEntryNodeId;
 
         didAdd = true;
         return {
           nodes: updatedNodes,
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
           nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: {
             ...state.nodeTouchedAtById,
@@ -1618,18 +1837,19 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didUpdate = false;
 
       set((state) => {
-        if (!state.nodes[id]) return state;
+        const canonicalId = canonicalizeNodeId(id);
+        if (!state.nodes[canonicalId]) return state;
         didUpdate = true;
         const touchedAt = new Date().toISOString();
 
         return {
           nodes: {
             ...state.nodes,
-            [id]: { ...state.nodes[id], ...updates },
+            [canonicalId]: { ...state.nodes[canonicalId], ...updates },
           },
           nodeTouchedAtById: {
             ...state.nodeTouchedAtById,
-            [id]: touchedAt,
+            [canonicalId]: touchedAt,
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
@@ -1643,43 +1863,52 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didRename = false;
 
       set((state) => {
-        if (!state.nodes[id]) return state;
+        const canonicalId = canonicalizeNodeId(id);
+        if (!state.nodes[canonicalId]) return state;
+        const normalizedCall = normalizeBiddingCall(newCall);
+        if (!normalizedCall) return state;
 
-        const node = state.nodes[id];
+        const node = state.nodes[canonicalId];
         const oldSequence = [...node.context.sequence];
         const newSequence = [...oldSequence];
-        newSequence[newSequence.length - 1] = newCall;
+        newSequence[newSequence.length - 1] = {
+          ...newSequence[newSequence.length - 1],
+          call: normalizedCall,
+        };
 
-        const newId = newSequence.join(' ');
+        const newId = buildSequenceIdFromSteps(newSequence);
 
-        if (state.nodes[newId] && newId !== id) {
+        if (state.nodes[newId] && newId !== canonicalId) {
           alert('A sequence with this call already exists.');
           return state;
         }
 
         const newNodes = { ...state.nodes };
 
-        const prefix = id + ' ';
+        const prefix = canonicalId + ' ';
         const newPrefix = newId + ' ';
 
         Object.keys(state.nodes).forEach((key) => {
-          if (key === id) {
+          if (key === canonicalId) {
             newNodes[newId] = {
-              ...state.nodes[id],
+              ...state.nodes[canonicalId],
               id: newId,
               context: {
-                ...state.nodes[id].context,
+                ...state.nodes[canonicalId].context,
                 sequence: newSequence,
               },
             };
-            delete newNodes[id];
+            delete newNodes[canonicalId];
           } else if (key.startsWith(prefix)) {
             const suffix = key.substring(prefix.length);
             const childNewId = newPrefix + suffix;
             const childOldSequence = state.nodes[key].context.sequence;
 
             const childNewSequence = [...childOldSequence];
-            childNewSequence[newSequence.length - 1] = newCall;
+            childNewSequence[newSequence.length - 1] = {
+              ...childNewSequence[newSequence.length - 1],
+              call: normalizedCall,
+            };
 
             newNodes[childNewId] = {
               ...state.nodes[key],
@@ -1693,11 +1922,20 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           }
         });
 
-        const nextNodeSectionIds = remapNodeIdMapForRename(state.nodeSectionIds, id, newId);
-        const nextNodeTouchedAtById = remapNodeIdMapForRename(state.nodeTouchedAtById, id, newId);
+        const nextNodeSectionIds = remapNodeIdMapForRename(state.nodeSectionIds, canonicalId, newId);
+        const nextNodeTouchedAtById = remapNodeIdMapForRename(state.nodeTouchedAtById, canonicalId, newId);
+        const nextRootEntryNodeIds = sortNodeIdsBySequence(
+          normalizeSectionIdList(remapNodeIdListForRename(state.rootEntryNodeIds, canonicalId, newId)),
+          newNodes,
+        );
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId === canonicalId
+          ? newId
+          : state.activeRootEntryNodeId?.startsWith(prefix)
+            ? newPrefix + state.activeRootEntryNodeId.substring(prefix.length)
+            : state.activeRootEntryNodeId;
         const nextSubtreeRulesById = Object.fromEntries(
           Object.entries(state.subtreeRulesById).map(([ruleId, rule]) => {
-            if (rule.rootNodeId === id) {
+            if (rule.rootNodeId === canonicalId) {
               return [ruleId, { ...rule, rootNodeId: newId, updatedAt: new Date().toISOString() }];
             }
             if (rule.rootNodeId.startsWith(prefix)) {
@@ -1711,12 +1949,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didRename = true;
         return {
           nodes: newNodes,
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
           nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: nextNodeTouchedAtById,
           subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
-          selectedNodeId: state.selectedNodeId === id
+          selectedNodeId: state.selectedNodeId === canonicalId
             ? newId
             : state.selectedNodeId?.startsWith(prefix)
               ? newPrefix + state.selectedNodeId.substring(prefix.length)
@@ -1731,11 +1971,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didDelete = false;
 
       set((state) => {
+        const canonicalId = canonicalizeNodeId(id);
         const newNodes = { ...state.nodes };
-        const prefix = id + ' ';
+        const prefix = canonicalId + ' ';
 
         Object.keys(newNodes).forEach((key) => {
-          if (key === id || key.startsWith(prefix)) {
+          if (key === canonicalId || key.startsWith(prefix)) {
             delete newNodes[key];
             didDelete = true;
           }
@@ -1744,24 +1985,33 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         if (!didDelete) return state;
 
         const nextNodeSectionIds = Object.fromEntries(
-          Object.entries(state.nodeSectionIds).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, id)),
+          Object.entries(state.nodeSectionIds).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, canonicalId)),
         ) as Record<string, string[]>;
 
         const nextSubtreeRulesById = Object.fromEntries(
-          Object.entries(state.subtreeRulesById).filter(([, rule]) => !isNodeWithinSubtree(rule.rootNodeId, id)),
+          Object.entries(state.subtreeRulesById).filter(([, rule]) => !isNodeWithinSubtree(rule.rootNodeId, canonicalId)),
         ) as Record<string, SubtreeRuleRecord>;
         const nextNodeTouchedAtById = Object.fromEntries(
-          Object.entries(state.nodeTouchedAtById).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, id)),
+          Object.entries(state.nodeTouchedAtById).filter(([nodeId]) => !isNodeWithinSubtree(nodeId, canonicalId)),
         ) as Record<string, string>;
+        const nextRootEntryNodeIds = state.rootEntryNodeIds.filter(
+          (nodeId) => !isNodeWithinSubtree(nodeId, canonicalId),
+        );
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId
+          && isNodeWithinSubtree(state.activeRootEntryNodeId, canonicalId)
+          ? nextRootEntryNodeIds[0] ?? null
+          : state.activeRootEntryNodeId;
 
         return {
           nodes: newNodes,
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
           nodeSectionIds: nextNodeSectionIds,
           nodeTouchedAtById: nextNodeTouchedAtById,
           subtreeRulesById: nextSubtreeRulesById,
           hasUnsavedChanges: true,
           serverSyncError: null,
-          selectedNodeId: state.selectedNodeId === id || state.selectedNodeId?.startsWith(prefix)
+          selectedNodeId: state.selectedNodeId === canonicalId || state.selectedNodeId?.startsWith(prefix)
             ? null
             : state.selectedNodeId,
         };
@@ -1770,14 +2020,15 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       if (didDelete) queueDraftSave();
     },
 
-    selectNode: (id: string | null) => set({ selectedNodeId: id }),
+    selectNode: (id: string | null) => set({ selectedNodeId: id ? canonicalizeNodeId(id) : null }),
 
     toggleExpand: (id: string) => set((state) => {
-      if (!state.nodes[id]) return state;
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
       return {
         nodes: {
           ...state.nodes,
-          [id]: { ...state.nodes[id], isExpanded: !state.nodes[id].isExpanded },
+          [canonicalId]: { ...state.nodes[canonicalId], isExpanded: !state.nodes[canonicalId].isExpanded },
         },
       };
     }),
@@ -1785,11 +2036,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     setSearchQuery: (query: string) => set({ searchQuery: query }),
 
     toggleBookmark: (id: string) => set((state) => {
-      if (!state.nodes[id]) return state;
+      const canonicalId = canonicalizeNodeId(id);
+      if (!state.nodes[canonicalId]) return state;
       return {
         nodes: {
           ...state.nodes,
-          [id]: { ...state.nodes[id], isBookmarked: !state.nodes[id].isBookmarked },
+          [canonicalId]: { ...state.nodes[canonicalId], isBookmarked: !state.nodes[canonicalId].isBookmarked },
         },
       };
     }),
@@ -1837,10 +2089,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         }
 
         const selectedNodeId = state.selectedNodeId && remoteNodes[state.selectedNodeId] ? state.selectedNodeId : null;
+        const rootEntryNodeIds = getDefaultRootEntryNodeIds(remoteNodes);
+        const activeRootEntryNodeId = rootEntryNodeIds[0] ?? null;
 
         return {
           nodes: remoteNodes,
           selectedNodeId,
+          rootEntryNodeIds,
+          activeRootEntryNodeId,
           sectionsById: {},
           sectionRootOrder: [],
           nodeSectionIds: {},
@@ -2117,7 +2373,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didAssign = false;
 
       set((state) => {
-        if (!state.nodes[nodeId]) {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
           result = { ok: false, error: 'Node not found.' };
           return state;
         }
@@ -2126,7 +2383,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           return state;
         }
 
-        const existing = state.nodeSectionIds[nodeId] ?? [];
+        const existing = state.nodeSectionIds[canonicalNodeId] ?? [];
         if (existing.includes(sectionId)) {
           result = { ok: true };
           return state;
@@ -2137,7 +2394,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         return {
           nodeSectionIds: {
             ...state.nodeSectionIds,
-            [nodeId]: [...existing, sectionId],
+            [canonicalNodeId]: [...existing, sectionId],
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
@@ -2153,7 +2410,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didUnassign = false;
 
       set((state) => {
-        if (!state.nodes[nodeId]) {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
           result = { ok: false, error: 'Node not found.' };
           return state;
         }
@@ -2162,7 +2420,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           return state;
         }
 
-        const existing = state.nodeSectionIds[nodeId] ?? [];
+        const existing = state.nodeSectionIds[canonicalNodeId] ?? [];
         if (!existing.includes(sectionId)) {
           result = { ok: true };
           return state;
@@ -2171,9 +2429,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextIds = existing.filter((id) => id !== sectionId);
         const nextNodeSectionIds = { ...state.nodeSectionIds };
         if (nextIds.length > 0) {
-          nextNodeSectionIds[nodeId] = nextIds;
+          nextNodeSectionIds[canonicalNodeId] = nextIds;
         } else {
-          delete nextNodeSectionIds[nodeId];
+          delete nextNodeSectionIds[canonicalNodeId];
         }
 
         didUnassign = true;
@@ -2194,7 +2452,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didSet = false;
 
       set((state) => {
-        if (!state.nodes[nodeId]) {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
           result = { ok: false, error: 'Node not found.' };
           return state;
         }
@@ -2206,7 +2465,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           return state;
         }
 
-        const previous = state.nodeSectionIds[nodeId] ?? [];
+        const previous = state.nodeSectionIds[canonicalNodeId] ?? [];
         if (previous.length === normalized.length && previous.every((id, index) => id === normalized[index])) {
           result = { ok: true };
           return state;
@@ -2214,9 +2473,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         const nextNodeSectionIds = { ...state.nodeSectionIds };
         if (normalized.length > 0) {
-          nextNodeSectionIds[nodeId] = normalized;
+          nextNodeSectionIds[canonicalNodeId] = normalized;
         } else {
-          delete nextNodeSectionIds[nodeId];
+          delete nextNodeSectionIds[canonicalNodeId];
         }
 
         didSet = true;
@@ -2237,17 +2496,18 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       let didCreate = false;
 
       set((state) => {
+        const canonicalRootNodeId = canonicalizeNodeId(rootNodeId);
         if (!state.sectionsById[sectionId]) {
           result = { ok: false, error: 'Section not found.' };
           return state;
         }
-        if (!state.nodes[rootNodeId]) {
+        if (!state.nodes[canonicalRootNodeId]) {
           result = { ok: false, error: 'Root node not found.' };
           return state;
         }
 
         const existingRule = Object.values(state.subtreeRulesById).find(
-          (rule) => rule.sectionId === sectionId && rule.rootNodeId === rootNodeId,
+          (rule) => rule.sectionId === sectionId && rule.rootNodeId === canonicalRootNodeId,
         );
         if (existingRule) {
           result = { ok: true, ruleId: existingRule.id };
@@ -2265,7 +2525,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
             [ruleId]: {
               id: ruleId,
               sectionId,
-              rootNodeId,
+              rootNodeId: canonicalRootNodeId,
               includeFutureDescendants,
               createdAt: timestamp,
               updatedAt: timestamp,
@@ -2497,6 +2757,101 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     setLeftPrimaryMode: (mode: LeftPrimaryMode) => set({ leftPrimaryMode: mode }),
 
+    addRootEntry: (nodeId: string) => {
+      let result: RootEntryMutationResult = { ok: false, error: 'Failed to add root entry.' };
+      let didAdd = false;
+
+      set((state) => {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.nodes[canonicalNodeId]) {
+          result = { ok: false, error: 'Node not found.' };
+          return state;
+        }
+        if (state.rootEntryNodeIds.includes(canonicalNodeId)) {
+          result = { ok: true, nodeId: canonicalNodeId };
+          return state;
+        }
+
+        const nextRootEntryNodeIds = sortNodeIdsBySequence(
+          normalizeSectionIdList([...state.rootEntryNodeIds, canonicalNodeId]),
+          state.nodes,
+        );
+        didAdd = true;
+        result = { ok: true, nodeId: canonicalNodeId };
+        return {
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: canonicalNodeId,
+          leftPrimaryMode: 'roots' as LeftPrimaryMode,
+          activeSectionId: null,
+          activeSmartViewId: null,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didAdd) queueDraftSave();
+      return result;
+    },
+
+    removeRootEntry: (nodeId: string) => {
+      let result: RootEntryMutationResult = { ok: false, error: 'Root entry not found.' };
+      let didRemove = false;
+
+      set((state) => {
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.rootEntryNodeIds.includes(canonicalNodeId)) {
+          result = { ok: false, error: 'Root entry not found.' };
+          return state;
+        }
+        const nextRootEntryNodeIds = state.rootEntryNodeIds.filter((id) => id !== canonicalNodeId);
+        const nextActiveRootEntryNodeId = state.activeRootEntryNodeId === canonicalNodeId
+          ? nextRootEntryNodeIds[0] ?? null
+          : state.activeRootEntryNodeId;
+        didRemove = true;
+        result = { ok: true, nodeId: canonicalNodeId };
+        return {
+          rootEntryNodeIds: nextRootEntryNodeIds,
+          activeRootEntryNodeId: nextActiveRootEntryNodeId,
+          leftPrimaryMode:
+            state.leftPrimaryMode === 'roots' && !nextActiveRootEntryNodeId
+              ? 'roots'
+              : state.leftPrimaryMode,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+
+      if (didRemove) queueDraftSave();
+      return result;
+    },
+
+    setActiveRootEntryNodeId: (nodeId: string | null) => set((state) => {
+      if (!nodeId) {
+        return { activeRootEntryNodeId: null };
+      }
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
+      if (!state.rootEntryNodeIds.includes(canonicalNodeId)) return state;
+
+      const pathTokens = canonicalNodeId.split(' ').filter(Boolean);
+      let nextNodes = state.nodes;
+      let didExpandPath = false;
+      for (let i = 1; i <= pathTokens.length; i += 1) {
+        const pathNodeId = pathTokens.slice(0, i).join(' ');
+        const pathNode = nextNodes[pathNodeId];
+        if (!pathNode || pathNode.isExpanded) continue;
+        if (!didExpandPath) {
+          nextNodes = { ...nextNodes };
+          didExpandPath = true;
+        }
+        nextNodes[pathNodeId] = { ...pathNode, isExpanded: true };
+      }
+
+      return {
+        activeRootEntryNodeId: canonicalNodeId,
+        ...(didExpandPath ? { nodes: nextNodes } : {}),
+      };
+    }),
+
     setActiveSectionId: (sectionId: string | null) => set((state) => {
       if (sectionId && !state.sectionsById[sectionId]) return state;
       return { activeSectionId: sectionId };
@@ -2559,15 +2914,17 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     getEffectiveSectionIds: (nodeId: string) => {
       const state = get();
-      if (!nodeId || !state.nodes[nodeId]) return [];
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
+      if (!canonicalNodeId || !state.nodes[canonicalNodeId]) return [];
       const derived = getDerivedIndexes(state);
-      return derived.effectiveSectionIdsByNode[nodeId] ?? [];
+      return derived.effectiveSectionIdsByNode[canonicalNodeId] ?? [];
     },
 
     getSubtreeRulesForNode: (nodeId: string) => {
       const state = get();
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
       const derived = getDerivedIndexes(state);
-      return (derived.rulesByRootNodeId[nodeId] ?? [])
+      return (derived.rulesByRootNodeId[canonicalNodeId] ?? [])
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     },
 
@@ -2575,6 +2932,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       const state = get();
       const derived = getDerivedIndexes(state);
       const nodeIds = Object.keys(state.nodes);
+      if (
+        state.leftPrimaryMode === 'roots'
+        && state.activeRootEntryNodeId
+        && state.nodes[state.activeRootEntryNodeId]
+      ) {
+        return nodeIds.filter((nodeId) => isNodeWithinSubtree(nodeId, state.activeRootEntryNodeId as string));
+      }
       if (state.leftPrimaryMode === 'sections' && state.activeSectionId && state.sectionsById[state.activeSectionId]) {
         return nodeIds.filter((nodeId) =>
           (derived.effectiveSectionIdsByNode[nodeId] ?? []).includes(state.activeSectionId as string),
@@ -2592,6 +2956,13 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     getDisplayNodeIdsWithAncestors: () => {
       const state = get();
       const matchedNodeIds = state.getPrimaryMatchedNodeIds();
+      if (
+        state.leftPrimaryMode === 'roots'
+        && state.activeRootEntryNodeId
+        && state.nodes[state.activeRootEntryNodeId]
+      ) {
+        return matchedNodeIds;
+      }
       return buildDisplayNodeIdsWithAncestors(matchedNodeIds, state.nodes);
     },
 
@@ -2602,8 +2973,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
     evalSmartView: (nodeId: string, smartViewId: string) => {
       const state = get();
+      const canonicalNodeId = canonicalizeNodeId(nodeId);
+      if (!state.nodes[canonicalNodeId]) return false;
       const derived = getDerivedIndexes(state);
-      return evalSmartViewById(nodeId, smartViewId, {
+      return evalSmartViewById(canonicalNodeId, smartViewId, {
         ...state,
         effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
       });

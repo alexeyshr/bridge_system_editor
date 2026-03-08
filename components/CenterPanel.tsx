@@ -3,6 +3,7 @@ import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
 import { useState } from 'react';
 import { SequenceRow } from './SequenceRow';
 import { ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
+import { buildSequenceIdFromSteps } from '@/lib/bidding-steps';
 
 type TreeViewMode = 'classic' | 'compact';
 
@@ -11,6 +12,7 @@ export function CenterPanel() {
     nodes,
     sectionsById,
     selectedNodeId,
+    activeRootEntryNodeId,
     searchQuery,
     leftPrimaryMode,
     activeSectionId,
@@ -22,23 +24,20 @@ export function CenterPanel() {
     getPrimaryMatchedNodeIds,
     getEffectiveSectionIds,
     setLeftPrimaryMode,
+    setActiveRootEntryNodeId,
     setActiveSectionId,
     setActiveSmartViewId,
   } = useBiddingStore();
   const allNodeIds = Object.keys(nodes);
   const [viewMode, setViewMode] = useState<TreeViewMode>('classic');
 
-  const selectedRootId = (() => {
-    if (leftPrimaryMode !== 'roots' || !selectedNodeId) return null;
-    const node = nodes[selectedNodeId];
-    if (!node || node.context.sequence.length === 0) return null;
-    const rootId = node.context.sequence[0];
-    return nodes[rootId] && nodes[rootId].context.sequence.length === 1 ? rootId : null;
-  })();
+  const activeRootNode = activeRootEntryNodeId ? nodes[activeRootEntryNodeId] ?? null : null;
+  const effectiveRootEntryNodeId = activeRootNode ? activeRootNode.id : null;
+  const rootSequenceLength = activeRootNode?.context.sequence.length ?? 0;
 
   const isSectionFilterMode = leftPrimaryMode === 'sections';
   const isSmartFilterMode = leftPrimaryMode === 'smartViews' && !!activeSmartViewId;
-  const isRootFilterMode = leftPrimaryMode === 'roots' && !!selectedRootId;
+  const isRootFilterMode = leftPrimaryMode === 'roots' && !!effectiveRootEntryNodeId;
 
   const activeSection = leftPrimaryMode === 'sections' && activeSectionId
     ? sectionsById[activeSectionId] ?? null
@@ -46,13 +45,20 @@ export function CenterPanel() {
   const activeSmartView = leftPrimaryMode === 'smartViews' && activeSmartViewId
     ? getSmartViews().find((smartView) => smartView.id === activeSmartViewId) ?? null
     : null;
+  const activeRootLabel = activeRootNode
+    ? activeRootNode.context.sequence.map((step) => (
+      step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)
+    )).join(' - ')
+    : null;
 
   const isPrimaryFilterActive = isSectionFilterMode || isSmartFilterMode || isRootFilterMode;
 
   const primaryMatchedNodeIds = (() => {
-    if (isRootFilterMode && selectedRootId) {
-      const rootPrefix = `${selectedRootId} `;
-      return allNodeIds.filter((nodeId) => nodeId === selectedRootId || nodeId.startsWith(rootPrefix));
+    if (isRootFilterMode && effectiveRootEntryNodeId) {
+      const rootPrefix = `${effectiveRootEntryNodeId} `;
+      return allNodeIds.filter((nodeId) => (
+        nodeId === effectiveRootEntryNodeId || nodeId.startsWith(rootPrefix)
+      ));
     }
     if (isSectionFilterMode) {
       if (!activeSectionId || !sectionsById[activeSectionId]) return [] as string[];
@@ -66,6 +72,17 @@ export function CenterPanel() {
 
   const displayNodeIdSet = (() => {
     if (!isPrimaryFilterActive) return new Set<string>(allNodeIds);
+    if (isRootFilterMode) {
+      const ids = new Set<string>(primaryMatchedNodeIds);
+      if (effectiveRootEntryNodeId) {
+        const sequenceTokens = effectiveRootEntryNodeId.split(' ').filter(Boolean);
+        for (let i = 1; i < sequenceTokens.length; i += 1) {
+          const ancestorId = sequenceTokens.slice(0, i).join(' ');
+          if (nodes[ancestorId]) ids.add(ancestorId);
+        }
+      }
+      return ids;
+    }
     const ids = new Set<string>();
     primaryMatchedNodeIds.forEach((nodeId) => {
       const sequence = nodeId.split(' ').filter(Boolean);
@@ -86,24 +103,25 @@ export function CenterPanel() {
   // Filter nodes based on search and expansion
   const visibleNodes = (() => {
     const visible: BiddingNode[] = [];
-    let hiddenPrefix: string[] | null = null;
+    let hiddenPrefixTokens: string[] | null = null;
 
     for (const node of sortedNodes) {
       const seq = node.context.sequence;
+      const seqTokens = node.id.split(' ').filter(Boolean);
 
       if (isPrimaryFilterActive && !displayNodeIdSet.has(node.id)) {
         continue;
       }
       
       // If we are currently hiding descendants of a collapsed node
-      if (hiddenPrefix) {
+      if (hiddenPrefixTokens) {
         // Check if current node is a descendant
         let isDescendant = true;
-        if (seq.length <= hiddenPrefix.length) {
+        if (seqTokens.length <= hiddenPrefixTokens.length) {
           isDescendant = false;
         } else {
-          for (let i = 0; i < hiddenPrefix.length; i++) {
-            if (seq[i] !== hiddenPrefix[i]) {
+          for (let i = 0; i < hiddenPrefixTokens.length; i++) {
+            if (seqTokens[i] !== hiddenPrefixTokens[i]) {
               isDescendant = false;
               break;
             }
@@ -115,14 +133,17 @@ export function CenterPanel() {
           if (!searchQuery) continue;
         } else {
           // No longer a descendant, clear hidden prefix
-          hiddenPrefix = null;
+          hiddenPrefixTokens = null;
         }
       }
 
       // Search filtering
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        const matchesSearch = seq.join(' ').toLowerCase().includes(query) || 
+        const sequenceText = seq.map((step) => (
+          step.actor === 'opp' ? `(${step.call})` : step.call
+        )).join(' ');
+        const matchesSearch = sequenceText.toLowerCase().includes(query) || 
                               node.meaning?.notes?.toLowerCase().includes(query) ||
                               node.meaning?.shows?.join(' ').toLowerCase().includes(query);
         if (!matchesSearch) continue;
@@ -132,11 +153,12 @@ export function CenterPanel() {
 
       // If this node is collapsed and we are not searching, hide its descendants
       if (!node.isExpanded && !searchQuery) {
-        hiddenPrefix = seq;
+        hiddenPrefixTokens = seqTokens;
       }
     }
     return visible;
   })();
+  const depthBase = 0;
 
   return (
     <div className="h-full w-full flex flex-col bg-white overflow-hidden">
@@ -158,15 +180,20 @@ export function CenterPanel() {
           <ChevronsDownUp className="w-3.5 h-3.5" />
           <span>Collapse All</span>
         </button>
-        {(activeSection || activeSmartView) && (
+        {(activeSection || activeSmartView || activeRootNode) && (
           <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
             <span className="text-xs font-medium text-blue-800">
-              {activeSection ? `Section: ${activeSection.name}` : `Smart: ${activeSmartView?.name}`}
+              {activeSection
+                ? `Section: ${activeSection.name}`
+                : activeSmartView
+                  ? `Smart: ${activeSmartView.name}`
+                  : `Root: ${activeRootLabel}`}
             </span>
             <button
               type="button"
               onClick={() => {
                 setLeftPrimaryMode('roots');
+                setActiveRootEntryNodeId(null);
                 setActiveSectionId(null);
                 setActiveSmartViewId(null);
               }}
@@ -206,10 +233,13 @@ export function CenterPanel() {
         <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Current Sequence</div>
         {selectedSequence.length > 0 ? (
           <div className="font-mono text-sm whitespace-nowrap overflow-x-auto pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {selectedSequence.map((call, index) => {
-              const nodeId = selectedSequence.slice(0, index + 1).join(' ');
+            {selectedSequence.map((step, index) => {
+              const nodeId = buildSequenceIdFromSteps(selectedSequence.slice(0, index + 1));
               const isActive = nodeId === effectiveSelectedNode?.id;
               const isExistingNode = !!nodes[nodeId];
+              const isOpponent = step.actor === 'opp';
+              const callLabel = isOpponent ? `(${formatCall(step.call)})` : formatCall(step.call);
+              const callColorClass = isOpponent ? 'text-slate-500' : getSuitColor(step.call);
 
               return (
                 <span key={`${nodeId}-${index}`} className="inline-flex items-center">
@@ -221,12 +251,14 @@ export function CenterPanel() {
                     }}
                     className={`transition-colors ${
                       isActive
-                        ? `${getSuitColor(call)} font-semibold underline decoration-dotted underline-offset-2`
-                        : `${getSuitColor(call)} hover:opacity-70`
+                        ? `${callColorClass} font-semibold underline decoration-dotted underline-offset-2`
+                        : `${callColorClass} hover:opacity-70`
                     } ${isExistingNode ? 'cursor-pointer' : 'cursor-default opacity-50'}`}
-                    title={isExistingNode ? `Go to ${selectedSequence.slice(0, index + 1).map((item) => formatCall(item)).join(' - ')}` : 'Sequence not found'}
+                    title={isExistingNode ? `Go to ${selectedSequence.slice(0, index + 1).map((item) => (
+                      item.actor === 'opp' ? `(${formatCall(item.call)})` : formatCall(item.call)
+                    )).join(' - ')}` : 'Sequence not found'}
                   >
-                    {formatCall(call)}
+                    {callLabel}
                   </button>
                 <span className="text-slate-400 mx-1">-</span>
               </span>
@@ -259,11 +291,18 @@ export function CenterPanel() {
                   ? 'No sequences in this section yet.'
                   : isSmartFilterMode
                     ? 'No sequences match this smart view.'
+                    : isRootFilterMode
+                      ? 'No continuations under this root entry yet.'
                     : 'No sequences to display.'}
               </div>
             ) : (
               visibleNodes.map(node => (
-                <SequenceRow key={node.id} node={node} viewMode={viewMode} />
+                <SequenceRow
+                  key={node.id}
+                  node={node}
+                  viewMode={viewMode}
+                  displayDepth={Math.max(0, node.context.sequence.length - 1 - depthBase)}
+                />
               ))
             )}
           </div>

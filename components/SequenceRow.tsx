@@ -1,8 +1,24 @@
 import { BiddingNode, useBiddingStore } from '@/store/useBiddingStore';
 import { formatCall, getSuitColor } from '@/lib/utils';
-import { ChevronRight, ChevronDown, Plus, Bookmark, AlertTriangle, Trash2, FolderInput } from 'lucide-react';
+import {
+  ChevronRight,
+  ChevronDown,
+  Plus,
+  Bookmark,
+  AlertTriangle,
+  Trash2,
+  FolderInput,
+  Pin,
+  PinOff,
+} from 'lucide-react';
 import { useState } from 'react';
 import { NodeSectionAssignment } from './NodeSectionAssignment';
+import {
+  buildSequenceIdFromSteps,
+  normalizeBiddingCall,
+  type BiddingActor,
+  type BiddingStep,
+} from '@/lib/bidding-steps';
 
 type SequenceViewMode = 'classic' | 'compact';
 
@@ -12,24 +28,6 @@ const SPECIAL_CALLS = ['Pass', 'X', 'XX'] as const;
 const ALL_BID_CALLS = Array.from({ length: 7 }, (_, levelIdx) =>
   BID_DISPLAY_SUITS.map((suit) => `${levelIdx + 1}${suit}`)
 ).flat();
-
-function normalizeCall(rawValue: string): string | null {
-  const normalized = rawValue
-    .trim()
-    .toUpperCase()
-    .replace(/♣/g, 'C')
-    .replace(/♦/g, 'D')
-    .replace(/♥/g, 'H')
-    .replace(/♠/g, 'S')
-    .replace(/\s+/g, '');
-
-  if (normalized === 'PASS' || normalized === 'P') return 'Pass';
-  if (normalized === 'X' || normalized === 'XX') return normalized;
-
-  const match = normalized.match(/^([1-7])(C|D|H|S|NT)$/);
-  if (!match) return null;
-  return `${match[1]}${match[2]}`;
-}
 
 function isBidCall(call: string): boolean {
   return /^([1-7])(C|D|H|S|NT)$/.test(call);
@@ -43,35 +41,64 @@ function getBidRank(call: string): number {
   return (level - 1) * BID_SUITS.length + BID_SUITS.indexOf(suit);
 }
 
-function getLastBidFromSequence(sequence: string[]): string | null {
+function getLastBidFromSequence(sequence: BiddingStep[]): string | null {
   for (let i = sequence.length - 1; i >= 0; i--) {
-    const normalized = normalizeCall(sequence[i]);
+    const normalized = normalizeBiddingCall(sequence[i].call);
     if (normalized && isBidCall(normalized)) return normalized;
   }
   return null;
 }
 
-export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode; viewMode?: SequenceViewMode }) {
-  const { selectedNodeId, selectNode, toggleExpand, toggleBookmark, addNode, deleteNode, nodes } = useBiddingStore();
+export function SequenceRow({
+  node,
+  viewMode = 'classic',
+  displayDepth,
+}: {
+  node: BiddingNode;
+  viewMode?: SequenceViewMode;
+  displayDepth?: number;
+}) {
+  const {
+    selectedNodeId,
+    selectNode,
+    toggleExpand,
+    toggleBookmark,
+    addNode,
+    addRootEntry,
+    removeRootEntry,
+    deleteNode,
+    nodes,
+    rootEntryNodeIds,
+  } = useBiddingStore();
   const [isHovered, setIsHovered] = useState(false);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSectionAssignOpen, setIsSectionAssignOpen] = useState(false);
   const [continuationCall, setContinuationCall] = useState('');
+  const [continuationActor, setContinuationActor] = useState<BiddingActor>('our');
   const [continuationError, setContinuationError] = useState('');
 
   const isSelected = selectedNodeId === node.id;
   const seq = node.context.sequence;
-  const sequencePathLabel = `${seq.map((call) => formatCall(call)).join('-')}-?`;
-  const depth = seq.length - 1;
-  const lastCall = seq[seq.length - 1];
-  const normalizedLastCall = normalizeCall(lastCall);
+  const sequencePathLabel = `${seq.map((step) => (
+    step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)
+  )).join('-')}-?`;
+  const depth = displayDepth ?? (seq.length - 1);
+  const lastStep = seq[seq.length - 1];
+  const lastCall = lastStep.call;
+  const isOpponentStep = lastStep.actor === 'opp';
+  const ourTurnsCount = seq.reduce((acc, step) => acc + (step.actor === 'our' ? 1 : 0), 0);
+  const isOpenerLaneTurn = ourTurnsCount % 2 === 1;
+  const normalizedLastCall = normalizeBiddingCall(lastCall);
   const lastContractBid = getLastBidFromSequence(seq);
   const lastContractRank = lastContractBid ? getBidRank(lastContractBid) : -1;
   const canDouble = !!normalizedLastCall && isBidCall(normalizedLastCall);
   const canRedouble = normalizedLastCall === 'X';
-  const isOpenerTurn = depth % 2 === 0;
+  const compactLeftTitle = 'Opener';
+  const compactRightTitle = 'Responder';
+  const compactCallTextClass = isOpponentStep ? 'text-slate-500' : getSuitColor(lastCall);
   const showRowActions = isHovered || isSelected || isAddFormOpen || isSectionAssignOpen || isDeleteDialogOpen;
+  const isRootEntry = rootEntryNodeIds.includes(node.id);
   
   // Check if node has children
   const prefix = node.id + " ";
@@ -80,7 +107,10 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   const descendantsCount = Object.keys(nodes).filter((key) => key === node.id || key.startsWith(prefix)).length - 1;
 
   const isCallAvailable = (call: string) => {
-    const newNodeId = [...seq, call].join(' ');
+    const newNodeId = buildSequenceIdFromSteps([
+      ...seq,
+      { call, actor: continuationActor },
+    ]);
     if (nodes[newNodeId]) return false;
 
     if (isBidCall(call)) {
@@ -93,13 +123,16 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   };
 
   const submitContinuation = () => {
-    const parsedCall = normalizeCall(continuationCall);
+    const parsedCall = normalizeBiddingCall(continuationCall);
     if (!parsedCall) {
       setContinuationError('Use: 1C..7NT, Pass, X or XX');
       return;
     }
 
-    const newNodeId = [...seq, parsedCall].join(' ');
+    const newNodeId = buildSequenceIdFromSteps([
+      ...seq,
+      { call: parsedCall, actor: continuationActor },
+    ]);
     if (nodes[newNodeId]) {
       setContinuationError('This continuation already exists');
       return;
@@ -117,8 +150,9 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
       return;
     }
 
-    addNode(node.id, parsedCall);
+    addNode(node.id, parsedCall, continuationActor);
     setContinuationCall('');
+    setContinuationActor('our');
     setContinuationError('');
     setIsAddFormOpen(false);
   };
@@ -128,6 +162,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
     setIsSectionAssignOpen(false);
     setIsAddFormOpen(true);
     setContinuationCall('');
+    setContinuationActor('our');
     setContinuationError('');
   };
 
@@ -150,6 +185,15 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleToggleRootEntry = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isRootEntry) {
+      removeRootEntry(node.id);
+      return;
+    }
+    addRootEntry(node.id);
   };
 
   const confirmDelete = (e: React.MouseEvent) => {
@@ -186,28 +230,37 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         {viewMode === 'compact' ? (
           <div className="flex items-center gap-1.5 ml-1">
             {depth > 0 && <span className="text-slate-300">→</span>}
-            <div className="grid grid-cols-2 gap-1">
+            {isOpponentStep ? (
               <span
-                className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
-                  isOpenerTurn
-                    ? `${getSuitColor(lastCall)} border-slate-300 bg-white`
-                    : 'text-slate-300 border-slate-200 bg-slate-50'
-                }`}
-                title="Opener"
+                className="min-w-[84px] h-5 px-1.5 rounded-md border border-slate-300 bg-slate-100 text-[10px] font-semibold text-slate-500 flex items-center justify-center"
+                title="Opponent"
               >
-                {isOpenerTurn ? formatCall(lastCall) : '·'}
+                ({formatCall(lastCall)})
               </span>
-              <span
-                className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
-                  !isOpenerTurn
-                    ? `${getSuitColor(lastCall)} border-slate-300 bg-white`
-                    : 'text-slate-300 border-slate-200 bg-slate-50'
-                }`}
-                title="Responder"
-              >
-                {!isOpenerTurn ? formatCall(lastCall) : '·'}
-              </span>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1">
+                <span
+                  className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
+                    isOpenerLaneTurn
+                      ? `${compactCallTextClass} border-slate-300 bg-white`
+                      : 'text-slate-300 border-slate-200 bg-slate-50'
+                  }`}
+                  title={compactLeftTitle}
+                >
+                  {isOpenerLaneTurn ? formatCall(lastCall) : '·'}
+                </span>
+                <span
+                  className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
+                    !isOpenerLaneTurn
+                      ? `${compactCallTextClass} border-slate-300 bg-slate-100`
+                      : 'text-slate-300 border-slate-200 bg-slate-50'
+                  }`}
+                  title={compactRightTitle}
+                >
+                  {!isOpenerLaneTurn ? formatCall(lastCall) : '·'}
+                </span>
+              </div>
+            )}
             {node.meaning?.alert && (
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500 ml-0.5" />
             )}
@@ -223,8 +276,8 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         ) : (
           <div className="flex items-center gap-1.5 ml-1">
             {depth > 0 && <span className="text-slate-400">→</span>}
-            <span className={`font-semibold ${getSuitColor(lastCall)}`}>
-              {formatCall(lastCall)}
+            <span className={`font-semibold ${lastStep.actor === 'opp' ? 'text-slate-500' : getSuitColor(lastCall)}`}>
+              {lastStep.actor === 'opp' ? `(${formatCall(lastCall)})` : formatCall(lastCall)}
             </span>
             {node.meaning?.alert && (
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500 ml-1" />
@@ -261,6 +314,17 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
             <Bookmark className="w-3.5 h-3.5" />
           </button>
           <button
+            className={`p-1 rounded ${
+              isRootEntry
+                ? 'text-indigo-600 bg-indigo-100'
+                : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-100'
+            }`}
+            onClick={handleToggleRootEntry}
+            title={isRootEntry ? 'Remove from roots' : 'Add to roots'}
+          >
+            {isRootEntry ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+          </button>
+          <button
             className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
             onClick={handleOpenSectionAssign}
             title="Assign sections"
@@ -283,10 +347,36 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
           onClick={(e) => e.stopPropagation()}
         >
           <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">
-            Add continuation after <span className={`${getSuitColor(lastCall)} font-bold`}>{formatCall(lastCall)}</span>
+            Add continuation after <span className={`${lastStep.actor === 'opp' ? 'text-slate-500' : getSuitColor(lastCall)} font-bold`}>
+              {lastStep.actor === 'opp' ? `(${formatCall(lastCall)})` : formatCall(lastCall)}
+            </span>
           </div>
           <div className="mb-2 font-mono text-[11px] text-slate-700 break-all">
             {sequencePathLabel}
+          </div>
+          <div className="mb-1.5 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+            <button
+              type="button"
+              onClick={() => setContinuationActor('our')}
+              className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                continuationActor === 'our'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Our call
+            </button>
+            <button
+              type="button"
+              onClick={() => setContinuationActor('opp')}
+              className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                continuationActor === 'opp'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Opponent call
+            </button>
           </div>
 
           <div className="mb-1.5">
@@ -372,6 +462,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
                 if (e.key === 'Escape') {
                   setIsAddFormOpen(false);
                   setContinuationCall('');
+                  setContinuationActor('our');
                   setContinuationError('');
                 }
               }}
@@ -383,6 +474,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
               onClick={() => {
                 setIsAddFormOpen(false);
                 setContinuationCall('');
+                setContinuationActor('our');
                 setContinuationError('');
               }}
               className="h-7 px-2.5 shrink-0 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-md transition-colors"
@@ -515,9 +607,11 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="text-sm font-semibold text-slate-900">Delete sequence?</div>
               <div className="text-xs text-slate-500 mt-0.5">
-                {seq.map((call, i) => (
+                {seq.map((step, i) => (
                   <span key={`${node.id}-delete-${i}`} className="inline-flex items-center">
-                    <span className={getSuitColor(call)}>{formatCall(call)}</span>
+                    <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                      {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
+                    </span>
                     {i < seq.length - 1 && <span className="mx-1 text-slate-400">-</span>}
                   </span>
                 ))}

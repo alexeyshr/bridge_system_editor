@@ -92,9 +92,11 @@ export function RightPanel() {
       {/* Header */}
       <div className="flex items-center justify-between py-2 px-3 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
         <div className="flex items-center gap-1 font-mono text-xs font-semibold overflow-x-auto whitespace-nowrap pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {seq.map((c, i) => (
+          {seq.map((step, i) => (
             <span key={i} className="flex items-center gap-1 shrink-0">
-              <span className={getSuitColor(c)}>{formatCall(c)}</span>
+              <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
+              </span>
               {i < seq.length - 1 && <span className="text-slate-400">-</span>}
             </span>
           ))}

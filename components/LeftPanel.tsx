@@ -2,12 +2,20 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   useBiddingStore,
   type CustomSmartViewField,
+  type BiddingNode,
   type SectionMutationResult,
   type SmartViewMutationResult,
   type SectionTreeNode,
 } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
 import {
+  buildSequenceIdFromSteps,
+  normalizeBiddingCall,
+  type BiddingStep,
+} from '@/lib/bidding-steps';
+import {
+  ArrowDown,
+  ArrowUp,
   Bookmark,
   ChevronDown,
   ChevronRight,
@@ -34,16 +42,59 @@ type SmartViewModalState =
 
 type RootDeleteDialogState = {
   nodeId: string;
-  call: string;
-  descendantsCount: number;
+  label: string;
 } | null;
 
 const ROOT_BID_CALLS = Array.from({ length: 7 }, (_, levelIdx) =>
   ['NT', 'S', 'H', 'D', 'C'].map((suit) => `${levelIdx + 1}${suit}`),
 ).flat();
+const ROOT_SPECIAL_CALLS = ['Pass', 'X', 'XX'] as const;
+const BID_SUITS = ['C', 'D', 'H', 'S', 'NT'] as const;
 const ROOT_DISPLAY_SUITS = ['NT', 'S', 'H', 'D', 'C'] as const;
 const ROOT_DISPLAY_LEVELS = [1, 2, 3, 4, 5, 6, 7] as const;
 type RootViewMode = 'matrix' | 'list';
+type RootPickerMode = 'single' | 'sequence';
+
+function isBidCall(call: string): boolean {
+  return /^([1-7])(C|D|H|S|NT)$/.test(call);
+}
+
+function getBidRank(call: string): number {
+  const match = call.match(/^([1-7])(C|D|H|S|NT)$/);
+  if (!match) return -1;
+  const level = parseInt(match[1], 10);
+  const suit = match[2] as (typeof BID_SUITS)[number];
+  return (level - 1) * BID_SUITS.length + BID_SUITS.indexOf(suit);
+}
+
+function getLastContractBid(steps: BiddingStep[]): string | null {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const normalized = normalizeBiddingCall(steps[index].call);
+    if (normalized && isBidCall(normalized)) return normalized;
+  }
+  return null;
+}
+
+function isSequenceCallAvailable(steps: BiddingStep[], call: string): boolean {
+  const normalized = normalizeBiddingCall(call);
+  if (!normalized) return false;
+
+  if (steps.length === 0) {
+    return isBidCall(normalized);
+  }
+
+  const lastNormalized = normalizeBiddingCall(steps[steps.length - 1].call);
+  const lastBid = getLastContractBid(steps);
+  const lastBidRank = lastBid ? getBidRank(lastBid) : -1;
+
+  if (isBidCall(normalized)) {
+    return getBidRank(normalized) > lastBidRank;
+  }
+  if (normalized === 'Pass') return true;
+  if (normalized === 'X') return !!lastNormalized && isBidCall(lastNormalized);
+  if (normalized === 'XX') return lastNormalized === 'X';
+  return false;
+}
 
 function toErrorMessage(result: SectionMutationResult): string {
   if (result.ok) return '';
@@ -60,14 +111,18 @@ export function LeftPanel() {
     nodes,
     selectNode,
     addNode,
-    deleteNode,
+    addRootEntry,
+    removeRootEntry,
     selectedNodeId,
+    rootEntryNodeIds,
+    activeRootEntryNodeId,
     leftPrimaryMode,
     activeSectionId,
     activeSmartViewId,
     sectionExpandedById,
     createSection,
     renameSection,
+    reorderSection,
     deleteSection,
     createCustomSmartView,
     updateCustomSmartView,
@@ -77,6 +132,7 @@ export function LeftPanel() {
     setActiveSectionId,
     setActiveSmartViewId,
     toggleSectionExpanded,
+    setActiveRootEntryNodeId,
     getSectionTree,
     getSectionNodeCount,
     getSmartViews,
@@ -95,76 +151,277 @@ export function LeftPanel() {
   const [smartViewFieldInput, setSmartViewFieldInput] = useState<CustomSmartViewField>('all');
   const [smartViewModalError, setSmartViewModalError] = useState('');
   const [isRootsOpen, setIsRootsOpen] = useState(true);
+  const [isOurRootsOpen, setIsOurRootsOpen] = useState(true);
+  const [isSequenceOppRootsOpen, setIsSequenceOppRootsOpen] = useState(true);
   const [isSectionsOpen, setIsSectionsOpen] = useState(true);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(true);
   const [isSmartViewsOpen, setIsSmartViewsOpen] = useState(true);
   const [isRootPickerOpen, setIsRootPickerOpen] = useState(false);
+  const [rootPickerMode, setRootPickerMode] = useState<RootPickerMode>('single');
+  const [rootEditEntryNodeId, setRootEditEntryNodeId] = useState<string | null>(null);
   const [selectedRootCalls, setSelectedRootCalls] = useState<string[]>([]);
+  const [rootPickerActor, setRootPickerActor] = useState<'our' | 'opp'>('our');
+  const [sequenceRootSteps, setSequenceRootSteps] = useState<BiddingStep[]>([]);
+  const [sequenceNextActor, setSequenceNextActor] = useState<'our' | 'opp'>('our');
   const [rootPickerError, setRootPickerError] = useState('');
   const [rootDeleteDialog, setRootDeleteDialog] = useState<RootDeleteDialogState>(null);
   const [rootViewMode, setRootViewMode] = useState<RootViewMode>('matrix');
 
   const roots = useMemo(
-    () => Object.values(nodes)
-      .filter((n) => n.context.sequence.length === 1)
+    () => rootEntryNodeIds
+      .map((nodeId) => nodes[nodeId])
+      .filter((node): node is BiddingNode => !!node)
       .sort((a, b) => compareSequences(a.context.sequence, b.context.sequence)),
-    [nodes],
+    [nodes, rootEntryNodeIds],
   );
   const rootsByCall = useMemo(
-    () => new Map(roots.map((root) => [root.id, root])),
+    () => new Map(
+      roots
+        .filter((root) => (
+          root.context.sequence.length === 1
+          && root.context.sequence[0]?.actor === 'our'
+        ))
+        .map((root) => [root.context.sequence[0].call, root]),
+    ),
     [roots],
   );
+  const activeRootNode = useMemo(
+    () => (activeRootEntryNodeId ? nodes[activeRootEntryNodeId] ?? null : null),
+    [activeRootEntryNodeId, nodes],
+  );
   const selectedRootCall = useMemo(() => {
-    if (!selectedNodeId) return null;
-    const selectedNode = nodes[selectedNodeId];
-    if (!selectedNode || selectedNode.context.sequence.length === 0) return null;
-    const rootCall = selectedNode.context.sequence[0];
-    return rootsByCall.has(rootCall) ? rootCall : null;
-  }, [nodes, rootsByCall, selectedNodeId]);
+    if (!activeRootNode || activeRootNode.context.sequence.length !== 1) return null;
+    const [rootStep] = activeRootNode.context.sequence;
+    if (!rootStep || rootStep.actor !== 'our') return null;
+    return rootsByCall.has(rootStep.call) ? rootStep.call : null;
+  }, [activeRootNode, rootsByCall]);
   const bookmarks = useMemo(() => Object.values(nodes).filter((n) => n.isBookmarked), [nodes]);
   const sectionTree = getSectionTree();
   const smartViews = getSmartViews();
-  const existingRootCalls = useMemo(() => new Set(roots.map((root) => root.id)), [roots]);
+  const existingRootCallByActor = useMemo(
+    () => new Set(
+      roots
+        .filter((root) => root.context.sequence.length === 1)
+        .map((root) => `${root.context.sequence[0].actor}:${root.context.sequence[0].call}`),
+    ),
+    [roots],
+  );
+  const ourRoots = useMemo(
+    () => roots.filter((root) => (
+      root.context.sequence.length === 1 && root.context.sequence[0].actor === 'our'
+    )),
+    [roots],
+  );
+  const extraRoots = useMemo(
+    () => roots.filter((root) => !(
+      root.context.sequence.length === 1 && root.context.sequence[0].actor === 'our'
+    )),
+    [roots],
+  );
+  const selectedNodeLabel = useMemo(() => {
+    if (!selectedNodeId || !nodes[selectedNodeId]) return '';
+    return nodes[selectedNodeId].context.sequence
+      .map((step) => (step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)))
+      .join(' - ');
+  }, [nodes, selectedNodeId]);
+  const canAddSelectedNodeAsRoot = useMemo(
+    () => !!selectedNodeId && !!nodes[selectedNodeId] && !roots.some((root) => root.id === selectedNodeId),
+    [nodes, roots, selectedNodeId],
+  );
+  const sequencePreviewLabel = useMemo(
+    () => sequenceRootSteps
+      .map((step) => (step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)))
+      .join(' - '),
+    [sequenceRootSteps],
+  );
+  const sequenceFinalNodeId = useMemo(
+    () => (sequenceRootSteps.length > 0 ? buildSequenceIdFromSteps(sequenceRootSteps) : null),
+    [sequenceRootSteps],
+  );
+  const sequenceConflictsExistingRoot = useMemo(
+    () => !!sequenceFinalNodeId && roots.some((root) => (
+      root.id === sequenceFinalNodeId && root.id !== rootEditEntryNodeId
+    )),
+    [rootEditEntryNodeId, roots, sequenceFinalNodeId],
+  );
+  const canSubmitSingleMode = selectedRootCalls.length > 0;
+  const canSubmitSequenceMode = sequenceRootSteps.length > 0 && !sequenceConflictsExistingRoot;
+  const editingRootLabel = useMemo(() => {
+    if (!rootEditEntryNodeId) return '';
+    const node = nodes[rootEditEntryNodeId];
+    if (!node) return '';
+    return node.context.sequence
+      .map((step) => (step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)))
+      .join(' - ');
+  }, [nodes, rootEditEntryNodeId]);
 
   const openRootPicker = () => {
     setRootPickerError('');
+    setRootPickerMode('single');
+    setRootEditEntryNodeId(null);
     setSelectedRootCalls([]);
+    setRootPickerActor('our');
+    setSequenceRootSteps([]);
+    setSequenceNextActor('our');
     setIsRootPickerOpen(true);
   };
 
   const closeRootPicker = () => {
     setIsRootPickerOpen(false);
     setRootPickerError('');
+    setRootPickerMode('single');
+    setRootEditEntryNodeId(null);
     setSelectedRootCalls([]);
+    setRootPickerActor('our');
+    setSequenceRootSteps([]);
+    setSequenceNextActor('our');
   };
 
   const toggleRootCallSelection = (call: string) => {
-    if (existingRootCalls.has(call)) return;
+    const callKey = `${rootPickerActor}:${call}`;
+    if (existingRootCallByActor.has(callKey)) return;
     setSelectedRootCalls((prev) => (
       prev.includes(call) ? prev.filter((item) => item !== call) : [...prev, call]
     ));
     if (rootPickerError) setRootPickerError('');
   };
 
-  const submitRootPicker = () => {
-    const callsToAdd = selectedRootCalls.filter((call) => !existingRootCalls.has(call));
+  const submitSingleRootPicker = () => {
+    const callsToAdd = selectedRootCalls.filter((call) => (
+      !existingRootCallByActor.has(`${rootPickerActor}:${call}`)
+    ));
     if (callsToAdd.length === 0) {
       setRootPickerError('Select at least one available root call.');
       return;
     }
 
-    callsToAdd.forEach((call) => addNode(null, call));
+    callsToAdd.forEach((call) => {
+      addNode(null, call, rootPickerActor);
+    });
     closeRootPicker();
   };
 
-  const openRootDeleteDialog = (nodeId: string, call: string) => {
-    const descendantsCount = Object.keys(nodes).filter(
-      (key) => key.startsWith(`${nodeId} `),
-    ).length;
+  const appendSequenceStep = (call: string) => {
+    const normalizedCall = normalizeBiddingCall(call);
+    if (!normalizedCall) return;
+    if (!isSequenceCallAvailable(sequenceRootSteps, normalizedCall)) return;
+    setSequenceRootSteps((prev) => [
+      ...prev,
+      { call: normalizedCall, actor: sequenceNextActor },
+    ]);
+    if (rootPickerError) setRootPickerError('');
+  };
+
+  const popSequenceStep = () => {
+    setSequenceRootSteps((prev) => prev.slice(0, -1));
+  };
+
+  const clearSequenceSteps = () => {
+    setSequenceRootSteps([]);
+  };
+
+  const submitSequenceRootPicker = () => {
+    if (sequenceRootSteps.length === 0) {
+      setRootPickerError('Build a sequence first.');
+      return;
+    }
+
+    let parentNodeId: string | null = null;
+    for (let index = 0; index < sequenceRootSteps.length; index += 1) {
+      const step = sequenceRootSteps[index];
+      const currentNodeId = buildSequenceIdFromSteps(sequenceRootSteps.slice(0, index + 1));
+      if (!useBiddingStore.getState().nodes[currentNodeId]) {
+        addNode(parentNodeId, step.call, step.actor);
+      }
+      parentNodeId = currentNodeId;
+    }
+
+    const finalNodeId = buildSequenceIdFromSteps(sequenceRootSteps);
+    if (!useBiddingStore.getState().nodes[finalNodeId]) {
+      setRootPickerError('Failed to build sequence path.');
+      return;
+    }
+
+    if (rootEditEntryNodeId) {
+      if (finalNodeId === rootEditEntryNodeId) {
+        closeRootPicker();
+        return;
+      }
+      if (roots.some((root) => root.id === finalNodeId && root.id !== rootEditEntryNodeId)) {
+        setRootPickerError('This sequence is already in roots.');
+        return;
+      }
+
+      const removeResult = removeRootEntry(rootEditEntryNodeId);
+      if (!removeResult.ok) {
+        setRootPickerError(removeResult.error || 'Failed to update root entry.');
+        return;
+      }
+      const addResult = addRootEntry(finalNodeId);
+      if (!addResult.ok) {
+        addRootEntry(rootEditEntryNodeId);
+        setRootPickerError(addResult.error || 'Failed to update root entry.');
+        return;
+      }
+
+      setLeftPrimaryMode('roots');
+      setActiveSectionId(null);
+      setActiveSmartViewId(null);
+      setActiveRootEntryNodeId(finalNodeId);
+      selectNode(finalNodeId);
+      closeRootPicker();
+      return;
+    }
+
+    const result = addRootEntry(finalNodeId);
+    if (!result.ok) {
+      setRootPickerError(result.error || 'Failed to add sequence root.');
+      return;
+    }
+    setLeftPrimaryMode('roots');
+    setActiveSectionId(null);
+    setActiveSmartViewId(null);
+    setActiveRootEntryNodeId(finalNodeId);
+    selectNode(finalNodeId);
+    closeRootPicker();
+  };
+
+  const addSelectedNodeAsRoot = () => {
+    if (!selectedNodeId || !nodes[selectedNodeId]) return;
+    const result = addRootEntry(selectedNodeId);
+    if (!result.ok) {
+      setRootPickerError(result.error || 'Failed to add selected sequence.');
+      return;
+    }
+    setLeftPrimaryMode('roots');
+    setActiveSectionId(null);
+    setActiveSmartViewId(null);
+    setActiveRootEntryNodeId(selectedNodeId);
+    closeRootPicker();
+  };
+
+  const openEditRootEntry = (nodeId: string) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    setRootPickerError('');
+    setRootEditEntryNodeId(nodeId);
+    setRootPickerMode('sequence');
+    setSelectedRootCalls([]);
+    setRootPickerActor('our');
+    setSequenceRootSteps(node.context.sequence.map((step) => ({ ...step })));
+    setSequenceNextActor('our');
+    setIsRootPickerOpen(true);
+  };
+
+  const openRootDeleteDialog = (nodeId: string) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    const label = node.context.sequence
+      .map((step) => (step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)))
+      .join(' - ');
     setRootDeleteDialog({
       nodeId,
-      call,
-      descendantsCount,
+      label,
     });
   };
 
@@ -174,7 +431,7 @@ export function LeftPanel() {
 
   const confirmRootDelete = () => {
     if (!rootDeleteDialog) return;
-    deleteNode(rootDeleteDialog.nodeId);
+    removeRootEntry(rootDeleteDialog.nodeId);
     closeRootDeleteDialog();
   };
 
@@ -260,6 +517,15 @@ export function LeftPanel() {
     setSectionModalError(toErrorMessage(result));
   };
 
+  const reorderSectionFromMenu = (sectionId: string, targetIndex: number) => {
+    const result = reorderSection(sectionId, targetIndex);
+    if (!result.ok) {
+      alert(result.error || 'Failed to reorder section.');
+      return;
+    }
+    setActionMenuSectionId(null);
+  };
+
   const openCreateSmartViewModal = () => {
     setSmartViewModal({
       mode: 'create',
@@ -333,14 +599,19 @@ export function LeftPanel() {
     setSmartViewModalError(toSmartViewErrorMessage(result));
   };
 
-  const renderSectionRows = (items: SectionTreeNode[], depth = 0): ReactNode => {
-    return items.map((item) => {
+  const renderSectionRows = (items: SectionTreeNode[], depth = 0, indexPath: number[] = []): ReactNode => {
+    return items.map((item, index) => {
       const section = item.section;
       const children = item.children;
       const hasChildren = children.length > 0;
       const isExpanded = sectionExpandedById[section.id] ?? true;
       const isActive = leftPrimaryMode === 'sections' && activeSectionId === section.id;
       const nodeCount = getSectionNodeCount(section.id);
+      const sectionIndexPath = [...indexPath, index + 1];
+      const sectionIndexLabel = `${sectionIndexPath.join('.')}.`;
+      const sectionFontSizePx = Math.max(13 - depth, 11);
+      const canMoveUp = index > 0;
+      const canMoveDown = index < items.length - 1;
 
       return (
         <li key={section.id} className="relative">
@@ -352,10 +623,14 @@ export function LeftPanel() {
                 setActiveSectionId(section.id);
                 setActiveSmartViewId(null);
               }}
-              className={`flex-1 min-w-0 text-left rounded-md text-sm transition-colors ${
+              className={`flex-1 min-w-0 text-left rounded-md transition-colors ${
                 isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
               }`}
-              style={{ padding: `6px 8px 6px ${8 + depth * 14}px` }}
+              style={{
+                padding: `6px 8px 6px ${8 + depth * 14}px`,
+                fontSize: `${sectionFontSizePx}px`,
+                lineHeight: `${Math.max(18 - depth, 16)}px`,
+              }}
             >
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 {hasChildren ? (
@@ -374,6 +649,7 @@ export function LeftPanel() {
                 ) : (
                   <span className="w-4 shrink-0" />
                 )}
+                <span className="shrink-0 text-slate-400 tabular-nums">{sectionIndexLabel}</span>
                 <span className="truncate">{section.name}</span>
                 <span className="ml-auto shrink-0 text-[10px] text-slate-500 bg-slate-200 rounded-full px-1.5 py-0.5">
                   {nodeCount}
@@ -396,6 +672,32 @@ export function LeftPanel() {
 
           {actionMenuSectionId === section.id && (
             <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
+              <button
+                type="button"
+                disabled={!canMoveUp}
+                onClick={() => reorderSectionFromMenu(section.id, index - 1)}
+                className={`w-full px-3 py-1.5 text-left text-xs inline-flex items-center gap-2 ${
+                  canMoveUp
+                    ? 'text-slate-700 hover:bg-slate-100'
+                    : 'text-slate-300 cursor-not-allowed'
+                }`}
+              >
+                <ArrowUp className="w-3 h-3" />
+                Move up
+              </button>
+              <button
+                type="button"
+                disabled={!canMoveDown}
+                onClick={() => reorderSectionFromMenu(section.id, index + 1)}
+                className={`w-full px-3 py-1.5 text-left text-xs inline-flex items-center gap-2 ${
+                  canMoveDown
+                    ? 'text-slate-700 hover:bg-slate-100'
+                    : 'text-slate-300 cursor-not-allowed'
+                }`}
+              >
+                <ArrowDown className="w-3 h-3" />
+                Move down
+              </button>
               <button
                 type="button"
                 onClick={() => openRenameModal(section.id, section.name)}
@@ -424,7 +726,7 @@ export function LeftPanel() {
           )}
 
           {hasChildren && isExpanded && (
-            <ul className="space-y-1 mt-0.5">{renderSectionRows(children, depth + 1)}</ul>
+            <ul className="space-y-1 mt-0.5">{renderSectionRows(children, depth + 1, sectionIndexPath)}</ul>
           )}
         </li>
       );
@@ -570,7 +872,15 @@ export function LeftPanel() {
           <>
             {rootViewMode === 'matrix' ? (
               <div className="space-y-1.5">
-                {ROOT_DISPLAY_LEVELS.map((level) => (
+                <button
+                  type="button"
+                  onClick={() => setIsOurRootsOpen((prev) => !prev)}
+                  className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                >
+                  <span>Our roots</span>
+                  {isOurRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </button>
+                {isOurRootsOpen && ROOT_DISPLAY_LEVELS.map((level) => (
                   <div key={`roots-row-${level}`} className="grid grid-cols-5 gap-1">
                     {ROOT_DISPLAY_SUITS.map((suit) => {
                       const call = `${level}${suit}`;
@@ -597,6 +907,7 @@ export function LeftPanel() {
                               setLeftPrimaryMode('roots');
                               setActiveSectionId(null);
                               setActiveSmartViewId(null);
+                              setActiveRootEntryNodeId(root.id);
                               selectNode(root.id);
                             }}
                             className={`h-7 w-full px-1 rounded-md border text-[12px] font-semibold transition-colors ${
@@ -611,7 +922,7 @@ export function LeftPanel() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              openRootDeleteDialog(root.id, call);
+                              openRootDeleteDialog(root.id);
                             }}
                             className="absolute -top-1 -right-1 opacity-0 group-hover/root:opacity-100 transition-opacity p-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-rose-700 hover:border-rose-200"
                             title="Delete root"
@@ -624,50 +935,213 @@ export function LeftPanel() {
                     })}
                   </div>
                 ))}
+                <div className="pt-1.5 border-t border-[#BFDBFE] space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsSequenceOppRootsOpen((prev) => !prev)}
+                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                  >
+                    <span>Sequence / Opp roots</span>
+                    {isSequenceOppRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  </button>
+                  {isSequenceOppRootsOpen && (
+                    extraRoots.length > 0 ? (
+                      <ul className="space-y-1">
+                        {extraRoots.map((root) => {
+                          const label = root.context.sequence
+                            .map((step) => (
+                              step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)
+                            ))
+                            .join(' - ');
+                          const isActive = leftPrimaryMode === 'roots' && activeRootEntryNodeId === root.id;
+                          return (
+                            <li key={`extra-root-${root.id}`} className="group flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLeftPrimaryMode('roots');
+                                  setActiveSectionId(null);
+                                  setActiveSmartViewId(null);
+                                  setActiveRootEntryNodeId(root.id);
+                                  selectNode(root.id);
+                                }}
+                                className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-xs font-medium transition-colors truncate ${
+                                  isActive ? 'bg-blue-100 text-blue-900' : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-700'
+                                }`}
+                                title={label}
+                              >
+                                {label}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditRootEntry(root.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                                title="Edit root"
+                                aria-label={`Edit root ${label}`}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openRootDeleteDialog(root.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
+                                title="Delete root"
+                                aria-label={`Delete root ${label}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="text-[11px] text-slate-400 italic px-1">No sequence/opp roots</div>
+                    )
+                  )}
+                </div>
               </div>
             ) : (
-              <ul className="space-y-1">
-                {roots.map((root) => {
-                  const call = root.context.sequence[0];
-                  const isActive = leftPrimaryMode === 'roots' && selectedRootCall === call;
-                  return (
-                    <li key={root.id} className="group flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLeftPrimaryMode('roots');
-                          setActiveSectionId(null);
-                          setActiveSmartViewId(null);
-                          selectNode(root.id);
-                        }}
-                        className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                          isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <span className={getSuitColor(call)}>{formatCall(call)}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openRootDeleteDialog(root.id, call);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
-                        title="Delete root"
-                        aria-label={`Delete root ${formatCall(call)}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsOurRootsOpen((prev) => !prev)}
+                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                  >
+                    <span>Our roots</span>
+                    {isOurRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  </button>
+                  {isOurRootsOpen && (
+                    <ul className="space-y-1">
+                      {ourRoots.map((root) => {
+                        const rootStep = root.context.sequence[0];
+                        const call = rootStep.call;
+                        const isActive = leftPrimaryMode === 'roots' && activeRootEntryNodeId === root.id;
+                        const callLabel = formatCall(call);
+                        return (
+                          <li key={root.id} className="group flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLeftPrimaryMode('roots');
+                                setActiveSectionId(null);
+                                setActiveSmartViewId(null);
+                                setActiveRootEntryNodeId(root.id);
+                                selectNode(root.id);
+                              }}
+                              className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                                isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              <span className={getSuitColor(call)}>{callLabel}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openRootDeleteDialog(root.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
+                              title="Delete root"
+                              aria-label={`Delete root ${callLabel}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <div className="space-y-1 pt-1 border-t border-[#BFDBFE]">
+                  <button
+                    type="button"
+                    onClick={() => setIsSequenceOppRootsOpen((prev) => !prev)}
+                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                  >
+                    <span>Sequence / Opp roots</span>
+                    {isSequenceOppRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  </button>
+                  {isSequenceOppRootsOpen && (
+                    extraRoots.length > 0 ? (
+                      <ul className="space-y-1">
+                        {extraRoots.map((root) => {
+                          const rootStep = root.context.sequence[0];
+                          const call = rootStep.call;
+                          const isActive = leftPrimaryMode === 'roots' && activeRootEntryNodeId === root.id;
+                          const canEditRoot = root.context.sequence.length > 1 || rootStep.actor === 'opp';
+                          const callLabel = root.context.sequence
+                            .map((step) => (
+                              step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)
+                            ))
+                            .join(' - ');
+                          return (
+                            <li key={root.id} className="group flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLeftPrimaryMode('roots');
+                                  setActiveSectionId(null);
+                                  setActiveSmartViewId(null);
+                                  setActiveRootEntryNodeId(root.id);
+                                  selectNode(root.id);
+                                }}
+                                className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                                  isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                <span className={root.context.sequence.length === 1 && rootStep.actor !== 'opp' ? getSuitColor(call) : 'text-slate-700'}>
+                                  {callLabel}
+                                </span>
+                              </button>
+                              {canEditRoot && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openEditRootEntry(root.id);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                                  title="Edit root"
+                                  aria-label={`Edit root ${callLabel}`}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openRootDeleteDialog(root.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
+                                title="Delete root"
+                                aria-label={`Delete root ${callLabel}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="text-[11px] text-slate-400 italic px-1">No sequence/opp roots</div>
+                    )
+                  )}
+                </div>
+              </div>
             )}
           </>
         )}
       </div>
 
-      <div className="px-4 py-3 border-t border-slate-200">
+      <div className="px-4 py-3 border-t-2 border-[#BFDBFE]">
         <div className="flex items-center mb-3">
           <button
             type="button"
@@ -718,7 +1192,7 @@ export function LeftPanel() {
         )}
       </div>
 
-      <div className="px-4 py-2 border-t border-slate-200">
+      <div className="px-4 py-2 border-t-2 border-[#BFDBFE]">
         <button
           type="button"
           onClick={() => setIsBookmarksOpen((prev) => !prev)}
@@ -743,15 +1217,18 @@ export function LeftPanel() {
                         setLeftPrimaryMode('roots');
                         setActiveSectionId(null);
                         setActiveSmartViewId(null);
+                        setActiveRootEntryNodeId(null);
                         selectNode(bm.id);
                       }}
                       className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors truncate ${
                         selectedNodeId === bm.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
                       }`}
                     >
-                      {bm.context.sequence.map((c, i) => (
+                      {bm.context.sequence.map((step, i) => (
                         <span key={i} className="inline-flex items-center">
-                          <span className={getSuitColor(c)}>{formatCall(c)}</span>
+                          <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                            {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
+                          </span>
                           {i < bm.context.sequence.length - 1 && (
                             <span className="mx-1 text-slate-400">-</span>
                           )}
@@ -766,7 +1243,7 @@ export function LeftPanel() {
         )}
       </div>
 
-      <div className="px-4 py-4 border-t border-slate-200 mt-auto">
+      <div className="px-4 py-4 border-t-2 border-[#BFDBFE] mt-auto">
         <div className="flex items-center mb-3">
           <button
             type="button"
@@ -812,40 +1289,237 @@ export function LeftPanel() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Add root calls
+              {rootEditEntryNodeId ? 'Edit root entry' : 'Add root entry'}
             </div>
             <div className="mt-1 text-[11px] text-slate-600">
-              Select one or more bids. Existing roots are disabled.
+              {rootEditEntryNodeId
+                ? 'Update sequence and save changes.'
+                : 'Choose calls for a new root or pin current sequence as an additional root entry.'}
+            </div>
+            {rootEditEntryNodeId && (
+              <div className="mt-1 text-[10px] text-slate-500">
+                Editing: {editingRootLabel}
+              </div>
+            )}
+
+            <div className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (rootEditEntryNodeId) return;
+                  setRootPickerMode('single');
+                  setRootPickerError('');
+                }}
+                disabled={!!rootEditEntryNodeId}
+                className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                  rootPickerMode === 'single'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                } ${rootEditEntryNodeId ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                Single bids
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRootPickerMode('sequence');
+                  setRootPickerError('');
+                }}
+                className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                  rootPickerMode === 'sequence'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Sequence
+              </button>
             </div>
 
-            <div className="mt-2.5 grid grid-cols-5 gap-1">
-              {ROOT_BID_CALLS.map((call) => {
-                const isDisabled = existingRootCalls.has(call);
-                const isSelected = selectedRootCalls.includes(call);
-                return (
+            {rootPickerMode === 'single' ? (
+              <>
+                <div className="mt-2">
                   <button
-                    key={`root-picker-${call}`}
                     type="button"
-                    disabled={isDisabled}
-                    onClick={() => toggleRootCallSelection(call)}
-                    className={`h-7 px-1 rounded-md text-[11px] border transition-colors ${
-                      isSelected
-                        ? 'border-blue-300 bg-blue-100 text-blue-700'
-                        : isDisabled
-                          ? 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
-                          : `border-slate-200 bg-white hover:border-slate-300 ${getSuitColor(call)}`
+                    onClick={addSelectedNodeAsRoot}
+                    disabled={!canAddSelectedNodeAsRoot}
+                    className={`w-full h-8 px-2 rounded-md border text-left text-[11px] transition-colors ${
+                      canAddSelectedNodeAsRoot
+                        ? 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
                     }`}
-                    title={isDisabled ? `${formatCall(call)} already exists in roots` : `Add ${formatCall(call)}`}
+                    title={canAddSelectedNodeAsRoot ? 'Add selected sequence as root entry' : 'Select a sequence not already in roots'}
                   >
-                    {formatCall(call)}
+                    {canAddSelectedNodeAsRoot
+                      ? `Use selected: ${selectedNodeLabel}`
+                      : 'Select a sequence first'}
                   </button>
-                );
-              })}
-            </div>
+                </div>
 
-            <div className="mt-2 text-[10px] text-slate-500">
-              Selected: {selectedRootCalls.length}
-            </div>
+                <div className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRootPickerActor('our');
+                      setSelectedRootCalls([]);
+                    }}
+                    className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                      rootPickerActor === 'our'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Our roots
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRootPickerActor('opp');
+                      setSelectedRootCalls([]);
+                    }}
+                    className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                      rootPickerActor === 'opp'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Opp roots
+                  </button>
+                </div>
+
+                <div className="mt-2.5 grid grid-cols-5 gap-1">
+                  {ROOT_BID_CALLS.map((call) => {
+                    const isDisabled = existingRootCallByActor.has(`${rootPickerActor}:${call}`);
+                    const isSelected = selectedRootCalls.includes(call);
+                    return (
+                      <button
+                        key={`root-picker-${call}`}
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={() => toggleRootCallSelection(call)}
+                        className={`h-7 px-1 rounded-md text-[11px] border transition-colors ${
+                          isSelected
+                            ? 'border-blue-300 bg-blue-100 text-blue-700'
+                            : isDisabled
+                              ? 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
+                              : `border-slate-200 bg-white hover:border-slate-300 ${
+                                rootPickerActor === 'opp' ? 'text-slate-500' : getSuitColor(call)
+                              }`
+                        }`}
+                        title={isDisabled ? `${formatCall(call)} already exists in roots` : `Add ${formatCall(call)}`}
+                      >
+                        {rootPickerActor === 'opp' ? `(${formatCall(call)})` : formatCall(call)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-2 text-[10px] text-slate-500">
+                  Selected: {selectedRootCalls.length}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setSequenceNextActor('our')}
+                    className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                      sequenceNextActor === 'our'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Next: Our
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSequenceNextActor('opp')}
+                    className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                      sequenceNextActor === 'opp'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Next: Opp
+                  </button>
+                </div>
+
+                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 min-h-[34px] text-[11px] text-slate-700">
+                  {sequenceRootSteps.length > 0 ? sequencePreviewLabel : 'Start sequence'}
+                </div>
+
+                <div className="mt-1 flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={popSequenceStep}
+                    className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                    disabled={sequenceRootSteps.length === 0}
+                  >
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearSequenceSteps}
+                    className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                    disabled={sequenceRootSteps.length === 0}
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="mt-2.5 grid grid-cols-5 gap-1">
+                  {ROOT_BID_CALLS.map((call) => {
+                    const isAvailable = isSequenceCallAvailable(sequenceRootSteps, call);
+                    return (
+                      <button
+                        key={`sequence-root-picker-${call}`}
+                        type="button"
+                        disabled={!isAvailable}
+                        onClick={() => appendSequenceStep(call)}
+                        className={`h-7 px-1 rounded-md text-[11px] border transition-colors ${
+                          isAvailable
+                            ? `border-slate-200 bg-white hover:border-slate-300 ${
+                              sequenceNextActor === 'opp' ? 'text-slate-500' : getSuitColor(call)
+                            }`
+                            : 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
+                        }`}
+                      >
+                        {sequenceNextActor === 'opp' ? `(${formatCall(call)})` : formatCall(call)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {ROOT_SPECIAL_CALLS.map((call) => {
+                    const isAvailable = isSequenceCallAvailable(sequenceRootSteps, call);
+                    return (
+                      <button
+                        key={`sequence-root-picker-special-${call}`}
+                        type="button"
+                        disabled={!isAvailable}
+                        onClick={() => appendSequenceStep(call)}
+                        className={`h-7 px-2 rounded-md text-[11px] border transition-colors ${
+                          isAvailable
+                            ? `border-slate-200 bg-white hover:border-slate-300 ${
+                              sequenceNextActor === 'opp' ? 'text-slate-500' : 'text-slate-700'
+                            }`
+                            : 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
+                        }`}
+                      >
+                        {sequenceNextActor === 'opp' ? `(${formatCall(call)})` : formatCall(call)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {sequenceConflictsExistingRoot && (
+                  <div className="mt-1.5 text-[10px] text-slate-500">
+                    This sequence is already in roots.
+                  </div>
+                )}
+              </>
+            )}
 
             {rootPickerError && (
               <div className="mt-1.5 text-[11px] text-rose-600">{rootPickerError}</div>
@@ -861,11 +1535,11 @@ export function LeftPanel() {
               </button>
               <button
                 type="button"
-                onClick={submitRootPicker}
+                onClick={rootPickerMode === 'single' ? submitSingleRootPicker : submitSequenceRootPicker}
                 className="h-8 px-3 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
-                disabled={selectedRootCalls.length === 0}
+                disabled={rootPickerMode === 'single' ? !canSubmitSingleMode : !canSubmitSequenceMode}
               >
-                Add
+                {rootEditEntryNodeId ? 'Save' : 'Add'}
               </button>
             </div>
           </div>
@@ -882,15 +1556,16 @@ export function LeftPanel() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-slate-100">
-              <div className="text-sm font-semibold text-slate-900">Delete root?</div>
+              <div className="text-sm font-semibold text-slate-900">
+                Remove root entry?
+              </div>
               <div className="mt-0.5 text-xs">
-                <span className={getSuitColor(rootDeleteDialog.call)}>{formatCall(rootDeleteDialog.call)}</span>
+                <span className="text-slate-700">{rootDeleteDialog.label}</span>
               </div>
             </div>
 
             <div className="px-4 py-3 text-sm text-slate-600">
-              This will remove the root and {rootDeleteDialog.descendantsCount} continuation
-              {rootDeleteDialog.descendantsCount === 1 ? '' : 's'}.
+              This will only remove this sequence from the Roots list. The original sequence tree will remain unchanged.
             </div>
 
             <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -906,7 +1581,7 @@ export function LeftPanel() {
                 onClick={confirmRootDelete}
                 className="h-8 px-3 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
               >
-                Delete
+                Remove
               </button>
             </div>
           </div>

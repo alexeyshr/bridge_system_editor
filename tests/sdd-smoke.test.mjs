@@ -10,7 +10,7 @@ test('project contains SDD baseline files', () => {
     '.github/workflows/ci.yml',
     '.github/pull_request_template.md',
     '.github/ISSUE_TEMPLATE/spec-proposal.yml',
-    'features/left-panel/README.md',
+    'specs/004-left-panel-evolution/README.md',
   ];
 
   for (const rel of requiredPaths) {

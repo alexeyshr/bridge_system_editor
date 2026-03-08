@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: Bridge System Editor Systems API
+  version: 0.1.0
+paths:
+  /api/users/search:
+    get:
+      summary: Search registered users for internal sharing
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matched users (privacy-safe fields only)
+        "401":
+          description: Not authenticated
+  /api/systems:
+    get:
+      summary: List systems visible to current user
+      responses:
+        "200":
+          description: Array of systems
+        "401":
+          description: Not authenticated
+    post:
+      summary: Create a new system
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Validation error
+        "401":
+          description: Not authenticated
+  /api/systems/{systemId}:
+    get:
+      summary: Get system metadata and current revision
+      parameters:
+        - in: path
+          name: systemId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: System object
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
+    patch:
+      summary: Update system metadata
+      parameters:
+        - in: path
+          name: systemId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated system
+        "403":
+          description: Forbidden
+  /api/systems/{systemId}/nodes:
+    put:
+      summary: Bulk upsert node payloads for autosave
+      parameters:
+        - in: path
+          name: systemId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Save accepted
+        "409":
+          description: Revision conflict
+  /api/systems/{systemId}/shares:
+    get:
+      summary: List shares for a system (owner only)
+      parameters:
+        - in: path
+          name: systemId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Share list
+        "403":
+          description: Forbidden
+    post:
+      summary: Add or update share
+      parameters:
+        - in: path
+          name: systemId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Share updated
+        "403":
+          description: Forbidden
+  /api/systems/{systemId}/invites:
+    post:
+      summary: Create invite through email/internal/telegram channel
+      parameters:
+        - in: path
+          name: systemId
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Invite created
+        "400":
+          description: Validation error
+        "403":
+          description: Forbidden
+  /api/invites/{token}/accept:
+    post:
+      summary: Accept invite and grant role access
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invite accepted
+        "401":
+          description: Not authenticated
+        "404":
+          description: Invite not found
+        "410":
+          description: Invite expired or revoked

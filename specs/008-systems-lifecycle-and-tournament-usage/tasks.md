@@ -24,11 +24,11 @@ Plan: `specs/008-systems-lifecycle-and-tournament-usage/plan.md`
 
 ## F03 Draft/Published Lifecycle
 
-- [ ] T1120 Implement publish mutation and immutable version creation.
-- [ ] T1121 Implement compare draft vs published version.
-- [ ] T1122 Implement create-draft-from-version flow.
-- [ ] T1123 Implement editor shell controls (system switcher, version badge, publish CTA).
-- [ ] T1124 [P] Add lifecycle state tests.
+- [x] T1120 Implement publish mutation and immutable version creation.
+- [x] T1121 Implement compare draft vs published version.
+- [x] T1122 Implement create-draft-from-version flow.
+- [x] T1123 Implement editor shell controls (system switcher, version badge, publish CTA).
+- [x] T1124 [P] Add lifecycle state tests.
 
 ## F04 Tournament Usage Binding
 

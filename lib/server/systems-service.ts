@@ -69,6 +69,10 @@ export async function createDraftFromVersion(systemId: string, userId: string, v
   return drizzleSystemsDriver.createDraftFromVersion(systemId, userId, versionId);
 }
 
+export async function compareDraftWithVersion(systemId: string, userId: string, versionId: string) {
+  return drizzleSystemsDriver.compareDraftWithVersion(systemId, userId, versionId);
+}
+
 export async function listTournamentBindings(
   systemId: string,
   userId: string,

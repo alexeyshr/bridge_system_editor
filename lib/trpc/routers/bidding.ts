@@ -2,6 +2,7 @@ import { createInviteForSystem, listInvitesForSystem, acceptInviteToken } from '
 import { searchUsers } from '@/lib/server/users-service';
 import {
   AccessDeniedError,
+  compareDraftWithVersion,
   InvalidStateError,
   NotFoundError,
   RevisionConflictError,
@@ -22,6 +23,7 @@ import {
 } from '@/lib/server/systems-service';
 import { createInviteSchema } from '@/lib/validation/invites';
 import {
+  compareDraftWithVersionSchema,
   createDraftFromVersionSchema,
   createSystemSchema,
   freezeTournamentBindingSchema,
@@ -55,6 +57,7 @@ export interface BiddingRouterDeps {
   listSystemVersions: typeof listSystemVersions;
   publishSystemVersion: typeof publishSystemVersion;
   createDraftFromVersion: typeof createDraftFromVersion;
+  compareDraftWithVersion: typeof compareDraftWithVersion;
   listTournamentBindings: typeof listTournamentBindings;
   upsertTournamentBinding: typeof upsertTournamentBinding;
   freezeTournamentBinding: typeof freezeTournamentBinding;
@@ -98,6 +101,7 @@ const defaultDeps: BiddingRouterDeps = {
   listSystemVersions,
   publishSystemVersion,
   createDraftFromVersion,
+  compareDraftWithVersion,
   listTournamentBindings,
   upsertTournamentBinding,
   freezeTournamentBinding,
@@ -239,6 +243,25 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
               input.data.versionId,
             );
             return { draft };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      compare: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: compareDraftWithVersionSchema,
+          }),
+        )
+        .query(async ({ ctx, input }) => {
+          try {
+            const comparison = await deps.compareDraftWithVersion(
+              input.systemId,
+              ctx.userId,
+              input.data.versionId,
+            );
+            return { comparison };
           } catch (error) {
             mapServiceError(error);
           }

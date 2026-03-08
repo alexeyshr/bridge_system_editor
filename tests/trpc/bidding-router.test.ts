@@ -69,6 +69,22 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
       revision: 3,
       restoredNodes: 12,
     }),
+    compareDraftWithVersion: async (_systemId: string, _userId: string, versionId: string) => ({
+      systemId: 'sys-1',
+      draftRevision: 3,
+      versionId,
+      versionNumber: 1,
+      sourceRevision: 2,
+      summary: {
+        added: 1,
+        removed: 0,
+        changed: 2,
+        unchanged: 5,
+      },
+      addedSequenceIds: ['1C-1D-1H'],
+      removedSequenceIds: [],
+      changedSequenceIds: ['1C-1D', '1C-1NT'],
+    }),
     listTournamentBindings: async () => [],
     upsertTournamentBinding: async (_systemId: string, _userId: string, input: { tournamentId: string; scopeType: 'global' | 'pair' | 'team'; scopeId?: string; versionId: string }) => ({
       id: 'bind-1',
@@ -215,6 +231,20 @@ test('bidding.lifecycle.publish returns published version payload', async () => 
   assert.equal(result.version.systemId, 'sys-1');
   assert.equal(result.version.versionNumber, 1);
   assert.equal(result.version.label, 'v1');
+});
+
+test('bidding.lifecycle.compare returns comparison payload', async () => {
+  const caller = createCaller('user-1');
+  const result = await caller.lifecycle.compare({
+    systemId: 'sys-1',
+    data: {
+      versionId: 'ver-1',
+    },
+  });
+
+  assert.equal(result.comparison.versionId, 'ver-1');
+  assert.equal(result.comparison.summary.changed, 2);
+  assert.deepEqual(result.comparison.changedSequenceIds, ['1C-1D', '1C-1NT']);
 });
 
 test('bidding.bindings.freeze maps invalid state to CONFLICT', async () => {

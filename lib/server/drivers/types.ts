@@ -141,6 +141,26 @@ export interface SystemsDriver {
     revision: number;
     restoredNodes: number;
   }>;
+  compareDraftWithVersion(
+    systemId: string,
+    userId: string,
+    versionId: string,
+  ): Promise<{
+    systemId: string;
+    draftRevision: number;
+    versionId: string;
+    versionNumber: number;
+    sourceRevision: number;
+    summary: {
+      added: number;
+      removed: number;
+      changed: number;
+      unchanged: number;
+    };
+    addedSequenceIds: string[];
+    removedSequenceIds: string[];
+    changedSequenceIds: string[];
+  }>;
   listTournamentBindings(
     systemId: string,
     userId: string,

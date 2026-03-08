@@ -198,6 +198,15 @@ testIfDb('drizzle systems driver lifecycle and tournament bindings path', async 
       removeSequenceIds: ['1C-1D'],
     });
 
+    const comparison = await drizzleSystemsDriver.compareDraftWithVersion(created.id, ownerId, published.id);
+    assert.equal(comparison.systemId, created.id);
+    assert.equal(comparison.versionId, published.id);
+    assert.equal(comparison.summary.added, 1);
+    assert.equal(comparison.summary.removed, 1);
+    assert.equal(comparison.summary.changed, 0);
+    assert.deepEqual(comparison.addedSequenceIds, ['1C-1H']);
+    assert.deepEqual(comparison.removedSequenceIds, ['1C-1D']);
+
     const restored = await drizzleSystemsDriver.createDraftFromVersion(created.id, ownerId, published.id);
     assert.equal(restored.versionId, published.id);
     assert.equal(restored.restoredNodes, 1);

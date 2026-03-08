@@ -25,6 +25,23 @@ function toIso(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
+function normalizeForStableStringify(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalizeForStableStringify(item));
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort((left, right) => left.localeCompare(right))
+      .reduce<Record<string, unknown>>((acc, key) => {
+      acc[key] = normalizeForStableStringify((value as Record<string, unknown>)[key]);
+      return acc;
+    }, {});
+  }
+  return value;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(normalizeForStableStringify(value));
+}
+
 export const drizzleSystemsDriver: SystemsDriver = {
   async resolveSystemAccess(systemId, userId) {
     const [system] = await db
@@ -651,6 +668,102 @@ export const drizzleSystemsDriver: SystemsDriver = {
         restoredNodes: snapshotNodes.length,
       };
     });
+  },
+
+  async compareDraftWithVersion(systemId, userId, versionId) {
+    const access = await this.resolveSystemAccess(systemId, userId);
+    if (!access.systemExists) throw new NotFoundError('System not found');
+    if (access.role === 'none') throw new AccessDeniedError();
+
+    const [system] = await db
+      .select({
+        id: biddingSystems.id,
+        revision: biddingSystems.revision,
+      })
+      .from(biddingSystems)
+      .where(eq(biddingSystems.id, systemId))
+      .limit(1);
+    if (!system) throw new NotFoundError('System not found');
+
+    const [version] = await db
+      .select({
+        id: systemVersions.id,
+        versionNumber: systemVersions.versionNumber,
+        sourceRevision: systemVersions.sourceRevision,
+        snapshot: systemVersions.snapshot,
+      })
+      .from(systemVersions)
+      .where(and(eq(systemVersions.id, versionId), eq(systemVersions.systemId, systemId)))
+      .limit(1);
+    if (!version) throw new NotFoundError('Version not found');
+
+    const draftRows = await db
+      .select({
+        sequenceId: biddingNodes.sequenceId,
+        payload: biddingNodes.payload,
+      })
+      .from(biddingNodes)
+      .where(eq(biddingNodes.systemId, systemId));
+
+    const snapshotRoot = version.snapshot && typeof version.snapshot === 'object' && !Array.isArray(version.snapshot)
+      ? (version.snapshot as Record<string, unknown>)
+      : {};
+    const snapshotNodesRaw = Array.isArray(snapshotRoot.nodes) ? snapshotRoot.nodes : [];
+    const versionNodes = new Map<string, unknown>();
+    for (const item of snapshotNodesRaw) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const row = item as Record<string, unknown>;
+      if (typeof row.sequenceId !== 'string' || !row.sequenceId.trim()) continue;
+      versionNodes.set(row.sequenceId.trim(), row.payload ?? {});
+    }
+
+    const draftNodes = new Map<string, unknown>();
+    for (const row of draftRows) {
+      draftNodes.set(row.sequenceId, row.payload);
+    }
+
+    const addedSequenceIds: string[] = [];
+    const removedSequenceIds: string[] = [];
+    const changedSequenceIds: string[] = [];
+    let unchanged = 0;
+
+    for (const [sequenceId, draftPayload] of draftNodes) {
+      if (!versionNodes.has(sequenceId)) {
+        addedSequenceIds.push(sequenceId);
+        continue;
+      }
+      const versionPayload = versionNodes.get(sequenceId);
+      if (stableStringify(draftPayload) === stableStringify(versionPayload)) {
+        unchanged += 1;
+      } else {
+        changedSequenceIds.push(sequenceId);
+      }
+    }
+
+    for (const sequenceId of versionNodes.keys()) {
+      if (!draftNodes.has(sequenceId)) removedSequenceIds.push(sequenceId);
+    }
+
+    addedSequenceIds.sort();
+    removedSequenceIds.sort();
+    changedSequenceIds.sort();
+
+    return {
+      systemId,
+      draftRevision: system.revision,
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+      sourceRevision: version.sourceRevision,
+      summary: {
+        added: addedSequenceIds.length,
+        removed: removedSequenceIds.length,
+        changed: changedSequenceIds.length,
+        unchanged,
+      },
+      addedSequenceIds,
+      removedSequenceIds,
+      changedSequenceIds,
+    };
   },
 
   async listTournamentBindings(systemId, userId, input) {

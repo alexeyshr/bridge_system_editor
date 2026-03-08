@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
 import { SystemsHubMenu } from '@/components/SystemsHubMenu';
+import { SystemLifecycleMenu } from '@/components/SystemLifecycleMenu';
 
 export function TopBar() {
   const { data: session, status } = useSession();
@@ -220,6 +221,7 @@ export function TopBar() {
         </div>
         <div className="h-4 w-px bg-slate-300 hidden sm:block shrink-0" />
         <SystemsHubMenu />
+        <SystemLifecycleMenu />
         <div className="relative flex-1 max-w-xs min-w-0">
           <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input

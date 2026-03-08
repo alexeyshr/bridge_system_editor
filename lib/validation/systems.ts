@@ -52,6 +52,10 @@ export const createDraftFromVersionSchema = z.object({
   versionId: z.string().trim().min(1),
 });
 
+export const compareDraftWithVersionSchema = z.object({
+  versionId: z.string().trim().min(1),
+});
+
 export const listTournamentBindingsSchema = z.object({
   tournamentId: z.string().trim().min(1).optional(),
 });

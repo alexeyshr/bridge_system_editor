@@ -255,7 +255,6 @@ export function SequenceRow({
     const isMultiToggle = event.metaKey || event.ctrlKey;
     if (isMultiToggle) {
       toggleNodeSelection(node.id);
-      selectNode(node.id);
       return;
     }
     setNodeSelection([node.id]);
@@ -284,7 +283,6 @@ export function SequenceRow({
           checked={isMultiSelected}
           onChange={() => {
             toggleNodeSelection(node.id);
-            selectNode(node.id);
           }}
           onClick={(event) => event.stopPropagation()}
           className="mr-1.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"

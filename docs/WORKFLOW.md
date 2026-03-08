@@ -1,6 +1,6 @@
 # Product Workflow
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 Canonical delivery chain:
 
@@ -25,6 +25,8 @@ Inputs:
 Output:
 - shortlist for roadmap placement (`Now`, `Next`, `Later`),
 - explicit rejects with reason.
+- cycle decisions recorded in:
+  - `docs/TRIAGE.md`
 
 ### Definition of Ready (Triage)
 

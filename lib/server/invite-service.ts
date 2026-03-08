@@ -1,14 +1,8 @@
-import { featureFlags } from '@/lib/config/feature-flags';
 import { drizzleInvitesDriver } from '@/lib/server/drivers/drizzle-invites-driver';
-import { prismaInvitesDriver } from '@/lib/server/drivers/prisma-invites-driver';
-import type { InviteChannel, InvitesDriver, ShareRole } from './drivers/types';
-
-function getInvitesDriver(): InvitesDriver {
-  return featureFlags.dbDriver === 'drizzle' ? drizzleInvitesDriver : prismaInvitesDriver;
-}
+import type { InviteChannel, ShareRole } from './drivers/types';
 
 export async function listInvitesForSystem(systemId: string, ownerId: string) {
-  return getInvitesDriver().listInvitesForSystem(systemId, ownerId);
+  return drizzleInvitesDriver.listInvitesForSystem(systemId, ownerId);
 }
 
 export async function createInviteForSystem(
@@ -23,9 +17,9 @@ export async function createInviteForSystem(
     expiresInHours: number;
   },
 ) {
-  return getInvitesDriver().createInviteForSystem(systemId, ownerId, input);
+  return drizzleInvitesDriver.createInviteForSystem(systemId, ownerId, input);
 }
 
 export async function acceptInviteToken(token: string, userId: string) {
-  return getInvitesDriver().acceptInviteToken(token, userId);
+  return drizzleInvitesDriver.acceptInviteToken(token, userId);
 }

@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma';
+import { searchUsers } from '@/lib/server/users-service';
 import { requireAuthUser } from '@/lib/server/auth-guard';
 import { badRequest, ok, serverError, unauthorized } from '@/lib/server/api-response';
 
@@ -16,24 +16,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const users = await prisma.user.findMany({
-      where: {
-        id: { not: currentUser.id },
-        OR: [
-          { email: { contains: q, mode: 'insensitive' } },
-          { displayName: { contains: q, mode: 'insensitive' } },
-          { telegramUsername: { contains: q, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        telegramUsername: true,
-      },
-      orderBy: [{ displayName: 'asc' }, { email: 'asc' }],
-      take: MAX_RESULTS,
-    });
+    const users = await searchUsers(q, currentUser.id, MAX_RESULTS);
 
     return ok({
       users: users.map((user) => ({

@@ -10,11 +10,11 @@ Plan: `specs/005-platform-core-hardening/plan.md`
 
 ## F01 Drizzle-Only Cutover (`BRI-44`)
 
-- [ ] T901 Audit and map all remaining Prisma runtime imports/usages.
-- [ ] T902 Remove Prisma runtime path from server services/adapters.
-- [ ] T903 Remove Prisma-specific env/scripts/docs and update onboarding.
-- [ ] T904 [P] Add/adjust Drizzle-only parity tests for critical endpoints.
-- [ ] T905 Add rollback notes for cutover in `fix/`.
+- [x] T901 Audit and map all remaining Prisma runtime imports/usages.
+- [x] T902 Remove Prisma runtime path from server services/adapters.
+- [x] T903 Remove Prisma-specific env/scripts/docs and update onboarding.
+- [x] T904 [P] Add/adjust Drizzle-only parity tests for critical endpoints.
+- [x] T905 Add rollback notes for cutover in `fix/`.
 
 ## F02 Store Slices + Error Boundaries (`BRI-45`)
 

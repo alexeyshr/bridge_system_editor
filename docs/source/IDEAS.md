@@ -926,3 +926,38 @@
 
 _Последнее обновление: 2026-02-25_
 _Идеи добавляются по мере обсуждения. Приоритизация — следующий шаг._
+
+---
+
+## 🧩 Эволюция модуля системы торговли (Editor -> Portal)
+
+- ✏️ **Editor Surface v2 (продуктивность и безопасность)**
+  - Undo/Redo для всех операций
+  - Safe delete UX: отдельно `Delete node` и `Remove from roots/section`
+  - Multi-select + batch actions (`Assign section`, `Bookmark`, `Pin to roots`, `Accept`)
+  - Drag&drop для `SECTIONS` (reorder + reparent)
+  - Persist UI state: раскрытия, режим Classic/Compact, ширины панелей, последний фильтр
+  - Подсветка `legal / illegal / duplicate`
+  - Явный индикатор actor (`our/opp`) в каждой строке
+  - QA-виды: `Dead ends`, `No meaning`, `No HCP`, `No forcing`, `Conflict tags`
+  - Command palette (`Ctrl/Cmd+K`), quick add (inline), legend для compact lanes
+- ✏️ **Надстройка над Editor: Systems Hub + Versioning + Usage**
+  - Systems Hub: список систем, поиск, теги, владельцы, статусы, доступы
+  - Draft/Published модель версий + compare + rollback
+  - Привязка к турниру по `systemId + versionId` (immutable published version)
+  - После старта турнира привязка замораживается
+  - Встраивание без потери UI: текущий Left/Center/Right сохраняется как `EditorSurface`
+- ✏️ **Collaboration layer (отдельно от контента системы)**
+  - Роли: `owner/editor/reviewer/viewer`
+  - Приглашения: email / поиск зарегистрированного пользователя / Telegram handoff
+  - Разделение комментариев:
+    - `system notes` (часть модели системы, только editor/owner)
+    - `discussion threads` (обсуждение между участниками, без прямой мутации дерева)
+  - Mentions, read-only publish link для обучения партнёров
+
+Связанные артефакты:
+- ADR: `docs/adr/ADR-0009-editor-lifecycle-and-collaboration-boundary.md`
+- Specs:
+  - `specs/007-editor-surface-v2/`
+  - `specs/008-systems-lifecycle-and-tournament-usage/`
+  - `specs/009-collaboration-discussions-and-sharing/`

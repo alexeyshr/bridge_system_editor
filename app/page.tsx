@@ -35,6 +35,40 @@ export default function Page() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  useEffect(() => {
+    const shouldIgnoreTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      if (!element) return false;
+      const tagName = element.tagName;
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return true;
+      return element.isContentEditable;
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || shouldIgnoreTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      const modifierPressed = event.ctrlKey || event.metaKey;
+      if (!modifierPressed) return;
+
+      const state = useBiddingStore.getState();
+      const isUndo = key === 'z' && !event.shiftKey;
+      const isRedo = (key === 'z' && event.shiftKey) || key === 'y';
+
+      if (isUndo && state.canUndo) {
+        event.preventDefault();
+        state.undo();
+        return;
+      }
+      if (isRedo && state.canRedo) {
+        event.preventDefault();
+        state.redo();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <div className="flex flex-col h-screen bg-white text-slate-900 overflow-hidden font-sans">
       <TopBar />
@@ -65,7 +99,7 @@ export default function Page() {
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <LeftPanel />
                 </Panel>
-                <Separator className="w-1 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
               </>
             )}
             
@@ -75,7 +109,7 @@ export default function Page() {
             
             {isRightPanelOpen && (
               <>
-                <Separator className="w-1 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <RightPanel />
                 </Panel>

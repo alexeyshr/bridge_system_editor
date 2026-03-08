@@ -1,33 +1,34 @@
 import { BiddingNode, useBiddingStore } from '@/store/useBiddingStore';
 import { formatCall, getSuitColor } from '@/lib/utils';
-import { ChevronRight, ChevronDown, Plus, Bookmark, AlertTriangle, Trash2 } from 'lucide-react';
+import {
+  ChevronRight,
+  ChevronDown,
+  Plus,
+  Bookmark,
+  AlertTriangle,
+  Trash2,
+  FolderInput,
+  Pin,
+  PinOff,
+} from 'lucide-react';
 import { useState } from 'react';
+import { NodeSectionAssignment } from './NodeSectionAssignment';
+import {
+  buildSequenceIdFromSteps,
+  normalizeBiddingCall,
+  type BiddingActor,
+  type BiddingStep,
+} from '@/lib/bidding-steps';
+import { getMutationIntentUiMeta } from '@/lib/domain/bidding/mutation-intents';
 
 type SequenceViewMode = 'classic' | 'compact';
 
 const BID_SUITS = ['C', 'D', 'H', 'S', 'NT'] as const;
+const BID_DISPLAY_SUITS = ['NT', 'S', 'H', 'D', 'C'] as const;
 const SPECIAL_CALLS = ['Pass', 'X', 'XX'] as const;
 const ALL_BID_CALLS = Array.from({ length: 7 }, (_, levelIdx) =>
-  BID_SUITS.map((suit) => `${levelIdx + 1}${suit}`)
+  BID_DISPLAY_SUITS.map((suit) => `${levelIdx + 1}${suit}`)
 ).flat();
-
-function normalizeCall(rawValue: string): string | null {
-  const normalized = rawValue
-    .trim()
-    .toUpperCase()
-    .replace(/♣/g, 'C')
-    .replace(/♦/g, 'D')
-    .replace(/♥/g, 'H')
-    .replace(/♠/g, 'S')
-    .replace(/\s+/g, '');
-
-  if (normalized === 'PASS' || normalized === 'P') return 'Pass';
-  if (normalized === 'X' || normalized === 'XX') return normalized;
-
-  const match = normalized.match(/^([1-7])(C|D|H|S|NT)$/);
-  if (!match) return null;
-  return `${match[1]}${match[2]}`;
-}
 
 function isBidCall(call: string): boolean {
   return /^([1-7])(C|D|H|S|NT)$/.test(call);
@@ -41,87 +42,180 @@ function getBidRank(call: string): number {
   return (level - 1) * BID_SUITS.length + BID_SUITS.indexOf(suit);
 }
 
-function getLastBidFromSequence(sequence: string[]): string | null {
+function getLastBidFromSequence(sequence: BiddingStep[]): string | null {
   for (let i = sequence.length - 1; i >= 0; i--) {
-    const normalized = normalizeCall(sequence[i]);
+    const normalized = normalizeBiddingCall(sequence[i].call);
     if (normalized && isBidCall(normalized)) return normalized;
   }
   return null;
 }
 
-export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode; viewMode?: SequenceViewMode }) {
-  const { selectedNodeId, selectNode, toggleExpand, toggleBookmark, addNode, deleteNode, nodes } = useBiddingStore();
+export function SequenceRow({
+  node,
+  viewMode = 'classic',
+  displayDepth,
+  batchModeEnabled = false,
+}: {
+  node: BiddingNode;
+  viewMode?: SequenceViewMode;
+  displayDepth?: number;
+  batchModeEnabled?: boolean;
+}) {
+  const {
+    selectedNodeId,
+    selectedNodeIds,
+    selectNode,
+    toggleNodeSelection,
+    setNodeSelection,
+    toggleExpand,
+    toggleBookmark,
+    addNode,
+    addRootEntry,
+    removeRootEntry,
+    deleteNode,
+    nodes,
+    rootEntryNodeIds,
+  } = useBiddingStore();
   const [isHovered, setIsHovered] = useState(false);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isSectionAssignOpen, setIsSectionAssignOpen] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [continuationCall, setContinuationCall] = useState('');
+  const [continuationActor, setContinuationActor] = useState<BiddingActor>('our');
   const [continuationError, setContinuationError] = useState('');
+  const [quickAddCall, setQuickAddCall] = useState('');
+  const [quickAddActor, setQuickAddActor] = useState<BiddingActor>('our');
+  const [quickAddError, setQuickAddError] = useState('');
 
   const isSelected = selectedNodeId === node.id;
+  const isMultiSelected = selectedNodeIds.includes(node.id);
   const seq = node.context.sequence;
-  const sequencePathLabel = `${seq.map((call) => formatCall(call)).join('-')}-?`;
-  const depth = seq.length - 1;
-  const lastCall = seq[seq.length - 1];
-  const normalizedLastCall = normalizeCall(lastCall);
+  const sequencePathLabel = `${seq.map((step) => (
+    step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)
+  )).join('-')}-?`;
+  const depth = displayDepth ?? (seq.length - 1);
+  const lastStep = seq[seq.length - 1];
+  const lastCall = lastStep.call;
+  const isOpponentStep = lastStep.actor === 'opp';
+  const ourTurnsCount = seq.reduce((acc, step) => acc + (step.actor === 'our' ? 1 : 0), 0);
+  const isOpenerLaneTurn = ourTurnsCount % 2 === 1;
+  const normalizedLastCall = normalizeBiddingCall(lastCall);
   const lastContractBid = getLastBidFromSequence(seq);
   const lastContractRank = lastContractBid ? getBidRank(lastContractBid) : -1;
   const canDouble = !!normalizedLastCall && isBidCall(normalizedLastCall);
   const canRedouble = normalizedLastCall === 'X';
-  const isOpenerTurn = depth % 2 === 0;
+  const compactLeftTitle = 'Opener';
+  const compactRightTitle = 'Responder';
+  const compactCallTextClass = isOpponentStep ? 'text-slate-500' : getSuitColor(lastCall);
+  const showRowActions = isHovered || isSelected || isMultiSelected || isAddFormOpen || isSectionAssignOpen || isDeleteDialogOpen || isQuickAddOpen;
+  const isRootEntry = rootEntryNodeIds.includes(node.id);
+  const actorMarkerLabel = isOpponentStep ? 'OPP' : (isOpenerLaneTurn ? 'OUR-O' : 'OUR-R');
   
   // Check if node has children
   const prefix = node.id + " ";
   const childrenCount = Object.keys(nodes).filter(key => key.startsWith(prefix) && key.split(" ").length === seq.length + 1).length;
   const hasChildren = childrenCount > 0;
+  const descendantsCount = Object.keys(nodes).filter((key) => key === node.id || key.startsWith(prefix)).length - 1;
+  const deleteIntentMeta = getMutationIntentUiMeta('delete-node');
 
-  const isCallAvailable = (call: string) => {
-    const newNodeId = [...seq, call].join(' ');
-    if (nodes[newNodeId]) return false;
+  const getContinuationStatus = (inputCall: string, actor: BiddingActor) => {
+    const call = normalizeBiddingCall(inputCall);
+    if (!call) {
+      return { type: 'invalid' as const, message: 'Use 1C..7NT, Pass, X, XX.' };
+    }
+
+    const newNodeId = buildSequenceIdFromSteps([
+      ...seq,
+      { call, actor },
+    ]);
+    if (nodes[newNodeId]) {
+      return { type: 'duplicate' as const, message: 'Duplicate continuation: this path already exists.' };
+    }
 
     if (isBidCall(call)) {
-      return getBidRank(call) > lastContractRank;
+      if (getBidRank(call) > lastContractRank) {
+        return { type: 'legal' as const, message: 'Legal call.' };
+      }
+      return {
+        type: 'illegal' as const,
+        message: lastContractBid ? `Illegal: must be higher than ${formatCall(lastContractBid)}.` : 'Illegal bid at this point.',
+      };
     }
-    if (call === 'Pass') return true;
-    if (call === 'X') return canDouble;
-    if (call === 'XX') return canRedouble;
-    return false;
+    if (call === 'Pass') return { type: 'legal' as const, message: 'Legal call.' };
+    if (call === 'X') {
+      return canDouble
+        ? { type: 'legal' as const, message: 'Legal call.' }
+        : { type: 'illegal' as const, message: 'Illegal: X is available only directly over a bid.' };
+    }
+    if (call === 'XX') {
+      return canRedouble
+        ? { type: 'legal' as const, message: 'Legal call.' }
+        : { type: 'illegal' as const, message: 'Illegal: XX is available only directly over X.' };
+    }
+    return { type: 'illegal' as const, message: 'Illegal call at this point.' };
+  };
+
+  const tryAddContinuation = (
+    inputCall: string,
+    actor: BiddingActor,
+    setError: (message: string) => void,
+  ): boolean => {
+    const status = getContinuationStatus(inputCall, actor);
+    if (status.type !== 'legal') {
+      setError(status.message);
+      return false;
+    }
+    const parsedCall = normalizeBiddingCall(inputCall);
+    if (!parsedCall) {
+      setError('Use 1C..7NT, Pass, X, XX.');
+      return false;
+    }
+    addNode(node.id, parsedCall, actor);
+    return true;
   };
 
   const submitContinuation = () => {
-    const parsedCall = normalizeCall(continuationCall);
-    if (!parsedCall) {
-      setContinuationError('Use: 1C..7NT, Pass, X or XX');
-      return;
-    }
-
-    const newNodeId = [...seq, parsedCall].join(' ');
-    if (nodes[newNodeId]) {
-      setContinuationError('This continuation already exists');
-      return;
-    }
-    if (!isCallAvailable(parsedCall)) {
-      if (isBidCall(parsedCall)) {
-        setContinuationError(lastContractBid ? `Must be higher than ${formatCall(lastContractBid)}` : 'Bid is not available here');
-      } else if (parsedCall === 'X') {
-        setContinuationError('X is available only directly over a bid');
-      } else if (parsedCall === 'XX') {
-        setContinuationError('XX is available only directly over X');
-      } else {
-        setContinuationError('This call is not available here');
-      }
-      return;
-    }
-
-    addNode(node.id, parsedCall);
+    if (!tryAddContinuation(continuationCall, continuationActor, setContinuationError)) return;
     setContinuationCall('');
+    setContinuationActor('our');
     setContinuationError('');
     setIsAddFormOpen(false);
   };
 
+  const submitQuickAdd = () => {
+    if (!tryAddContinuation(quickAddCall, quickAddActor, setQuickAddError)) return;
+    setQuickAddCall('');
+    setQuickAddActor('our');
+    setQuickAddError('');
+    setIsQuickAddOpen(false);
+  };
+
   const handleOpenAddForm = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsSectionAssignOpen(false);
+    setIsQuickAddOpen(false);
     setIsAddFormOpen(true);
     setContinuationCall('');
+    setContinuationActor('our');
     setContinuationError('');
+  };
+
+  const handleOpenQuickAdd = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsSectionAssignOpen(false);
+    setIsAddFormOpen(false);
+    setIsQuickAddOpen(true);
+    setQuickAddCall('');
+    setQuickAddActor('our');
+    setQuickAddError('');
+  };
+
+  const handleOpenSectionAssign = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsAddFormOpen(false);
+    setIsQuickAddOpen(false);
+    setIsSectionAssignOpen((prev) => !prev);
   };
 
   const handleToggleBookmark = (e: React.MouseEvent) => {
@@ -136,23 +230,68 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this call and all its continuations?")) {
-      deleteNode(node.id);
-    }
+    setIsDeleteDialogOpen(true);
   };
+
+  const handleToggleRootEntry = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isRootEntry) {
+      removeRootEntry(node.id);
+      return;
+    }
+    addRootEntry(node.id);
+  };
+
+  const confirmDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteNode(node.id);
+    setIsDeleteDialogOpen(false);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDeleteDialogOpen(false);
+  };
+
+  const handleRowClick = (event: React.MouseEvent) => {
+    const isMultiToggle = batchModeEnabled && (event.metaKey || event.ctrlKey);
+    if (isMultiToggle) {
+      toggleNodeSelection(node.id);
+      return;
+    }
+    setNodeSelection([node.id]);
+    selectNode(node.id);
+  };
+
+  const continuationStatus = continuationCall
+    ? getContinuationStatus(continuationCall, continuationActor)
+    : null;
 
   return (
     <div 
       className={`flex flex-col md:flex-row md:items-center px-4 py-2 md:py-1.5 border-b border-slate-100 cursor-pointer text-sm transition-colors group ${
-        isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'
+        (isSelected || isMultiSelected) ? 'bg-blue-50' : 'hover:bg-slate-50'
       }`}
-      onClick={() => selectNode(node.id)}
+      onClick={handleRowClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Sequence Column */}
       <div className="flex-1 min-w-[200px] md:min-w-[300px] flex items-center font-mono text-[13px]">
         <div style={{ width: `${depth * 20}px` }} className="shrink-0 border-l border-slate-200 h-full ml-2" />
+
+        {batchModeEnabled && (
+          <input
+            type="checkbox"
+            checked={isMultiSelected}
+            onChange={() => {
+              toggleNodeSelection(node.id);
+            }}
+            onClick={(event) => event.stopPropagation()}
+            className="mr-1.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            title="Select for batch actions"
+          />
+        )}
         
         <button 
           className={`w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 shrink-0 ${hasChildren ? 'text-slate-500' : 'opacity-0 cursor-default'}`}
@@ -164,31 +303,43 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         {viewMode === 'compact' ? (
           <div className="flex items-center gap-1.5 ml-1">
             {depth > 0 && <span className="text-slate-300">→</span>}
-            <div className="grid grid-cols-2 gap-1">
+            {isOpponentStep ? (
               <span
-                className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
-                  isOpenerTurn
-                    ? `${getSuitColor(lastCall)} border-slate-300 bg-white`
-                    : 'text-slate-300 border-slate-200 bg-slate-50'
-                }`}
-                title="Opener"
+                className="min-w-[84px] h-5 px-1.5 rounded-md border border-slate-300 bg-slate-100 text-[10px] font-semibold text-slate-500 flex items-center justify-center"
+                title="Opponent"
               >
-                {isOpenerTurn ? formatCall(lastCall) : '·'}
+                ({formatCall(lastCall)})
               </span>
-              <span
-                className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
-                  !isOpenerTurn
-                    ? `${getSuitColor(lastCall)} border-slate-300 bg-white`
-                    : 'text-slate-300 border-slate-200 bg-slate-50'
-                }`}
-                title="Responder"
-              >
-                {!isOpenerTurn ? formatCall(lastCall) : '·'}
-              </span>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1">
+                <span
+                  className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
+                    isOpenerLaneTurn
+                      ? `${compactCallTextClass} border-slate-300 bg-white`
+                      : 'text-slate-300 border-slate-200 bg-slate-50'
+                  }`}
+                  title={compactLeftTitle}
+                >
+                  {isOpenerLaneTurn ? formatCall(lastCall) : '·'}
+                </span>
+                <span
+                  className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
+                    !isOpenerLaneTurn
+                      ? `${compactCallTextClass} border-slate-300 bg-slate-100`
+                      : 'text-slate-300 border-slate-200 bg-slate-50'
+                  }`}
+                  title={compactRightTitle}
+                >
+                  {!isOpenerLaneTurn ? formatCall(lastCall) : '·'}
+                </span>
+              </div>
+            )}
             {node.meaning?.alert && (
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500 ml-0.5" />
             )}
+            <span className="ml-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1 py-0.5 leading-none">
+              {actorMarkerLabel}
+            </span>
             {childrenCount > 0 && (
               <span 
                 className="ml-0.5 text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full leading-none"
@@ -201,8 +352,11 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         ) : (
           <div className="flex items-center gap-1.5 ml-1">
             {depth > 0 && <span className="text-slate-400">→</span>}
-            <span className={`font-semibold ${getSuitColor(lastCall)}`}>
-              {formatCall(lastCall)}
+            <span className={`font-semibold ${lastStep.actor === 'opp' ? 'text-slate-500' : getSuitColor(lastCall)}`}>
+              {lastStep.actor === 'opp' ? `(${formatCall(lastCall)})` : formatCall(lastCall)}
+            </span>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1 py-0.5 leading-none">
+              {actorMarkerLabel}
             </span>
             {node.meaning?.alert && (
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500 ml-1" />
@@ -219,7 +373,11 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         )}
 
         {/* Hover Actions */}
-        <div className={`ml-4 flex items-center gap-1 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+        <div
+          className={`ml-4 flex items-center gap-1 transition-opacity ${
+            showRowActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+        >
           <button 
             className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
             onClick={handleOpenAddForm}
@@ -227,12 +385,37 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
+          <button
+            className="px-1.5 h-5 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded"
+            onClick={handleOpenQuickAdd}
+            title="Quick add inline"
+          >
+            Quick
+          </button>
           <button 
             className={`p-1 rounded ${node.isBookmarked ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-100'}`}
             onClick={handleToggleBookmark}
             title="Bookmark"
           >
             <Bookmark className="w-3.5 h-3.5" />
+          </button>
+          <button
+            className={`p-1 rounded ${
+              isRootEntry
+                ? 'text-indigo-600 bg-indigo-100'
+                : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-100'
+            }`}
+            onClick={handleToggleRootEntry}
+            title={isRootEntry ? 'Remove from roots' : 'Add to roots'}
+          >
+            {isRootEntry ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
+            onClick={handleOpenSectionAssign}
+            title="Assign sections"
+          >
+            <FolderInput className="w-3.5 h-3.5" />
           </button>
           <button 
             className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded"
@@ -244,23 +427,118 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
         </div>
       </div>
 
+      {isQuickAddOpen && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitQuickAdd();
+          }}
+          className="mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[340px] rounded-md border border-blue-200 bg-blue-50/70 px-2 py-1.5"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-center gap-1 mb-1">
+            <button
+              type="button"
+              onClick={() => setQuickAddActor('our')}
+              className={`h-6 px-2 text-[10px] rounded border ${
+                quickAddActor === 'our'
+                  ? 'border-blue-300 bg-white text-blue-700'
+                  : 'border-slate-200 bg-slate-100 text-slate-500'
+              }`}
+            >
+              Our
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickAddActor('opp')}
+              className={`h-6 px-2 text-[10px] rounded border ${
+                quickAddActor === 'opp'
+                  ? 'border-blue-300 bg-white text-blue-700'
+                  : 'border-slate-200 bg-slate-100 text-slate-500'
+              }`}
+            >
+              Opp
+            </button>
+            <input
+              autoFocus
+              type="text"
+              value={quickAddCall}
+              onChange={(event) => {
+                setQuickAddCall(event.target.value);
+                if (quickAddError) setQuickAddError('');
+              }}
+              placeholder="Quick add: 2H, 3NT, Pass"
+              className="min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="submit"
+              className="h-6 px-2 text-[10px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsQuickAddOpen(false);
+                setQuickAddCall('');
+                setQuickAddActor('our');
+                setQuickAddError('');
+              }}
+              className="h-6 px-2 text-[10px] text-slate-600 border border-slate-200 bg-white hover:bg-slate-100 rounded"
+            >
+              Close
+            </button>
+          </div>
+          {quickAddError && (
+            <div className="text-[10px] text-rose-600">{quickAddError}</div>
+          )}
+        </form>
+      )}
+
       {isAddFormOpen && (
         <div
           className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[250px] rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-slate-50 p-2.5"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">
-            Add continuation after <span className={`${getSuitColor(lastCall)} font-bold`}>{formatCall(lastCall)}</span>
+            Add continuation after <span className={`${lastStep.actor === 'opp' ? 'text-slate-500' : getSuitColor(lastCall)} font-bold`}>
+              {lastStep.actor === 'opp' ? `(${formatCall(lastCall)})` : formatCall(lastCall)}
+            </span>
           </div>
           <div className="mb-2 font-mono text-[11px] text-slate-700 break-all">
             {sequencePathLabel}
+          </div>
+          <div className="mb-1.5 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+            <button
+              type="button"
+              onClick={() => setContinuationActor('our')}
+              className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                continuationActor === 'our'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Our call
+            </button>
+            <button
+              type="button"
+              onClick={() => setContinuationActor('opp')}
+              className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
+                continuationActor === 'opp'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Opponent call
+            </button>
           </div>
 
           <div className="mb-1.5">
             <div className="text-[9px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider">Bids 1C - 7NT</div>
             <div className="grid grid-cols-5 gap-1">
               {ALL_BID_CALLS.map((call) => {
-                const isAvailable = isCallAvailable(call);
+                const callStatus = getContinuationStatus(call, continuationActor);
+                const isAvailable = callStatus.type === 'legal';
                 const isSelectedCall = continuationCall === call;
                 return (
                   <button
@@ -281,9 +559,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
                     title={
                       isAvailable
                         ? `Add ${formatCall(call)}`
-                        : lastContractBid
-                          ? `Unavailable (must be above ${formatCall(lastContractBid)})`
-                          : 'Unavailable'
+                        : callStatus.message
                     }
                   >
                     {formatCall(call)}
@@ -295,7 +571,8 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
 
           <div className="flex flex-wrap gap-1 mb-1.5">
             {SPECIAL_CALLS.map((call) => {
-              const isAvailable = isCallAvailable(call);
+              const callStatus = getContinuationStatus(call, continuationActor);
+              const isAvailable = callStatus.type === 'legal';
               const isSelectedCall = continuationCall === call;
               return (
                 <button
@@ -313,6 +590,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
                         ? 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
                         : 'border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed opacity-60'
                   }`}
+                  title={isAvailable ? `Add ${formatCall(call)}` : callStatus.message}
                 >
                   {formatCall(call)}
                 </button>
@@ -325,7 +603,7 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
               e.preventDefault();
               submitContinuation();
             }}
-            className="flex items-center gap-1"
+            className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1"
           >
             <input
               autoFocus
@@ -339,34 +617,71 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
                 if (e.key === 'Escape') {
                   setIsAddFormOpen(false);
                   setContinuationCall('');
+                  setContinuationActor('our');
                   setContinuationError('');
                 }
               }}
               placeholder="e.g. 2H, 2NT, 3C"
-              className="flex-1 h-7 px-2 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 h-7 px-2 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <button
-              type="submit"
-              className="h-7 px-3 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
-            >
-              Add
-            </button>
             <button
               type="button"
               onClick={() => {
                 setIsAddFormOpen(false);
                 setContinuationCall('');
+                setContinuationActor('our');
                 setContinuationError('');
               }}
-              className="h-7 px-2.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-md transition-colors"
+              className="h-7 px-2.5 shrink-0 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-md transition-colors"
             >
               Cancel
             </button>
+            <button
+              type="submit"
+              className="h-7 px-3 shrink-0 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+            >
+              Add
+            </button>
           </form>
+
+          {continuationStatus && (
+            <div
+              className={`mt-1 text-[10px] ${
+                continuationStatus.type === 'legal'
+                  ? 'text-emerald-600'
+                  : continuationStatus.type === 'duplicate'
+                    ? 'text-amber-600'
+                    : 'text-rose-600'
+              }`}
+            >
+              {continuationStatus.message}
+            </div>
+          )}
 
           {continuationError && (
             <div className="mt-1 text-[10px] text-red-600">{continuationError}</div>
           )}
+        </div>
+      )}
+
+      {isSectionAssignOpen && (
+        <div
+          className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[300px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Assign Sections
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSectionAssignOpen(false)}
+              className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100"
+            >
+              Close
+            </button>
+          </div>
+          <NodeSectionAssignment nodeId={node.id} compact />
         </div>
       )}
 
@@ -445,6 +760,55 @@ export function SequenceRow({ node, viewMode = 'classic' }: { node: BiddingNode;
           className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
         />
       </div>
+
+      {isDeleteDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4"
+          onClick={() => setIsDeleteDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delete sequence confirmation"
+            className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-900">{deleteIntentMeta.title}</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {seq.map((step, i) => (
+                  <span key={`${node.id}-delete-${i}`} className="inline-flex items-center">
+                    <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                      {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
+                    </span>
+                    {i < seq.length - 1 && <span className="mx-1 text-slate-400">-</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="px-4 py-3 text-sm text-slate-600">
+              This will permanently remove this call
+              {descendantsCount > 0 ? ` and ${descendantsCount} continuation${descendantsCount > 1 ? 's' : ''}` : ''}.
+            </div>
+            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelDelete}
+                className="h-8 px-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className={`h-8 px-3 text-sm font-semibold text-white rounded-md transition-colors ${deleteIntentMeta.confirmButtonClassName}`}
+              >
+                {deleteIntentMeta.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

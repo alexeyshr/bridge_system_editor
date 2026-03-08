@@ -8,16 +8,65 @@ import { RightPanel } from '@/components/RightPanel';
 import { useBiddingStore } from '@/store/useBiddingStore';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useEffect, useState } from 'react';
+import { useSystemSync } from '@/hooks/useSystemSync';
 
 export default function Page() {
   const { isLeftPanelOpen, isRightPanelOpen } = useBiddingStore();
   const [isMobile, setIsMobile] = useState(false);
+  useSystemSync();
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const state = useBiddingStore.getState();
+      if (!state.hasUnsavedChanges) return;
+      state.flushDraftSave();
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    const shouldIgnoreTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      if (!element) return false;
+      const tagName = element.tagName;
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return true;
+      return element.isContentEditable;
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || shouldIgnoreTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      const modifierPressed = event.ctrlKey || event.metaKey;
+      if (!modifierPressed) return;
+
+      const state = useBiddingStore.getState();
+      const isUndo = key === 'z' && !event.shiftKey;
+      const isRedo = (key === 'z' && event.shiftKey) || key === 'y';
+
+      if (isUndo && state.canUndo) {
+        event.preventDefault();
+        state.undo();
+        return;
+      }
+      if (isRedo && state.canRedo) {
+        event.preventDefault();
+        state.redo();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   return (
@@ -50,7 +99,7 @@ export default function Page() {
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <LeftPanel />
                 </Panel>
-                <Separator className="w-1 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
               </>
             )}
             
@@ -60,7 +109,7 @@ export default function Page() {
             
             {isRightPanelOpen && (
               <>
-                <Separator className="w-1 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <RightPanel />
                 </Panel>

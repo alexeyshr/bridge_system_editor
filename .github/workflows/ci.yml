@@ -5,6 +5,7 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+    types: [opened, synchronize, reopened, edited]
   merge_group:
     branches: ["main"]
 
@@ -24,10 +25,10 @@ jobs:
           script: |
             const body = (context.payload.pull_request && context.payload.pull_request.body) || "";
             const hasSpecHeading = /##\s*Spec Link/i.test(body);
-            const hasFeaturesPath = /features\/[^\s)]+/i.test(body);
-            if (!hasSpecHeading || !hasFeaturesPath) {
+            const hasSpecPath = /specs\/[^\s)]+/i.test(body);
+            if (!hasSpecHeading || !hasSpecPath) {
               core.setFailed(
-                "PR must include '## Spec Link' section and a path under 'features/...'."
+                "PR must include '## Spec Link' section and a path under 'specs/...'."
               );
             }
 

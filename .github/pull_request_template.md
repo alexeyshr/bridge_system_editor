@@ -4,7 +4,12 @@ Describe what changed and why.
 
 ## Spec Link (Required)
 
-Link to the spec/task file in this repo (for example: `features/left-panel/03-node-section-assignment.md`).
+Link to the spec/task file in this repo (for example: `specs/004-left-panel-evolution/03-node-section-assignment.md`).
+
+## Architecture Impact
+
+- [ ] No architecture impact (ADR update not required)
+- [ ] Architecture changed or extended; ADR link added here:
 
 ## Scope
 

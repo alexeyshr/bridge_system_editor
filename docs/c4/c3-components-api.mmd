@@ -1,0 +1,38 @@
+flowchart TB
+  subgraph Api["API Container (tRPC)"]
+    root["Root Router"]
+    authrouter["Auth Router"]
+    systemrouter["Bidding Systems Router"]
+    sharerouter["Sharing Router"]
+    viewrouter["Smart Views Router"]
+
+    authsvc["Auth Service"]
+    systemsvc["Systems Service"]
+    sharesvc["Invite and Sharing Service"]
+    viewsvc["View Service"]
+
+    domain["Domain Contracts and Validation"]
+    repopr["Prisma Driver"]
+    repodr["Drizzle Driver"]
+    repochooser["Driver Selector (feature flags)"]
+  end
+
+  root --> authrouter
+  root --> systemrouter
+  root --> sharerouter
+  root --> viewrouter
+
+  authrouter --> authsvc
+  systemrouter --> systemsvc
+  sharerouter --> sharesvc
+  viewrouter --> viewsvc
+
+  authsvc --> domain
+  systemsvc --> domain
+  sharesvc --> domain
+  viewsvc --> domain
+
+  systemsvc --> repochooser
+  sharesvc --> repochooser
+  repochooser --> repopr
+  repochooser --> repodr

@@ -16,6 +16,9 @@
   - блокировка недоступных заявок по правилам ранга.
 - Удаление узла вместе со всеми продолжениями.
 - Закладки (`Bookmarks`).
+- Гибридное сохранение:
+  - автосохранение черновика в `localStorage`,
+  - явное сохранение файла через кнопку `Save` (YAML).
 - Редактирование карточки узла:
   - `HCP`, `Type`, `Forcing`, `Alert`, `Accepted`,
   - shape-поля, patterns, notes,
@@ -58,7 +61,26 @@ npm run typecheck  # TypeScript check (no emit)
 npm run build      # production build
 npm run start      # запуск production-сборки
 npm run clean      # очистка .next и tsbuildinfo
+npm run db:generate
+npm run db:migrate
+npm run db:push
+npm run db:studio
+npm run db:healthcheck
+npm run db:seed
+npm run ui:baseline # automated UI baseline run (requires running dev server on :3000)
 ```
+
+## Runtime Flags
+
+- `API_TRANSPORT=rest|trpc` (default in `.env.example`: `trpc`)
+
+Drizzle foundation files:
+
+- `drizzle.config.ts`
+- `lib/db/drizzle/schema.ts`
+- `lib/db/drizzle/client.ts`
+- `drizzle/*.sql` (generated migrations)
+- `drizzle/rollback/*.down.sql` (manual rollback scripts)
 
 ## Формат данных (текущий)
 
@@ -87,11 +109,39 @@ store/               # Zustand store (nodes + UI state + actions)
 lib/                 # utils (format/sort/colors)
 hooks/               # client hooks
 public/              # статические ассеты
-features/left-panel/ # SDD-спеки по развитию левой панели
+docs/                # vision/jtbd/roadmap + C4 + ADR
+specs/               # SDD-спеки и планы реализации
 fix/                 # журнал исправлений
 expirience/          # постмортемы инцидентов
 .github/             # CI + issue forms + PR template + CODEOWNERS
 ```
+
+## Product and Architecture Docs
+
+- Vision:
+  - `docs/VISION.md`
+  - `docs/WORKFLOW.md`
+  - `docs/IDEA_CONTEXT.md`
+  - `docs/IDEAS_SECTION_INDEX.md`
+  - `docs/source/IDEAS.md`
+  - `docs/source/PRIORITIES.md`
+  - `docs/archive/TZ.md` (archive)
+  - `docs/JTBD.md`
+  - `docs/GLOSSARY.md`
+  - `docs/ROADMAP.md`
+- Architecture:
+  - `docs/bounded-contexts.md`
+  - `docs/c4/c1-context.mmd`
+  - `docs/c4/c2-container.mmd`
+  - `docs/c4/c3-components-webapp.mmd`
+  - `docs/c4/c3-components-api.mmd`
+  - `docs/c4/c3-components-bot.mmd`
+  - `docs/c4/c4-code-guidelines.md`
+  - `docs/adr/ADR-0000-template.md`
+  - `docs/adr/ADR-0001-api-first-modular-monolith.md`
+  - `docs/adr/ADR-0002-drizzle-trpc-default-stack.md`
+
+Правило: если PR меняет архитектурные границы, в PR template должен быть указан ADR link.
 
 ## SDD workflow (Spec-Driven Development)
 
@@ -102,12 +152,36 @@ expirience/          # постмортемы инцидентов
 - `CODEOWNERS`,
 - чеклист GitHub-настроек: `.github/SDD_SETUP.md`.
 
+SDD backfill для миграции PR-1..PR-4:
+- `specs/002-sdd-migration-backfill/spec.md`
+- `specs/002-sdd-migration-backfill/plan.md`
+- `specs/002-sdd-migration-backfill/tasks.md`
+- `specs/002-sdd-migration-backfill/linear-mapping.md`
+
+SDD пакет для текущей реализации PR-5:
+- `specs/003-pr5-trpc-client-preserve-ui/spec.md`
+- `specs/003-pr5-trpc-client-preserve-ui/plan.md`
+- `specs/003-pr5-trpc-client-preserve-ui/tasks.md`
+- `specs/003-pr5-trpc-client-preserve-ui/linear-mapping.md`
+
+## UI Regression Baseline
+
+Для сохранения текущего UX модуля при миграции backend:
+
+- чеклист: `tests/ui-baseline/bidding-module-regression.md`
+- папка эталонных скриншотов: `tests/ui-baseline/screenshots/`
+
+Доменные контракты (DTO + инварианты):
+
+- `lib/domain/bidding/contracts.ts`
+
 ## Ближайший roadmap
 
-Основная следующая задача: развитие левой панели до пользовательских секций и smart views.
+Текущий следующий этап: platform hardening для встраивания редактора в портал.
 Спеки и порядок реализации описаны в:
-- `features/left-panel/README.md`
-- `features/left-panel/00-decisions.md`
+- `specs/005-platform-core-hardening/README.md`
+- `specs/005-platform-core-hardening/spec.md`
+- `specs/005-platform-core-hardening/plan.md`
 
 ## Troubleshooting
 
@@ -118,3 +192,7 @@ expirience/          # постмортемы инцидентов
   4. проверить, что `/_next/static/chunks/*` отдаются с `200`.
 
 - Если `build` падает на `next/font` (сетевые таймауты), повторить запуск; в CI для этого есть retry.
+
+- Если нужно сбросить локальный автосохраненный черновик:
+  - откройте DevTools -> Application -> Local Storage,
+  - удалите ключ `bridge-system-editor:draft:v1`.

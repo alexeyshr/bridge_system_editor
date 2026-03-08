@@ -589,6 +589,30 @@ test('multi-select batch actions update nodes in one flow', () => {
   assert.equal(state.rootEntryNodeIds.includes(nodeB), true);
 });
 
+test('selecting parent node toggles entire subtree selection', () => {
+  const state0 = useBiddingStore.getState();
+  const parentId = nid('1C');
+  const subtreeNodeIds = Object.keys(state0.nodes).filter((nodeId) => (
+    nodeId === parentId || nodeId.startsWith(`${parentId} `)
+  ));
+  assert.equal(subtreeNodeIds.length > 1, true);
+
+  state0.toggleNodeSelection(parentId);
+  let state = useBiddingStore.getState();
+  let selectedSet = new Set(state.selectedNodeIds);
+  subtreeNodeIds.forEach((nodeId) => {
+    assert.equal(selectedSet.has(nodeId), true);
+  });
+  assert.equal(state.selectedNodeId, parentId);
+
+  state.toggleNodeSelection(parentId);
+  state = useBiddingStore.getState();
+  selectedSet = new Set(state.selectedNodeIds);
+  subtreeNodeIds.forEach((nodeId) => {
+    assert.equal(selectedSet.has(nodeId), false);
+  });
+});
+
 test('batch mutation can be undone as a single step', () => {
   const nodeA = nid('1C');
   const nodeB = nid('1C 1D');

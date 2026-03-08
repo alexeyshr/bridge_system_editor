@@ -54,10 +54,12 @@ export function SequenceRow({
   node,
   viewMode = 'classic',
   displayDepth,
+  batchModeEnabled = false,
 }: {
   node: BiddingNode;
   viewMode?: SequenceViewMode;
   displayDepth?: number;
+  batchModeEnabled?: boolean;
 }) {
   const {
     selectedNodeId,
@@ -252,7 +254,7 @@ export function SequenceRow({
   };
 
   const handleRowClick = (event: React.MouseEvent) => {
-    const isMultiToggle = event.metaKey || event.ctrlKey;
+    const isMultiToggle = batchModeEnabled && (event.metaKey || event.ctrlKey);
     if (isMultiToggle) {
       toggleNodeSelection(node.id);
       return;
@@ -278,16 +280,18 @@ export function SequenceRow({
       <div className="flex-1 min-w-[200px] md:min-w-[300px] flex items-center font-mono text-[13px]">
         <div style={{ width: `${depth * 20}px` }} className="shrink-0 border-l border-slate-200 h-full ml-2" />
 
-        <input
-          type="checkbox"
-          checked={isMultiSelected}
-          onChange={() => {
-            toggleNodeSelection(node.id);
-          }}
-          onClick={(event) => event.stopPropagation()}
-          className="mr-1.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-          title="Select for batch actions"
-        />
+        {batchModeEnabled && (
+          <input
+            type="checkbox"
+            checked={isMultiSelected}
+            onChange={() => {
+              toggleNodeSelection(node.id);
+            }}
+            onClick={(event) => event.stopPropagation()}
+            className="mr-1.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            title="Select for batch actions"
+          />
+        )}
         
         <button 
           className={`w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 shrink-0 ${hasChildren ? 'text-slate-500' : 'opacity-0 cursor-default'}`}

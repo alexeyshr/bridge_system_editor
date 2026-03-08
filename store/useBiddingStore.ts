@@ -570,6 +570,17 @@ function sortNodeIdsBySequence(
   });
 }
 
+function getNodeSubtreeIds(
+  rootNodeId: string,
+  nodes: Record<string, BiddingNode>,
+): string[] {
+  const prefix = `${rootNodeId} `;
+  const subtreeNodeIds = Object.keys(nodes).filter((nodeId) => (
+    nodeId === rootNodeId || nodeId.startsWith(prefix)
+  ));
+  return sortNodeIdsBySequence(subtreeNodeIds, nodes);
+}
+
 function getDefaultRootEntryNodeIds(nodes: Record<string, BiddingNode>): string[] {
   const depthOneIds = Object.values(nodes)
     .filter((node) => node.context.sequence.length === 1)
@@ -2326,13 +2337,21 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     toggleNodeSelection: (id: string) => set((state) => {
       const canonicalId = canonicalizeNodeId(id);
       if (!state.nodes[canonicalId]) return state;
-      const exists = state.selectedNodeIds.includes(canonicalId);
-      const selectedNodeIds = exists
-        ? state.selectedNodeIds.filter((item) => item !== canonicalId)
-        : normalizeSectionIdList([...state.selectedNodeIds, canonicalId]);
+      const subtreeNodeIds = getNodeSubtreeIds(canonicalId, state.nodes);
+      if (subtreeNodeIds.length === 0) return state;
+      const selectedSet = new Set(state.selectedNodeIds);
+      const hasFullSubtreeSelected = subtreeNodeIds.every((nodeId) => selectedSet.has(nodeId));
+      const selectedNodeIds = hasFullSubtreeSelected
+        ? state.selectedNodeIds.filter((item) => !subtreeNodeIds.includes(item))
+        : sortNodeIdsBySequence(
+          normalizeSectionIdList([...state.selectedNodeIds, ...subtreeNodeIds]),
+          state.nodes,
+        );
       return {
         selectedNodeIds,
-        selectedNodeId: selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null,
+        selectedNodeId: hasFullSubtreeSelected
+          ? (selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null)
+          : canonicalId,
       };
     }),
 

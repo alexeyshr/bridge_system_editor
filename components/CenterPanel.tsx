@@ -1,8 +1,21 @@
 import { useBiddingStore, BiddingNode } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SequenceRow } from './SequenceRow';
-import { ChevronsUpDown, ChevronsDownUp, Undo2, Redo2 } from 'lucide-react';
+import {
+  ChevronsUpDown,
+  ChevronsDownUp,
+  ChevronDown,
+  ChevronRight,
+  Undo2,
+  Redo2,
+  MoreHorizontal,
+  Bookmark,
+  Pin,
+  PinOff,
+  Check,
+  X,
+} from 'lucide-react';
 import { buildSequenceIdFromSteps } from '@/lib/bidding-steps';
 
 type TreeViewMode = 'classic' | 'compact';
@@ -37,7 +50,7 @@ export function CenterPanel() {
     setActiveRootEntryNodeId,
     setActiveSectionId,
     setActiveSmartViewId,
-    clearNodeSelection,
+    setNodeSelection,
     batchAssignNodesToSection,
     batchSetBookmarks,
     batchSetRootEntries,
@@ -51,6 +64,10 @@ export function CenterPanel() {
   const viewMode: TreeViewMode = treeViewMode;
   const [batchSectionId, setBatchSectionId] = useState('');
   const [batchError, setBatchError] = useState('');
+  const [isBatchMenuOpen, setIsBatchMenuOpen] = useState(false);
+  const [isBatchPanelCollapsed, setIsBatchPanelCollapsed] = useState(false);
+  const [isBatchModeEnabled, setIsBatchModeEnabled] = useState(false);
+  const batchMenuRef = useRef<HTMLDivElement | null>(null);
 
   const activeRootNode = activeRootEntryNodeId ? nodes[activeRootEntryNodeId] ?? null : null;
   const effectiveRootEntryNodeId = activeRootNode ? activeRootNode.id : null;
@@ -119,10 +136,6 @@ export function CenterPanel() {
     () => selectedNodeIds.filter((nodeId) => !!nodes[nodeId]),
     [nodes, selectedNodeIds],
   );
-  const visibleSelectedCount = useMemo(
-    () => selectedNodeIdsResolved.filter((nodeId) => displayNodeIdSet.has(nodeId)).length,
-    [displayNodeIdSet, selectedNodeIdsResolved],
-  );
   const sectionOptions = useMemo(() => {
     const flatten = (tree: ReturnType<typeof getSectionTree>, acc: FlatSectionOption[] = []) => {
       tree.forEach((item) => {
@@ -134,6 +147,7 @@ export function CenterPanel() {
     };
     return flatten(getSectionTree());
   }, [getSectionPath, getSectionTree]);
+  const isBatchMenuVisible = isBatchMenuOpen && selectedNodeIdsResolved.length > 0 && !isBatchPanelCollapsed;
 
   const effectiveSelectedNode =
     selectedNodeId && displayNodeIdSet.has(selectedNodeId) ? nodes[selectedNodeId] ?? null : null;
@@ -240,7 +254,38 @@ export function CenterPanel() {
     setBatchError('');
   };
 
+  useEffect(() => {
+    if (!isBatchMenuVisible) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!batchMenuRef.current) return;
+      if (!batchMenuRef.current.contains(event.target as Node)) {
+        setIsBatchMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsBatchMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isBatchMenuVisible]);
+
   const depthBase = 0;
+  const toggleBatchMode = () => {
+    const next = !isBatchModeEnabled;
+    setIsBatchModeEnabled(next);
+    if (!next) {
+      setIsBatchMenuOpen(false);
+      setIsBatchPanelCollapsed(false);
+      setBatchError('');
+      setNodeSelection(selectedNodeId ? [selectedNodeId] : []);
+    }
+  };
 
   return (
     <div className="h-full w-full flex flex-col bg-white overflow-hidden">
@@ -280,6 +325,19 @@ export function CenterPanel() {
         >
           <ChevronsDownUp className="w-3.5 h-3.5" />
           <span>Collapse All</span>
+        </button>
+        <button
+          type="button"
+          onClick={toggleBatchMode}
+          className={`flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded transition-colors border ${
+            isBatchModeEnabled
+              ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+              : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+          title={isBatchModeEnabled ? 'Disable batch mode' : 'Enable batch mode'}
+        >
+          <span>Batch</span>
+          <span className="text-[10px] uppercase tracking-wide">{isBatchModeEnabled ? 'On' : 'Off'}</span>
         </button>
         {(activeSection || activeSmartView || activeRootNode) && (
           <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
@@ -325,7 +383,7 @@ export function CenterPanel() {
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            Compact lanes
+            Compact
           </button>
         </div>
       </div>
@@ -335,83 +393,131 @@ export function CenterPanel() {
         </div>
       )}
 
-      {selectedNodeIdsResolved.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-200 bg-blue-50/50">
-          <div className="text-xs font-medium text-blue-900">
-            Selected: {selectedNodeIdsResolved.length}
-            <span className="text-slate-500 ml-1">visible {visibleSelectedCount}</span>
+      {isBatchModeEnabled && selectedNodeIdsResolved.length > 0 && (
+        <div className="px-4 py-2 border-b border-slate-200 bg-blue-50/50">
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-medium text-blue-900">Selected: {selectedNodeIdsResolved.length}</div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsBatchMenuOpen(false);
+                setIsBatchPanelCollapsed((prev) => !prev);
+              }}
+              className="h-6 px-2 rounded border border-blue-200 bg-white text-[11px] text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1"
+              title={isBatchPanelCollapsed ? 'Expand batch actions' : 'Collapse batch actions'}
+            >
+              {isBatchPanelCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {isBatchPanelCollapsed ? 'Expand' : 'Collapse'}
+            </button>
           </div>
-          <div className="h-4 w-px bg-blue-200" />
-          <select
-            value={batchSectionId}
-            onChange={(event) => setBatchSectionId(event.target.value)}
-            className="h-7 min-w-[180px] rounded-md border border-blue-200 bg-white px-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Assign section...</option>
-            {sectionOptions.map((section) => (
-              <option key={section.id} value={section.id}>
-                {section.pathLabel}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={applyBatchAssignSection}
-            className="h-7 px-2.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
-          >
-            Assign
-          </button>
-          <button
-            type="button"
-            onClick={() => applyBatchBookmark(true)}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Bookmark
-          </button>
-          <button
-            type="button"
-            onClick={() => applyBatchBookmark(false)}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Unbookmark
-          </button>
-          <button
-            type="button"
-            onClick={() => applyBatchRootState(true)}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Pin root
-          </button>
-          <button
-            type="button"
-            onClick={() => applyBatchRootState(false)}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Unpin root
-          </button>
-          <button
-            type="button"
-            onClick={() => applyBatchAccepted(true)}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Accept
-          </button>
-          <button
-            type="button"
-            onClick={() => applyBatchAccepted(false)}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Unaccept
-          </button>
-          <button
-            type="button"
-            onClick={clearNodeSelection}
-            className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Clear
-          </button>
-          {batchError && (
-            <span className="text-xs text-rose-600">{batchError}</span>
+          {!isBatchPanelCollapsed && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select
+                value={batchSectionId}
+                onChange={(event) => setBatchSectionId(event.target.value)}
+                className="h-7 min-w-[180px] rounded-md border border-blue-200 bg-white px-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Assign section...</option>
+                {sectionOptions.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {section.pathLabel}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={applyBatchAssignSection}
+                disabled={!batchSectionId}
+                className="h-7 px-2.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+              >
+                Assign
+              </button>
+              <div className="relative" ref={batchMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsBatchMenuOpen((prev) => !prev)}
+                  className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-1.5"
+                >
+                  <span>More actions</span>
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </button>
+                {isBatchMenuVisible && (
+                  <div className="absolute left-0 mt-1 z-20 min-w-[170px] rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyBatchBookmark(true);
+                        setIsBatchMenuOpen(false);
+                      }}
+                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                    >
+                      <Bookmark className="w-3.5 h-3.5 text-slate-500" />
+                      Bookmark
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyBatchBookmark(false);
+                        setIsBatchMenuOpen(false);
+                      }}
+                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                    >
+                      <X className="w-3.5 h-3.5 text-slate-500" />
+                      Unbookmark
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyBatchRootState(true);
+                        setIsBatchMenuOpen(false);
+                      }}
+                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                    >
+                      <Pin className="w-3.5 h-3.5 text-slate-500" />
+                      Pin to roots
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyBatchRootState(false);
+                        setIsBatchMenuOpen(false);
+                      }}
+                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                    >
+                      <PinOff className="w-3.5 h-3.5 text-slate-500" />
+                      Unpin from roots
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyBatchAccepted(true);
+                        setIsBatchMenuOpen(false);
+                      }}
+                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                    >
+                      <Check className="w-3.5 h-3.5 text-slate-500" />
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyBatchAccepted(false);
+                        setIsBatchMenuOpen(false);
+                      }}
+                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                    >
+                      <X className="w-3.5 h-3.5 text-slate-500" />
+                      Unaccept
+                    </button>
+                  </div>
+                )}
+              </div>
+              {batchError && (
+                <span className="text-xs text-rose-600">{batchError}</span>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -489,6 +595,7 @@ export function CenterPanel() {
                   node={node}
                   viewMode={viewMode}
                   displayDepth={Math.max(0, node.context.sequence.length - 1 - depthBase)}
+                  batchModeEnabled={isBatchModeEnabled}
                 />
               ))
             )}

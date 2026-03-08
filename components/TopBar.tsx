@@ -125,7 +125,7 @@ export function TopBar() {
     },
     {
       id: 'set-compact-view',
-      label: 'Switch center view to Compact lanes',
+      label: 'Switch center view to Compact',
       keywords: 'compact lanes',
       onRun: () => setTreeViewMode('compact'),
       disabled: treeViewMode === 'compact',

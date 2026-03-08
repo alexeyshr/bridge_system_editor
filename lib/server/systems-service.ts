@@ -97,3 +97,11 @@ export async function upsertTournamentBinding(
 export async function freezeTournamentBinding(systemId: string, userId: string, bindingId: string) {
   return drizzleSystemsDriver.freezeTournamentBinding(systemId, userId, bindingId);
 }
+
+export async function removeTournamentBinding(systemId: string, userId: string, bindingId: string) {
+  return drizzleSystemsDriver.removeTournamentBinding(systemId, userId, bindingId);
+}
+
+export async function freezeTournamentBindings(systemId: string, userId: string, tournamentId: string) {
+  return drizzleSystemsDriver.freezeTournamentBindings(systemId, userId, tournamentId);
+}

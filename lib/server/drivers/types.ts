@@ -212,6 +212,23 @@ export interface SystemsDriver {
     frozenAt: string;
     updatedAt: string;
   }>;
+  removeTournamentBinding(
+    systemId: string,
+    userId: string,
+    bindingId: string,
+  ): Promise<{
+    id: string;
+    removed: true;
+  }>;
+  freezeTournamentBindings(
+    systemId: string,
+    userId: string,
+    tournamentId: string,
+  ): Promise<{
+    tournamentId: string;
+    frozenCount: number;
+    alreadyFrozenCount: number;
+  }>;
 }
 
 export interface InvitesDriver {

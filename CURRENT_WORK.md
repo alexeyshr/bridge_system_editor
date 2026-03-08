@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-09 01:23 +03:00
+Updated: 2026-03-09 01:38 +03:00
 
 ## Active Context
 
@@ -9,7 +9,7 @@ Updated: 2026-03-09 01:23 +03:00
   - F01: done
   - F02: done
   - F03: done
-  - F04: in progress (next)
+  - F04: done
 
 ## Timeline (MSK, +03:00)
 
@@ -39,8 +39,13 @@ Updated: 2026-03-09 01:23 +03:00
 ### F04 Tournament Usage Binding
 
 - Start: 2026-03-09 01:17
-- End: —
-- Status: in progress
+- End: 2026-03-09 01:38
+- Commit: pending
+- Result:
+  - Added remove/freeze-tournament binding contracts in service/router/validation.
+  - Added Drizzle transition checks for frozen bindings (no update/remove on frozen).
+  - Added lifecycle menu binding UI (bind, freeze, remove, freeze all by tournament).
+  - Added router + parity tests for binding transitions.
 
 ### Process Reset
 
@@ -74,10 +79,10 @@ For every next phase/subphase:
 
 ## Immediate next step
 
-- F04 / T1130-T1133:
-  - binding UI for tournament scope (global/pair/team),
-  - freeze transitions and checks,
-  - state-machine tests,
+- F05 / T1140-T1142:
+  - template profiles (`Standard`, `2/1`, `Precision`),
+  - create-system-from-template flow,
+  - template generation tests,
   - Linear + PR tracking in strict mode.
 
 ## Branching Rule (effective immediately)

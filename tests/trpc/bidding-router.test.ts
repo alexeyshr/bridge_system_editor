@@ -106,6 +106,15 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
       updatedAt: new Date().toISOString(),
       systemId,
     }),
+    removeTournamentBinding: async (_systemId: string, _userId: string, bindingId: string) => ({
+      id: bindingId,
+      removed: true as const,
+    }),
+    freezeTournamentBindings: async (_systemId: string, _userId: string, tournamentId: string) => ({
+      tournamentId,
+      frozenCount: 1,
+      alreadyFrozenCount: 0,
+    }),
     listInvitesForSystem: async () => [],
     createInviteForSystem: async (_systemId: string, _ownerId: string, _input: { channel: 'email' | 'internal' | 'telegram'; role: 'viewer' | 'editor'; targetEmail?: string; targetUserId?: string; targetTelegramUsername?: string; expiresInHours: number }) => ({
       id: 'invite-1',
@@ -262,6 +271,28 @@ test('bidding.bindings.freeze maps invalid state to CONFLICT', async () => {
       }),
     (error: unknown) => error instanceof TRPCError && error.code === 'CONFLICT',
   );
+});
+
+test('bidding.bindings.remove returns payload', async () => {
+  const caller = createCaller('user-1');
+  const result = await caller.bindings.remove({
+    systemId: 'sys-1',
+    data: { bindingId: 'bind-1' },
+  });
+
+  assert.equal(result.result.id, 'bind-1');
+  assert.equal(result.result.removed, true);
+});
+
+test('bidding.bindings.freezeTournament returns aggregate payload', async () => {
+  const caller = createCaller('user-1');
+  const result = await caller.bindings.freezeTournament({
+    systemId: 'sys-1',
+    data: { tournamentId: 'tour-1' },
+  });
+
+  assert.equal(result.result.tournamentId, 'tour-1');
+  assert.equal(result.result.frozenCount, 1);
 });
 
 test('bidding router blocks unauthenticated access', async () => {

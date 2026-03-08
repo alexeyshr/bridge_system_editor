@@ -7,12 +7,17 @@ import {
   type SystemsHubAccessFilter,
   type SystemsHubStatusFilter,
 } from '@/lib/systems-hub';
+import {
+  listSystemTemplateProfiles,
+  type SystemTemplateId,
+} from '@/lib/system-templates';
 import { useBiddingStore } from '@/store/useBiddingStore';
 import { CheckCircle2, CircleAlert, FolderOpen, Plus } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const DEFAULT_SYSTEM_TITLE = 'Untitled system';
+type CreateTemplateOption = 'blank' | SystemTemplateId;
 
 function formatUpdatedAt(iso: string): string {
   const date = new Date(iso);
@@ -40,6 +45,7 @@ export function SystemsHubMenu() {
   const [access, setAccess] = useState<SystemsHubAccessFilter>('all');
   const [statusFilter, setStatusFilter] = useState<SystemsHubStatusFilter>('all');
   const [tag, setTag] = useState<string>('');
+  const [createTemplate, setCreateTemplate] = useState<CreateTemplateOption>('blank');
 
   const activeSystemId = useBiddingStore((state) => state.activeSystemId);
   const hasUnsavedChanges = useBiddingStore((state) => state.hasUnsavedChanges);
@@ -73,6 +79,11 @@ export function SystemsHubMenu() {
   });
 
   const systems = useMemo(() => systemsQuery.data?.systems ?? [], [systemsQuery.data?.systems]);
+  const templateProfiles = useMemo(() => listSystemTemplateProfiles(), []);
+  const selectedTemplateProfile = useMemo(
+    () => templateProfiles.find((item) => item.id === createTemplate) ?? null,
+    [createTemplate, templateProfiles],
+  );
   const availableTags = useMemo(() => collectSystemsHubTags(systems), [systems]);
   const selectedSystem = systems.find((system) => system.id === activeSystemId) ?? null;
   const roleCounts = useMemo(() => (
@@ -96,6 +107,19 @@ export function SystemsHubMenu() {
     if (switchBlocked) return;
     setActiveSystem(systemId, revision);
     setIsOpen(false);
+  };
+
+  const handleCreateSystem = () => {
+    const payload = selectedTemplateProfile
+      ? {
+        title: selectedTemplateProfile.defaultTitle,
+        description: selectedTemplateProfile.defaultDescription,
+        templateId: selectedTemplateProfile.id,
+      }
+      : {
+        title: DEFAULT_SYSTEM_TITLE,
+      };
+    createSystemMutation.mutate(payload);
   };
 
   useEffect(() => {
@@ -137,17 +161,37 @@ export function SystemsHubMenu() {
                   {selectedSystem ? `${selectedSystem.title} (${roleLabel(selectedSystem.role)})` : 'No active system'}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => createSystemMutation.mutate({ title: DEFAULT_SYSTEM_TITLE })}
-                disabled={createSystemMutation.isPending}
-                className="h-8 px-2.5 text-xs font-medium rounded-md border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
-                title="Create new system"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={createTemplate}
+                  onChange={(event) => setCreateTemplate(event.target.value as CreateTemplateOption)}
+                  className="h-8 rounded-md border border-slate-200 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  title="Template profile"
+                >
+                  <option value="blank">Blank</option>
+                  {templateProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleCreateSystem}
+                  disabled={createSystemMutation.isPending}
+                  className="h-8 px-2.5 text-xs font-medium rounded-md border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                  title="Create new system"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  New
+                </button>
+              </div>
             </div>
+            {selectedTemplateProfile && (
+              <div className="text-[10px] text-slate-500">
+                {selectedTemplateProfile.name}: {selectedTemplateProfile.description}
+              </div>
+            )}
 
             <input
               type="text"

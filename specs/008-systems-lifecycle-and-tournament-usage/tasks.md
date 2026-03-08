@@ -39,9 +39,9 @@ Plan: `specs/008-systems-lifecycle-and-tournament-usage/plan.md`
 
 ## F05 Template Profiles (Bootstrap)
 
-- [ ] T1140 Define system templates: `Standard`, `2/1`, `Precision`.
-- [ ] T1141 Implement create-system-from-template flow.
-- [ ] T1142 [P] Add template generation tests.
+- [x] T1140 Define system templates: `Standard`, `2/1`, `Precision`.
+- [x] T1141 Implement create-system-from-template flow.
+- [x] T1142 [P] Add template generation tests.
 
 ## F06 Acceptance + Documentation
 

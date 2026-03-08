@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     const system = await createSystemForUser(user.id, {
       title: parsed.data.title,
       description: parsed.data.description,
+      templateId: parsed.data.templateId,
     });
 
     return created({ system });

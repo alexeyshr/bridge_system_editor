@@ -46,7 +46,7 @@ Plan: `specs/007-editor-surface-v2/plan.md`
 
 ## F06 QA Smart Views + Final Acceptance
 
-- [ ] T1050 Add smart views: `Dead ends`, `No meaning`, `No HCP`, `No forcing`, `Conflict tags`.
-- [ ] T1051 [P] Add tests for new smart view matchers and counts.
-- [ ] T1052 Run quality gate (`lint`, `typecheck`, `test`, `build`).
-- [ ] T1053 Publish QA evidence and update `fix/*` notes for surfaced regressions.
+- [x] T1050 Add smart views: `Dead ends`, `No meaning`, `No HCP`, `No forcing`, `Conflict tags`.
+- [x] T1051 [P] Add tests for new smart view matchers and counts.
+- [x] T1052 Run quality gate (`lint`, `typecheck`, `test`, `build`).
+- [x] T1053 Publish QA evidence and update `fix/*` notes for surfaced regressions.

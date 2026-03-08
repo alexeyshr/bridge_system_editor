@@ -299,6 +299,13 @@ test('built-in smart views are available and counts are computed', () => {
   assert.equal(builtInIds.has('sv_no_notes'), true);
   assert.equal(builtInIds.has('sv_unaccepted'), true);
   assert.equal(builtInIds.has('sv_recently_edited'), true);
+  assert.equal(builtInIds.has('sv_competitive_only'), true);
+  assert.equal(builtInIds.has('sv_has_opponent_action'), true);
+  assert.equal(builtInIds.has('sv_dead_ends'), true);
+  assert.equal(builtInIds.has('sv_no_meaning'), true);
+  assert.equal(builtInIds.has('sv_no_hcp'), true);
+  assert.equal(builtInIds.has('sv_no_forcing'), true);
+  assert.equal(builtInIds.has('sv_conflict_tags'), true);
 
   const section = useBiddingStore.getState().createSection('Test');
   assert.equal(section.ok, true);
@@ -309,6 +316,34 @@ test('built-in smart views are available and counts are computed', () => {
   const bookmarkedCount = useBiddingStore.getState().getSmartViewCount('sv_bookmarked');
   assert.equal(unassignedCount >= 1, true);
   assert.equal(bookmarkedCount, 0);
+});
+
+test('qa smart views match dead-ends, meaning gaps, and conflict tags', () => {
+  useBiddingStore.getState().addNode(null, '2D');
+  useBiddingStore.getState().addNode('2D', '2H');
+
+  useBiddingStore.getState().updateNode(nid('2D'), {
+    meaning: {
+      ...(useBiddingStore.getState().nodes[nid('2D')].meaning || {}),
+      forcing: 'ZZ',
+      hcp: { min: 15, max: 12 },
+      shows: ['fit', 'fit'],
+      notes: 'custom meaning',
+    },
+  });
+  useBiddingStore.getState().updateNode(nid('2D 2H'), { meaning: {} });
+
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D'), 'sv_dead_ends'), false);
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D 2H'), 'sv_dead_ends'), true);
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D'), 'sv_no_meaning'), false);
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D 2H'), 'sv_no_meaning'), true);
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D'), 'sv_no_hcp'), false);
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D'), 'sv_no_forcing'), false);
+  assert.equal(useBiddingStore.getState().evalSmartView(nid('2D'), 'sv_conflict_tags'), true);
+
+  assert.equal(useBiddingStore.getState().getSmartViewCount('sv_dead_ends') >= 1, true);
+  assert.equal(useBiddingStore.getState().getSmartViewCount('sv_no_meaning') >= 1, true);
+  assert.equal(useBiddingStore.getState().getSmartViewCount('sv_conflict_tags') >= 1, true);
 });
 
 test('custom smart view supports create, eval, pin and delete', () => {

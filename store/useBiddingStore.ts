@@ -95,7 +95,12 @@ export type BuiltInSmartViewId =
   | 'sv_unaccepted'
   | 'sv_recently_edited'
   | 'sv_competitive_only'
-  | 'sv_has_opponent_action';
+  | 'sv_has_opponent_action'
+  | 'sv_dead_ends'
+  | 'sv_no_meaning'
+  | 'sv_no_hcp'
+  | 'sv_no_forcing'
+  | 'sv_conflict_tags';
 
 export type CustomSmartViewField = 'all' | 'sequence' | 'notes' | 'shows';
 
@@ -341,6 +346,11 @@ const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: 
   { id: 'sv_recently_edited', name: 'Recently edited', order: 4 },
   { id: 'sv_competitive_only', name: 'Competitive only', order: 5 },
   { id: 'sv_has_opponent_action', name: 'Has opponent action', order: 6 },
+  { id: 'sv_dead_ends', name: 'Dead ends', order: 7 },
+  { id: 'sv_no_meaning', name: 'No meaning', order: 8 },
+  { id: 'sv_no_hcp', name: 'No HCP', order: 9 },
+  { id: 'sv_no_forcing', name: 'No forcing', order: 10 },
+  { id: 'sv_conflict_tags', name: 'Conflict tags', order: 11 },
 ];
 const SECTION_ROOT_KEY = '__root__';
 
@@ -740,6 +750,79 @@ function buildSmartViews(
   });
 }
 
+function hasMeaningContent(node: BiddingNode): boolean {
+  const meaning = node.meaning;
+  if (!meaning) return false;
+  if (typeof meaning.type === 'string' && meaning.type.trim()) return true;
+  if (typeof meaning.forcing === 'string' && meaning.forcing.trim()) return true;
+  if (typeof meaning.notes === 'string' && meaning.notes.trim()) return true;
+  if (Array.isArray(meaning.shows) && meaning.shows.some((item) => typeof item === 'string' && item.trim())) return true;
+  if (typeof meaning.alert === 'boolean') return true;
+  if (typeof meaning.natural === 'boolean') return true;
+  if (typeof meaning.accepted === 'boolean') return true;
+  if (Array.isArray(meaning.comments) && meaning.comments.length > 0) return true;
+  const hcp = meaning.hcp;
+  if (hcp && (hcp.min !== undefined || hcp.max !== undefined)) return true;
+  const shape = meaning.shape;
+  if (!shape) return false;
+  if (shape.balanced !== undefined) return true;
+  if (
+    typeof shape.S === 'string'
+    || typeof shape.H === 'string'
+    || typeof shape.D === 'string'
+    || typeof shape.C === 'string'
+  ) {
+    return true;
+  }
+  if (Array.isArray(shape.patterns) && shape.patterns.some((item) => typeof item === 'string' && item.trim())) return true;
+  if (Array.isArray(shape.constraints) && shape.constraints.some((item) => typeof item === 'string' && item.trim())) return true;
+  return false;
+}
+
+function hasHcpInfo(node: BiddingNode): boolean {
+  const hcp = node.meaning?.hcp;
+  if (!hcp) return false;
+  const hasMin = hcp.min !== undefined && String(hcp.min).trim() !== '';
+  const hasMax = hcp.max !== undefined && String(hcp.max).trim() !== '';
+  return hasMin || hasMax;
+}
+
+function hasForcingInfo(node: BiddingNode): boolean {
+  const forcing = node.meaning?.forcing;
+  return typeof forcing === 'string' && forcing.trim() !== '';
+}
+
+function hasConflictTags(node: BiddingNode): boolean {
+  const meaning = node.meaning;
+  if (!meaning) return false;
+
+  const hcp = meaning.hcp;
+  if (hcp && hcp.min !== undefined && hcp.max !== undefined) {
+    const minValue = Number(String(hcp.min).trim());
+    const maxValue = Number(String(hcp.max).trim());
+    if (!Number.isNaN(minValue) && !Number.isNaN(maxValue) && minValue > maxValue) return true;
+  }
+
+  const forcing = typeof meaning.forcing === 'string' ? meaning.forcing.trim().toUpperCase() : '';
+  if (forcing) {
+    const knownForcingTags = new Set(['NF', 'INV', 'F1', '1RF', 'FG', 'GF', 'SL']);
+    if (!knownForcingTags.has(forcing)) return true;
+  }
+
+  const duplicateShows = new Set<string>();
+  let hasDuplicateShows = false;
+  (meaning.shows ?? []).forEach((item) => {
+    const key = String(item).trim().toLocaleLowerCase();
+    if (!key) return;
+    if (duplicateShows.has(key)) {
+      hasDuplicateShows = true;
+      return;
+    }
+    duplicateShows.add(key);
+  });
+  return hasDuplicateShows;
+}
+
 function evalSmartViewById(
   nodeId: string,
   smartViewId: string,
@@ -752,6 +835,7 @@ function evalSmartViewById(
     | 'customSmartViewsById'
   > & {
     effectiveSectionIdsByNode?: Record<string, string[]>;
+    nodeChildCountById?: Record<string, number>;
   },
 ): boolean {
   const node = state.nodes[nodeId];
@@ -788,6 +872,21 @@ function evalSmartViewById(
       const hasOpp = node.context.sequence.some((step) => step.actor === 'opp');
       return hasOur && hasOpp;
     }
+    if (smartViewId === 'sv_dead_ends') {
+      return (state.nodeChildCountById?.[nodeId] ?? 0) === 0;
+    }
+    if (smartViewId === 'sv_no_meaning') {
+      return !hasMeaningContent(node);
+    }
+    if (smartViewId === 'sv_no_hcp') {
+      return !hasHcpInfo(node);
+    }
+    if (smartViewId === 'sv_no_forcing') {
+      return !hasForcingInfo(node);
+    }
+    if (smartViewId === 'sv_conflict_tags') {
+      return hasConflictTags(node);
+    }
     return false;
   }
 
@@ -816,6 +915,7 @@ function buildDisplayNodeIdsWithAncestors(
 interface DerivedIndexes {
   rulesByRootNodeId: Record<string, SubtreeRuleRecord[]>;
   nodeParentById: Record<string, string | null>;
+  nodeChildCountById: Record<string, number>;
   sectionChildIdsByParentId: Record<string, string[]>;
   effectiveSectionIdsByNode: Record<string, string[]>;
   sectionNodeCountBySectionId: Record<string, number>;
@@ -1184,9 +1284,14 @@ function buildDerivedIndexes(
 
   const nodeIds = Object.keys(nodes);
   const nodeParentById: Record<string, string | null> = {};
+  const nodeChildCountById: Record<string, number> = {};
   nodeIds.forEach((nodeId) => {
     const sequence = nodeId.split(' ').filter(Boolean);
-    nodeParentById[nodeId] = sequence.length > 1 ? sequence.slice(0, -1).join(' ') : null;
+    const parentId = sequence.length > 1 ? sequence.slice(0, -1).join(' ') : null;
+    nodeParentById[nodeId] = parentId;
+    if (parentId) {
+      nodeChildCountById[parentId] = (nodeChildCountById[parentId] ?? 0) + 1;
+    }
   });
 
   const rulesByRootNodeId: Record<string, SubtreeRuleRecord[]> = {};
@@ -1226,6 +1331,7 @@ function buildDerivedIndexes(
   return {
     rulesByRootNodeId,
     nodeParentById,
+    nodeChildCountById,
     sectionChildIdsByParentId,
     effectiveSectionIdsByNode,
     sectionNodeCountBySectionId,
@@ -1697,6 +1803,21 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       const hasOpp = sequence.some((step) => step.actor === 'opp');
       return hasOur && hasOpp ? acc + 1 : acc;
     }, 0);
+    counts.sv_dead_ends = nodeIds.reduce((acc, nodeId) => (
+      (derived.nodeChildCountById[nodeId] ?? 0) === 0 ? acc + 1 : acc
+    ), 0);
+    counts.sv_no_meaning = nodeIds.reduce((acc, nodeId) => (
+      hasMeaningContent(state.nodes[nodeId]) ? acc : acc + 1
+    ), 0);
+    counts.sv_no_hcp = nodeIds.reduce((acc, nodeId) => (
+      hasHcpInfo(state.nodes[nodeId]) ? acc : acc + 1
+    ), 0);
+    counts.sv_no_forcing = nodeIds.reduce((acc, nodeId) => (
+      hasForcingInfo(state.nodes[nodeId]) ? acc : acc + 1
+    ), 0);
+    counts.sv_conflict_tags = nodeIds.reduce((acc, nodeId) => (
+      hasConflictTags(state.nodes[nodeId]) ? acc + 1 : acc
+    ), 0);
 
     Object.values(state.customSmartViewsById).forEach((smartView) => {
       counts[smartView.id] = nodeIds.reduce((acc, nodeId) => (
@@ -3408,6 +3529,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         return nodeIds.filter((nodeId) => evalSmartViewById(nodeId, state.activeSmartViewId as string, {
           ...state,
           effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
+          nodeChildCountById: derived.nodeChildCountById,
         }));
       }
       return nodeIds;
@@ -3439,6 +3561,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return evalSmartViewById(canonicalNodeId, smartViewId, {
         ...state,
         effectiveSectionIdsByNode: derived.effectiveSectionIdsByNode,
+        nodeChildCountById: derived.nodeChildCountById,
       });
     },
 

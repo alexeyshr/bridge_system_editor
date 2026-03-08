@@ -20,11 +20,11 @@ Team: `BRI` (Bridgespace)
   - https://linear.app/bridgespace/issue/BRI-37/pr-84-f04-smart-views
 - `BRI-38` -> `F05 Primary filter integration` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-38/pr-85-f05-primary-filter-integration
-- `BRI-39` -> `F06 Import/export migration` (`Todo`)
+- `BRI-39` -> `F06 Import/export migration` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-39/pr-86-f06-importexport-migration
-- `BRI-40` -> `F07 Store method mapping` (`Todo`)
+- `BRI-40` -> `F07 Store method mapping` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-40/pr-87-f07-store-method-mapping
-- `BRI-41` -> `F08 Performance and indexing` (`Todo`)
+- `BRI-41` -> `F08 Performance and indexing` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-41/pr-88-f08-performance-and-indexing
-- `BRI-42` -> `F09 QA and acceptance` (`Todo`)
+- `BRI-42` -> `F09 QA and acceptance` (`Done`)
   - https://linear.app/bridgespace/issue/BRI-42/pr-89-f09-qa-and-acceptance

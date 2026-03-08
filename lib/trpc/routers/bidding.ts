@@ -1,5 +1,5 @@
-import { prisma } from '@/lib/db/prisma';
 import { createInviteForSystem, listInvitesForSystem, acceptInviteToken } from '@/lib/server/invite-service';
+import { searchUsers } from '@/lib/server/users-service';
 import {
   AccessDeniedError,
   NotFoundError,
@@ -76,28 +76,7 @@ const defaultDeps: BiddingRouterDeps = {
   listInvitesForSystem,
   createInviteForSystem,
   acceptInviteToken,
-  searchUsers: async (query, currentUserId) => {
-    const users = await prisma.user.findMany({
-      where: {
-        id: { not: currentUserId },
-        OR: [
-          { email: { contains: query, mode: 'insensitive' } },
-          { displayName: { contains: query, mode: 'insensitive' } },
-          { telegramUsername: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        telegramUsername: true,
-      },
-      orderBy: [{ displayName: 'asc' }, { email: 'asc' }],
-      take: 10,
-    });
-
-    return users;
-  },
+  searchUsers,
 };
 
 export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) {

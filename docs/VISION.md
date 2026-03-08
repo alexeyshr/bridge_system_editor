@@ -1,6 +1,6 @@
 # BridgeHub Vision
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 ## North Star
 
@@ -26,6 +26,7 @@ Build a reliable bridge portal where players and partnerships can create, test, 
 - Collaboration-first model: ownership, sharing, and roles from day one.
 - Multi-channel access: web portal plus Telegram integration.
 - API-first architecture so the editor module can be embedded into the full portal without UI rewrite.
+- Lifecycle-safe model: drafts are mutable, published versions are immutable and reproducible.
 
 ## Success Horizon
 
@@ -50,6 +51,7 @@ Build a reliable bridge portal where players and partnerships can create, test, 
 
 In scope now:
 - Bidding System Editor as a complete module.
+- Systems Hub + versioning + tournament usage binding around the editor module.
 - Migration to target stack: Next.js + TypeScript + tRPC + Drizzle + PostgreSQL.
 - Reusable API contracts for future portal modules.
 

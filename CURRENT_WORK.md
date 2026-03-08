@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-09 01:40 +03:00
+Updated: 2026-03-09 02:23 +03:00
 
 ## Active Context
 
@@ -9,7 +9,8 @@ Updated: 2026-03-09 01:40 +03:00
   - F01: done
   - F02: done
   - F03: done
-  - F04: done
+  - F04: implemented on branch `codex/spec-008-f04-tournament-bindings` (pending merge to `main`)
+  - F05: done (`codex/BRI-63-f05-template-profiles`)
 
 ## Timeline (MSK, +03:00)
 
@@ -40,12 +41,27 @@ Updated: 2026-03-09 01:40 +03:00
 
 - Start: 2026-03-09 01:17
 - End: 2026-03-09 01:38
-- Commit: `02d29bf`
+- Branch: `codex/spec-008-f04-tournament-bindings`
+- Commits:
+  - `02d29bf` feature implementation
+  - `9ae26cb` process log update
+  - `8210681` spec PR-note
+- Status: implemented and pushed, pending merge
+
+### F05 Template Profiles
+
+- Start: 2026-03-09 02:07
+- End: 2026-03-09 02:21
+- Branch: `codex/BRI-63-f05-template-profiles`
+- Linear: `BRI-63` moved to `In Progress`
+- Commit: `60b2237`
 - Result:
-  - Added remove/freeze-tournament binding contracts in service/router/validation.
-  - Added Drizzle transition checks for frozen bindings (no update/remove on frozen).
-  - Added lifecycle menu binding UI (bind, freeze, remove, freeze all by tournament).
-  - Added router + parity tests for binding transitions.
+  - Added template profiles (`Standard`, `2/1`, `Precision`) in `lib/system-templates.ts`.
+  - Extended create-system contracts with optional `templateId`.
+  - Seeded template nodes in Drizzle `createSystemForUser`.
+  - Added template selector to Systems Hub create flow.
+  - Added template unit tests + router forwarding test + parity template seed test.
+  - Full quality gate green (`lint`, `typecheck`, `test`, `build`).
 
 ### Process Reset
 
@@ -79,14 +95,14 @@ For every next phase/subphase:
 
 ## Immediate next step
 
-- F05 / T1140-T1142:
-  - template profiles (`Standard`, `2/1`, `Precision`),
-  - create-system-from-template flow,
-  - template generation tests,
-  - Linear + PR tracking in strict mode.
+- F06 / T1150-T1152:
+  - run final acceptance gate (already green on branch),
+  - update docs/architecture references,
+  - write rollout notes/migration constraints,
+  - open PR and finalize Linear evidence.
 
 ## Branching Rule (effective immediately)
 
 - No more direct implementation on `main`.
 - Next implementation starts from a dedicated branch:
-  - `codex/spec-008-f04-tournament-bindings` (or Linear-based equivalent).
+  - `codex/BRI-63-f05-template-profiles` for current phase.

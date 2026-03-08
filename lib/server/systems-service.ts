@@ -1,4 +1,5 @@
 import { drizzleSystemsDriver } from '@/lib/server/drivers/drizzle-systems-driver';
+import type { SystemTemplateId } from '@/lib/system-templates';
 import { type SystemsHubFilterInput, filterSystemsForHub } from '@/lib/systems-hub';
 import type { ResolvedAccess, ShareRole, TournamentBindingScope } from './drivers/types';
 
@@ -13,7 +14,10 @@ export async function listSystemsForUser(userId: string, filters?: SystemsHubFil
   return filterSystemsForHub(systems, filters);
 }
 
-export async function createSystemForUser(userId: string, input: { title: string; description?: string | null }) {
+export async function createSystemForUser(
+  userId: string,
+  input: { title: string; description?: string | null; templateId?: SystemTemplateId },
+) {
   return drizzleSystemsDriver.createSystemForUser(userId, input);
 }
 

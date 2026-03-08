@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { SYSTEM_TEMPLATE_IDS } from '@/lib/system-templates';
 
 export const createSystemSchema = z.object({
   title: z.string().trim().min(1).max(120).default('Untitled system'),
   description: z.string().trim().max(2000).optional().nullable(),
+  templateId: z.enum(SYSTEM_TEMPLATE_IDS).optional(),
 });
 
 export const listSystemsSchema = z.object({

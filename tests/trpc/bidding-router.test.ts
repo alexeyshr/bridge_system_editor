@@ -7,7 +7,10 @@ import { TRPCError } from '@trpc/server';
 function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]> = {}) {
   return {
     listSystemsForUser: async (_userId: string, _filters?: { query?: string; access?: 'all' | 'owner' | 'shared'; status?: 'all' | 'active' | 'stale'; tag?: string }) => [],
-    createSystemForUser: async (_userId: string, input: { title: string; description?: string | null }) => ({
+    createSystemForUser: async (
+      _userId: string,
+      input: { title: string; description?: string | null; templateId?: 'standard' | 'two_over_one' | 'precision' },
+    ) => ({
       id: 'sys-1',
       title: input.title,
       description: input.description ?? null,
@@ -191,6 +194,40 @@ test('bidding.systems.list forwards filters to service dependency', async () => 
     access: 'owner',
     status: 'active',
     tag: 'relay',
+  });
+});
+
+test('bidding.systems.create forwards template payload to service dependency', async () => {
+  let receivedInput:
+    | { title: string; description?: string | null; templateId?: 'standard' | 'two_over_one' | 'precision' }
+    | undefined;
+
+  const caller = createCaller('user-1', {
+    createSystemForUser: async (_userId, input) => {
+      receivedInput = input;
+      return {
+        id: 'sys-1',
+        title: input.title,
+        description: input.description ?? null,
+        schemaVersion: 1,
+        revision: 1,
+        role: 'owner' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+  });
+
+  await caller.systems.create({
+    title: 'Precision System',
+    description: 'Bootstrap profile',
+    templateId: 'precision',
+  });
+
+  assert.deepEqual(receivedInput, {
+    title: 'Precision System',
+    description: 'Bootstrap profile',
+    templateId: 'precision',
   });
 });
 

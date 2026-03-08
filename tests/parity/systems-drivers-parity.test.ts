@@ -145,6 +145,32 @@ testIfDb('drizzle systems driver mutation path', async () => {
   }
 });
 
+testIfDb('drizzle systems driver can seed template profile on create', async () => {
+  const ownerId = createEntityId('usr');
+  const now = new Date();
+
+  await db.insert(users).values([
+    { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
+  ]);
+
+  try {
+    const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
+      title: 'Precision Profile',
+      templateId: 'precision',
+    });
+
+    assert.equal(created.revision, 1);
+    assert.equal(created.title, 'Precision Profile');
+
+    const system = await drizzleSystemsDriver.getSystemForUser(created.id, ownerId);
+    assert.ok(system.nodes.length >= 5);
+    assert.equal(system.nodes.some((node) => node.sequenceId === 'o:1C'), true);
+    assert.equal(system.nodes.some((node) => node.sequenceId === 'o:1D'), true);
+  } finally {
+    await cleanupUsers([ownerId]);
+  }
+});
+
 testIfDb('drizzle systems driver lifecycle and tournament bindings path', async () => {
   const ownerId = createEntityId('usr');
   const now = new Date();

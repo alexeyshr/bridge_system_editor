@@ -1,3 +1,5 @@
+import type { SystemTemplateId } from '@/lib/system-templates';
+
 export type AccessRole = 'owner' | 'editor' | 'viewer' | 'none';
 
 export type ResolvedAccess = {
@@ -22,7 +24,10 @@ export interface SystemsDriver {
     updatedAt: string;
     role: 'owner' | 'editor' | 'viewer';
   }>>;
-  createSystemForUser(userId: string, input: { title: string; description?: string | null }): Promise<{
+  createSystemForUser(
+    userId: string,
+    input: { title: string; description?: string | null; templateId?: SystemTemplateId },
+  ): Promise<{
     id: string;
     title: string;
     description: string | null;

@@ -9,6 +9,7 @@ import {
   tournamentSystemBindings,
   users,
 } from '@/lib/db/drizzle/schema';
+import { getSystemTemplateProfile, getSystemTemplateSeed } from '@/lib/system-templates';
 import {
   AccessDeniedError,
   InvalidStateError,
@@ -100,13 +101,18 @@ export const drizzleSystemsDriver: SystemsDriver = {
   },
 
   async createSystemForUser(userId, input) {
+    const templateProfile = input.templateId ? getSystemTemplateProfile(input.templateId) : null;
+    const title = input.title.trim() || templateProfile?.defaultTitle || 'Untitled system';
+    const description = input.description === undefined
+      ? (templateProfile?.defaultDescription ?? null)
+      : (input.description ?? null);
     const now = new Date();
     const id = createEntityId('sys');
     await db.insert(biddingSystems).values({
       id,
       ownerId: userId,
-      title: input.title,
-      description: input.description ?? null,
+      title,
+      description,
       schemaVersion: 1,
       revision: 1,
       createdAt: now,
@@ -123,10 +129,25 @@ export const drizzleSystemsDriver: SystemsDriver = {
       updatedAt: now,
     });
 
+    const templateSeedNodes = input.templateId ? getSystemTemplateSeed(input.templateId) : [];
+    if (templateSeedNodes.length > 0) {
+      await db.insert(biddingNodes).values(
+        templateSeedNodes.map((node) => ({
+          id: createEntityId('node'),
+          systemId: id,
+          sequenceId: node.sequenceId,
+          payload: node.payload,
+          updatedById: userId,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      );
+    }
+
     return {
       id,
-      title: input.title,
-      description: input.description ?? null,
+      title,
+      description,
       schemaVersion: 1,
       revision: 1,
       role: 'owner' as const,

@@ -2,7 +2,7 @@ import { useBiddingStore, BiddingNode } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
 import { useState } from 'react';
 import { SequenceRow } from './SequenceRow';
-import { ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
+import { ChevronsUpDown, ChevronsDownUp, Undo2, Redo2 } from 'lucide-react';
 import { buildSequenceIdFromSteps } from '@/lib/bidding-steps';
 
 type TreeViewMode = 'classic' | 'compact';
@@ -17,6 +17,10 @@ export function CenterPanel() {
     leftPrimaryMode,
     activeSectionId,
     activeSmartViewId,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     expandAll,
     collapseAll,
     selectNode,
@@ -164,6 +168,25 @@ export function CenterPanel() {
     <div className="h-full w-full flex flex-col bg-white overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-white shrink-0 gap-2">
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          title="Undo (Ctrl/Cmd+Z)"
+        >
+          <Undo2 className="w-3.5 h-3.5" />
+          <span>Undo</span>
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          title="Redo (Shift+Ctrl/Cmd+Z)"
+        >
+          <Redo2 className="w-3.5 h-3.5" />
+          <span>Redo</span>
+        </button>
+        <div className="h-4 w-px bg-slate-200 mx-0.5" />
         <button 
           onClick={expandAll}
           className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"

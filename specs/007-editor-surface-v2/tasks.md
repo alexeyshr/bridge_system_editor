@@ -16,10 +16,10 @@ Plan: `specs/007-editor-surface-v2/plan.md`
 
 ## F02 Undo/Redo Engine
 
-- [ ] T1010 Implement command-based history stack for core store operations.
-- [ ] T1011 Add toolbar controls + keyboard shortcuts (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`).
-- [ ] T1012 Define and implement stack invalidation rules on import/reset.
-- [ ] T1013 [P] Add deterministic undo/redo test suite.
+- [x] T1010 Implement command-based history stack for core store operations.
+- [x] T1011 Add toolbar controls + keyboard shortcuts (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`).
+- [x] T1012 Define and implement stack invalidation rules on import/reset.
+- [x] T1013 [P] Add deterministic undo/redo test suite.
 
 ## F03 Multi-Select + Batch Actions
 

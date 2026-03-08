@@ -151,6 +151,25 @@ interface DraftPayload {
   activeSmartViewId?: string | null;
 }
 
+interface EditorHistorySnapshot {
+  nodes: Record<string, BiddingNode>;
+  selectedNodeId: string | null;
+  rootEntryNodeIds: string[];
+  activeRootEntryNodeId: string | null;
+  sectionsById: Record<string, SectionRecord>;
+  sectionRootOrder: string[];
+  nodeSectionIds: Record<string, string[]>;
+  subtreeRulesById: Record<string, SubtreeRuleRecord>;
+  customSmartViewsById: Record<string, CustomSmartViewRecord>;
+  customSmartViewOrder: string[];
+  smartViewPinnedById: Record<string, boolean>;
+  nodeTouchedAtById: Record<string, string>;
+  sectionExpandedById: Record<string, boolean>;
+  leftPrimaryMode: LeftPrimaryMode;
+  activeSectionId: string | null;
+  activeSmartViewId: string | null;
+}
+
 interface ExportSchemaV2 {
   schemaVersion: number;
   exportedAt: string;
@@ -199,6 +218,10 @@ interface BiddingState {
   lastDraftSavedAt: string | null;
   lastServerSavedAt: string | null;
   lastExportedAt: string | null;
+  undoStack: EditorHistorySnapshot[];
+  redoStack: EditorHistorySnapshot[];
+  canUndo: boolean;
+  canRedo: boolean;
 
   // Actions
   importYaml: (yamlString: string) => void;
@@ -270,6 +293,8 @@ interface BiddingState {
   getSmartViews: () => SmartViewDescriptor[];
   evalSmartView: (nodeId: string, smartViewId: string) => boolean;
   getSmartViewCount: (smartViewId: string) => number;
+  undo: () => void;
+  redo: () => void;
   flushDraftSave: () => void;
   clearDraft: () => void;
 }
@@ -282,6 +307,7 @@ const SECTION_NAME_MAX_LENGTH = 64;
 const SMART_VIEW_NAME_MAX_LENGTH = 64;
 const SMART_VIEW_QUERY_MAX_LENGTH = 160;
 const RECENTLY_EDITED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const HISTORY_LIMIT = 120;
 let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const BUILTIN_SMART_VIEWS: Array<{ id: BuiltInSmartViewId; name: string; order: number }> = [
@@ -434,6 +460,64 @@ function normalizeSectionIdList(sectionIds: string[]): string[] {
 function isNodeWithinSubtree(nodeId: string, rootNodeId: string): boolean {
   if (nodeId === rootNodeId) return true;
   return nodeId.startsWith(`${rootNodeId} `);
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function createHistorySnapshot(state: BiddingState): EditorHistorySnapshot {
+  return deepClone({
+    nodes: state.nodes,
+    selectedNodeId: state.selectedNodeId,
+    rootEntryNodeIds: state.rootEntryNodeIds,
+    activeRootEntryNodeId: state.activeRootEntryNodeId,
+    sectionsById: state.sectionsById,
+    sectionRootOrder: state.sectionRootOrder,
+    nodeSectionIds: state.nodeSectionIds,
+    subtreeRulesById: state.subtreeRulesById,
+    customSmartViewsById: state.customSmartViewsById,
+    customSmartViewOrder: state.customSmartViewOrder,
+    smartViewPinnedById: state.smartViewPinnedById,
+    nodeTouchedAtById: state.nodeTouchedAtById,
+    sectionExpandedById: state.sectionExpandedById,
+    leftPrimaryMode: state.leftPrimaryMode,
+    activeSectionId: state.activeSectionId,
+    activeSmartViewId: state.activeSmartViewId,
+  });
+}
+
+function applyHistorySnapshot(snapshot: EditorHistorySnapshot): Partial<BiddingState> {
+  const next = deepClone(snapshot);
+  return {
+    nodes: next.nodes,
+    selectedNodeId: next.selectedNodeId,
+    rootEntryNodeIds: next.rootEntryNodeIds,
+    activeRootEntryNodeId: next.activeRootEntryNodeId,
+    sectionsById: next.sectionsById,
+    sectionRootOrder: next.sectionRootOrder,
+    nodeSectionIds: next.nodeSectionIds,
+    subtreeRulesById: next.subtreeRulesById,
+    customSmartViewsById: next.customSmartViewsById,
+    customSmartViewOrder: next.customSmartViewOrder,
+    smartViewPinnedById: next.smartViewPinnedById,
+    nodeTouchedAtById: next.nodeTouchedAtById,
+    sectionExpandedById: next.sectionExpandedById,
+    leftPrimaryMode: next.leftPrimaryMode,
+    activeSectionId: next.activeSectionId,
+    activeSmartViewId: next.activeSmartViewId,
+  };
+}
+
+function pushUndoStack(
+  stack: EditorHistorySnapshot[],
+  snapshot: EditorHistorySnapshot,
+): EditorHistorySnapshot[] {
+  const next = [...stack, snapshot];
+  if (next.length > HISTORY_LIMIT) {
+    next.splice(0, next.length - HISTORY_LIMIT);
+  }
+  return next;
 }
 
 function sortNodeIdsBySequence(
@@ -1578,6 +1662,20 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     return counts;
   };
 
+  const withHistoryMutation = (
+    state: BiddingState,
+    patch: Partial<BiddingState>,
+  ): Partial<BiddingState> => {
+    const nextUndoStack = pushUndoStack(state.undoStack, createHistorySnapshot(state));
+    return {
+      ...patch,
+      undoStack: nextUndoStack,
+      redoStack: [],
+      canUndo: nextUndoStack.length > 0,
+      canRedo: false,
+    };
+  };
+
   return {
     nodes: initialNodes,
     selectedNodeId: initialSelectedNodeId && initialNodes[initialSelectedNodeId] ? initialSelectedNodeId : null,
@@ -1607,6 +1705,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     lastDraftSavedAt: initialDraft?.savedAt ?? null,
     lastServerSavedAt: null,
     lastExportedAt: null,
+    undoStack: [],
+    redoStack: [],
+    canUndo: false,
+    canRedo: false,
 
     importYaml: (yamlString: string) => {
       try {
@@ -1704,6 +1806,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           hasUnsavedChanges: true,
           serverSyncError: null,
           lastExportedAt: null,
+          undoStack: [],
+          redoStack: [],
+          canUndo: false,
+          canRedo: false,
         });
         if (warnings.length > 0) {
           console.warn('[importYaml] Migration warnings:', warnings);
@@ -1815,7 +1921,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           : state.activeRootEntryNodeId;
 
         didAdd = true;
-        return {
+        return withHistoryMutation(state, {
           nodes: updatedNodes,
           rootEntryNodeIds: nextRootEntryNodeIds,
           activeRootEntryNodeId: nextActiveRootEntryNodeId,
@@ -1827,7 +1933,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId: id,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didAdd) queueDraftSave();
@@ -1842,7 +1948,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didUpdate = true;
         const touchedAt = new Date().toISOString();
 
-        return {
+        return withHistoryMutation(state, {
           nodes: {
             ...state.nodes,
             [canonicalId]: { ...state.nodes[canonicalId], ...updates },
@@ -1853,7 +1959,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didUpdate) queueDraftSave();
@@ -1947,7 +2053,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         ) as Record<string, SubtreeRuleRecord>;
 
         didRename = true;
-        return {
+        return withHistoryMutation(state, {
           nodes: newNodes,
           rootEntryNodeIds: nextRootEntryNodeIds,
           activeRootEntryNodeId: nextActiveRootEntryNodeId,
@@ -1961,7 +2067,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
             : state.selectedNodeId?.startsWith(prefix)
               ? newPrefix + state.selectedNodeId.substring(prefix.length)
               : state.selectedNodeId,
-        };
+        });
       });
 
       if (didRename) queueDraftSave();
@@ -2002,7 +2108,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           ? nextRootEntryNodeIds[0] ?? null
           : state.activeRootEntryNodeId;
 
-        return {
+        return withHistoryMutation(state, {
           nodes: newNodes,
           rootEntryNodeIds: nextRootEntryNodeIds,
           activeRootEntryNodeId: nextActiveRootEntryNodeId,
@@ -2014,7 +2120,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           selectedNodeId: state.selectedNodeId === canonicalId || state.selectedNodeId?.startsWith(prefix)
             ? null
             : state.selectedNodeId,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2115,6 +2221,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           isServerSyncing: false,
           serverSyncError: null,
           lastServerSavedAt: new Date().toISOString(),
+          undoStack: [],
+          redoStack: [],
+          canUndo: false,
+          canRedo: false,
         };
       }),
 
@@ -2176,7 +2286,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didCreate = true;
         result = { ok: true, sectionId };
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           sectionExpandedById: {
@@ -2187,7 +2297,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSectionId: sectionId,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didCreate) queueDraftSave();
@@ -2235,12 +2345,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didRename = true;
         result = { ok: true, sectionId };
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didRename) queueDraftSave();
@@ -2295,12 +2405,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didMove = true;
         result = { ok: true, sectionId };
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didMove) queueDraftSave();
@@ -2352,7 +2462,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextSubtreeRulesById = Object.fromEntries(
           Object.entries(state.subtreeRulesById).filter(([, rule]) => rule.sectionId !== sectionId),
         ) as Record<string, SubtreeRuleRecord>;
-        return {
+        return withHistoryMutation(state, {
           sectionsById: nextSectionsById,
           sectionRootOrder: getSectionRootOrder(nextSectionsById),
           nodeSectionIds: nextNodeSectionIds,
@@ -2361,7 +2471,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSectionId: state.activeSectionId === sectionId ? targetParentId : state.activeSectionId,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2391,14 +2501,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didAssign = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           nodeSectionIds: {
             ...state.nodeSectionIds,
             [canonicalNodeId]: [...existing, sectionId],
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didAssign) queueDraftSave();
@@ -2436,11 +2546,11 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didUnassign = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           nodeSectionIds: nextNodeSectionIds,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didUnassign) queueDraftSave();
@@ -2480,11 +2590,11 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didSet = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           nodeSectionIds: nextNodeSectionIds,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didSet) queueDraftSave();
@@ -2519,7 +2629,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didCreate = true;
         result = { ok: true, ruleId };
 
-        return {
+        return withHistoryMutation(state, {
           subtreeRulesById: {
             ...state.subtreeRulesById,
             [ruleId]: {
@@ -2533,7 +2643,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didCreate) queueDraftSave();
@@ -2555,11 +2665,11 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didDelete = true;
         result = { ok: true };
-        return {
+        return withHistoryMutation(state, {
           subtreeRulesById: nextRules,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2602,7 +2712,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         didCreate = true;
         result = { ok: true, smartViewId };
 
-        return {
+        return withHistoryMutation(state, {
           customSmartViewsById: {
             ...state.customSmartViewsById,
             [smartViewId]: {
@@ -2620,7 +2730,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSmartViewId: smartViewId,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didCreate) queueDraftSave();
@@ -2673,7 +2783,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didUpdate = true;
         result = { ok: true, smartViewId };
-        return {
+        return withHistoryMutation(state, {
           customSmartViewsById: {
             ...state.customSmartViewsById,
             [smartViewId]: {
@@ -2686,7 +2796,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didUpdate) queueDraftSave();
@@ -2710,7 +2820,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
 
         didDelete = true;
         result = { ok: true, smartViewId };
-        return {
+        return withHistoryMutation(state, {
           customSmartViewsById: nextById,
           customSmartViewOrder: nextOrder,
           smartViewPinnedById: nextPinnedById,
@@ -2721,7 +2831,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
               : state.leftPrimaryMode,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didDelete) queueDraftSave();
@@ -2741,14 +2851,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         const nextPinned = !state.smartViewPinnedById[smartViewId];
         didToggle = true;
         result = { ok: true, smartViewId };
-        return {
+        return withHistoryMutation(state, {
           smartViewPinnedById: {
             ...state.smartViewPinnedById,
             [smartViewId]: nextPinned,
           },
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didToggle) queueDraftSave();
@@ -2778,7 +2888,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         );
         didAdd = true;
         result = { ok: true, nodeId: canonicalNodeId };
-        return {
+        return withHistoryMutation(state, {
           rootEntryNodeIds: nextRootEntryNodeIds,
           activeRootEntryNodeId: canonicalNodeId,
           leftPrimaryMode: 'roots' as LeftPrimaryMode,
@@ -2786,7 +2896,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSmartViewId: null,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didAdd) queueDraftSave();
@@ -2809,7 +2919,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           : state.activeRootEntryNodeId;
         didRemove = true;
         result = { ok: true, nodeId: canonicalNodeId };
-        return {
+        return withHistoryMutation(state, {
           rootEntryNodeIds: nextRootEntryNodeIds,
           activeRootEntryNodeId: nextActiveRootEntryNodeId,
           leftPrimaryMode:
@@ -2818,7 +2928,7 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
               : state.leftPrimaryMode,
           hasUnsavedChanges: true,
           serverSyncError: null,
-        };
+        });
       });
 
       if (didRemove) queueDraftSave();
@@ -2988,6 +3098,50 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return countMap[smartViewId] ?? 0;
     },
 
+    undo: () => {
+      let didUndo = false;
+      set((state) => {
+        if (state.undoStack.length === 0) return state;
+        const previousSnapshot = state.undoStack[state.undoStack.length - 1];
+        const currentSnapshot = createHistorySnapshot(state);
+        const nextUndoStack = state.undoStack.slice(0, -1);
+        const nextRedoStack = pushUndoStack(state.redoStack, currentSnapshot);
+        didUndo = true;
+        return {
+          ...applyHistorySnapshot(previousSnapshot),
+          undoStack: nextUndoStack,
+          redoStack: nextRedoStack,
+          canUndo: nextUndoStack.length > 0,
+          canRedo: nextRedoStack.length > 0,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+      if (didUndo) queueDraftSave();
+    },
+
+    redo: () => {
+      let didRedo = false;
+      set((state) => {
+        if (state.redoStack.length === 0) return state;
+        const nextSnapshot = state.redoStack[state.redoStack.length - 1];
+        const currentSnapshot = createHistorySnapshot(state);
+        const nextRedoStack = state.redoStack.slice(0, -1);
+        const nextUndoStack = pushUndoStack(state.undoStack, currentSnapshot);
+        didRedo = true;
+        return {
+          ...applyHistorySnapshot(nextSnapshot),
+          undoStack: nextUndoStack,
+          redoStack: nextRedoStack,
+          canUndo: nextUndoStack.length > 0,
+          canRedo: nextRedoStack.length > 0,
+          hasUnsavedChanges: true,
+          serverSyncError: null,
+        };
+      });
+      if (didRedo) queueDraftSave();
+    },
+
     flushDraftSave,
 
     clearDraft: () => {
@@ -2996,7 +3150,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         draftSaveTimer = null;
       }
       removeDraftPayload();
-      set({ lastDraftSavedAt: null, isDraftSaving: false });
+      set({
+        lastDraftSavedAt: null,
+        isDraftSaving: false,
+        undoStack: [],
+        redoStack: [],
+        canUndo: false,
+        canRedo: false,
+      });
     },
   };
 });

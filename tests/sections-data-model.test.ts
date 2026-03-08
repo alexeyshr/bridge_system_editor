@@ -404,6 +404,64 @@ test('removing section links and subtree rules does not delete bidding nodes', (
   assert.equal(state.subtreeRulesById[ruleId], undefined);
 });
 
+test('undo/redo restores node add/remove mutations', () => {
+  const state0 = useBiddingStore.getState();
+  const beforeCount = Object.keys(state0.nodes).length;
+
+  state0.addNode(null, '2D');
+  const rootId = nid('2D');
+  let state = useBiddingStore.getState();
+  assert.equal(!!state.nodes[rootId], true);
+  assert.equal(state.canUndo, true);
+
+  state.undo();
+  state = useBiddingStore.getState();
+  assert.equal(!!state.nodes[rootId], false);
+  assert.equal(Object.keys(state.nodes).length, beforeCount);
+  assert.equal(state.canRedo, true);
+
+  state.redo();
+  state = useBiddingStore.getState();
+  assert.equal(!!state.nodes[rootId], true);
+  assert.equal(state.canUndo, true);
+});
+
+test('undo/redo restores root pin and unpin mutations', () => {
+  const nodeId = nid('1C 1D 1H');
+  const state0 = useBiddingStore.getState();
+
+  const addResult = state0.addRootEntry(nodeId);
+  assert.equal(addResult.ok, true);
+  let state = useBiddingStore.getState();
+  assert.equal(state.rootEntryNodeIds.includes(nodeId), true);
+
+  const removeResult = state.removeRootEntry(nodeId);
+  assert.equal(removeResult.ok, true);
+  state = useBiddingStore.getState();
+  assert.equal(state.rootEntryNodeIds.includes(nodeId), false);
+
+  state.undo();
+  state = useBiddingStore.getState();
+  assert.equal(state.rootEntryNodeIds.includes(nodeId), true);
+
+  state.redo();
+  state = useBiddingStore.getState();
+  assert.equal(state.rootEntryNodeIds.includes(nodeId), false);
+});
+
+test('import clears undo/redo history stacks', () => {
+  const state0 = useBiddingStore.getState();
+  state0.addNode(null, '2H');
+  let state = useBiddingStore.getState();
+  assert.equal(state.canUndo, true);
+
+  const exported = state.exportYaml();
+  state.importYaml(exported);
+  state = useBiddingStore.getState();
+  assert.equal(state.canUndo, false);
+  assert.equal(state.canRedo, false);
+});
+
 test('adding top-level node auto-creates root entry and selecting root is persisted', () => {
   useBiddingStore.getState().addNode(null, '2D');
   const rootId = nid('2D');

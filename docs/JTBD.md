@@ -1,6 +1,6 @@
 # Jobs-To-Be-Done (JTBD)
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 ## Core Jobs
 
@@ -12,6 +12,8 @@ Last updated: 2026-03-07
 | When I coach several pairs | I want reusable templates and controlled sharing | So each pair learns from the same baseline with clear ownership |
 | When I discover a system update from a teammate | I want automatic persistence and version-safe history | So no edits are lost and I can trust the latest state |
 | When I work from Telegram | I want secure login and quick link to systems | So I can continue study flow outside desktop context |
+| When I prepare for a tournament | I want to bind my exact published system version | So agreements are reproducible and not changed by later edits |
+| When I review a partner's idea | I want to discuss at system/node level without editing core content | So collaboration is safe and traceable |
 
 ## Supporting Jobs
 

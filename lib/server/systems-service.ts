@@ -1,28 +1,22 @@
-import { featureFlags } from '@/lib/config/feature-flags';
 import { drizzleSystemsDriver } from '@/lib/server/drivers/drizzle-systems-driver';
-import { prismaSystemsDriver } from '@/lib/server/drivers/prisma-systems-driver';
-import type { ResolvedAccess, ShareRole, SystemsDriver } from './drivers/types';
+import type { ResolvedAccess, ShareRole } from './drivers/types';
 
 export { AccessDeniedError, NotFoundError, RevisionConflictError, UserLookupError } from './domain-errors';
 
-function getSystemsDriver(): SystemsDriver {
-  return featureFlags.dbDriver === 'drizzle' ? drizzleSystemsDriver : prismaSystemsDriver;
-}
-
 export async function resolveSystemAccess(systemId: string, userId: string): Promise<ResolvedAccess> {
-  return getSystemsDriver().resolveSystemAccess(systemId, userId);
+  return drizzleSystemsDriver.resolveSystemAccess(systemId, userId);
 }
 
 export async function listSystemsForUser(userId: string) {
-  return getSystemsDriver().listSystemsForUser(userId);
+  return drizzleSystemsDriver.listSystemsForUser(userId);
 }
 
 export async function createSystemForUser(userId: string, input: { title: string; description?: string | null }) {
-  return getSystemsDriver().createSystemForUser(userId, input);
+  return drizzleSystemsDriver.createSystemForUser(userId, input);
 }
 
 export async function getSystemForUser(systemId: string, userId: string) {
-  return getSystemsDriver().getSystemForUser(systemId, userId);
+  return drizzleSystemsDriver.getSystemForUser(systemId, userId);
 }
 
 export async function updateSystemMetadata(
@@ -30,7 +24,7 @@ export async function updateSystemMetadata(
   userId: string,
   input: { title?: string; description?: string | null; schemaVersion?: number },
 ) {
-  return getSystemsDriver().updateSystemMetadata(systemId, userId, input);
+  return drizzleSystemsDriver.updateSystemMetadata(systemId, userId, input);
 }
 
 export async function upsertSystemNodes(
@@ -42,11 +36,11 @@ export async function upsertSystemNodes(
     baseRevision?: number;
   },
 ) {
-  return getSystemsDriver().upsertSystemNodes(systemId, userId, input);
+  return drizzleSystemsDriver.upsertSystemNodes(systemId, userId, input);
 }
 
 export async function listSystemShares(systemId: string, userId: string) {
-  return getSystemsDriver().listSystemShares(systemId, userId);
+  return drizzleSystemsDriver.listSystemShares(systemId, userId);
 }
 
 export async function upsertSystemShare(
@@ -54,5 +48,5 @@ export async function upsertSystemShare(
   ownerId: string,
   input: { role: ShareRole; userId?: string; email?: string },
 ) {
-  return getSystemsDriver().upsertSystemShare(systemId, ownerId, input);
+  return drizzleSystemsDriver.upsertSystemShare(systemId, ownerId, input);
 }

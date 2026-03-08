@@ -1,11 +1,17 @@
 import { z } from 'zod';
+import { buildSequenceIdFromSteps } from '@/lib/bidding-steps';
 
 export const biddingCallSchema = z
   .string()
   .trim()
   .regex(/^([1-7](C|D|H|S|NT)|Pass|X|XX)$/i, 'Invalid call format');
 
-export const biddingSequenceSchema = z.array(biddingCallSchema).min(1, 'Sequence must contain at least one call');
+export const biddingStepSchema = z.object({
+  call: biddingCallSchema,
+  actor: z.enum(['our', 'opp']),
+});
+
+export const biddingSequenceSchema = z.array(biddingStepSchema).min(1, 'Sequence must contain at least one call');
 
 const rangeValueSchema = z.union([z.number(), z.string()]);
 
@@ -64,7 +70,7 @@ export const biddingNodeSchema = z
     isBookmarked: z.boolean().optional(),
   })
   .superRefine((node, ctx) => {
-    const canonicalId = node.context.sequence.join(' ');
+    const canonicalId = buildSequenceIdFromSteps(node.context.sequence);
     if (node.id !== canonicalId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

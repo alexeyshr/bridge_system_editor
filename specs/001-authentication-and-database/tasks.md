@@ -1,5 +1,10 @@
 # Tasks: Persistent Multi-User Workspace
 
+Status note (2026-03-07):
+- This spec remains a source artifact for auth/multi-user scope.
+- Implementation sequencing for the next cycle is governed by `specs/005-platform-core-hardening/`.
+- Open tasks here should be re-mapped to PR-9 phases before execution.
+
 **Input**: Design documents from `/specs/001-authentication-and-database/`  
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 

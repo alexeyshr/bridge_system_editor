@@ -19,7 +19,7 @@ export function RightPanel() {
 
   if (!node) {
     return (
-      <div className="h-full w-full border-l border-slate-200 bg-slate-50 flex items-center justify-center relative">
+      <div className="h-full w-full border-l border-[#DBEAFE] bg-slate-50 flex items-center justify-center relative">
         <button 
           onClick={toggleRightPanel}
           className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200"
@@ -89,13 +89,15 @@ export function RightPanel() {
   const unansweredCount = topLevelComments.filter((c: any) => !repliesByParent[c.id] || repliesByParent[c.id].length === 0).length;
 
   return (
-    <div className="h-full w-full border-l border-slate-200 bg-white flex flex-col overflow-y-auto">
+    <div className="h-full w-full border-l border-[#DBEAFE] bg-white flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between py-2 px-3 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
         <div className="flex items-center gap-1 font-mono text-xs font-semibold overflow-x-auto whitespace-nowrap pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {seq.map((c, i) => (
+          {seq.map((step, i) => (
             <span key={i} className="flex items-center gap-1 shrink-0">
-              <span className={getSuitColor(c)}>{formatCall(c)}</span>
+              <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
+              </span>
               {i < seq.length - 1 && <span className="text-slate-400">-</span>}
             </span>
           ))}

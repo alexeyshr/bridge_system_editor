@@ -1,6 +1,6 @@
 # Product Roadmap (Now / Next / Later)
 
-Last updated: 2026-03-08
+Last updated: 2026-03-09
 
 Cadence:
 - 6-week build cycles + cooldown window (Shape Up style).
@@ -25,11 +25,13 @@ Source alignment:
    - multi-select batch actions,
    - section drag/drop reordering,
    - persisted UI state.
-3. Introduce systems lifecycle above editor (`specs/008-systems-lifecycle-and-tournament-usage/`):
+3. Close systems lifecycle stream above editor (`specs/008-systems-lifecycle-and-tournament-usage/`):
    - Systems Hub,
    - draft/published versioning,
    - version compare + rollback,
-   - tournament binding by `systemId + versionId`.
+   - tournament binding by `systemId + versionId`,
+   - template bootstrap profiles (`Standard`, `2/1`, `Precision`),
+   - final acceptance and rollout constraints.
 4. Start collaboration and sharing layer (`specs/009-collaboration-discussions-and-sharing/`):
    - role-based permissions,
    - invite channels (email/username/Telegram),
@@ -42,9 +44,10 @@ Source alignment:
    - legal/illegal/duplicate bid validation visibility,
    - QA smart views (`Dead ends`, `No meaning`, `No HCP`, `No forcing`, `Conflicts`),
    - actor-aware visual legend polish.
-2. System profile templates and onboarding:
-   - `Standard`, `2/1`, `Precision`,
-   - starter roots/sections and guided setup.
+2. Profile onboarding polish:
+   - deeper starter trees per profile,
+   - guided profile-first setup UX,
+   - import compatibility prompts for legacy YAML.
 3. Node change timeline:
    - node-level history in right panel,
    - audit-based attribution (`who/when/what`).

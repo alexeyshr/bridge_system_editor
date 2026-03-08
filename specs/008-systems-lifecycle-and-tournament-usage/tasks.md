@@ -45,6 +45,6 @@ Plan: `specs/008-systems-lifecycle-and-tournament-usage/plan.md`
 
 ## F06 Acceptance + Documentation
 
-- [ ] T1150 Run full quality gate (`lint`, `typecheck`, `test`, `build`).
-- [ ] T1151 Update docs and architecture references.
-- [ ] T1152 Record rollout notes and migration constraints.
+- [x] T1150 Run full quality gate (`lint`, `typecheck`, `test`, `build`).
+- [x] T1151 Update docs and architecture references.
+- [x] T1152 Record rollout notes and migration constraints.

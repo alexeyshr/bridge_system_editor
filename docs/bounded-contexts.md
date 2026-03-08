@@ -1,6 +1,6 @@
 # Bounded Contexts
 
-Last updated: 2026-03-08
+Last updated: 2026-03-09
 
 This document defines domain boundaries so models do not collapse into one mixed schema.
 
@@ -35,11 +35,13 @@ This document defines domain boundaries so models do not collapse into one mixed
 - Responsibility:
   - system-level catalog (`Systems Hub`),
   - draft vs published lifecycle,
-  - version compare and rollback semantics.
+  - version compare and rollback semantics,
+  - bootstrap profile templates for initial system creation.
 - Core entities:
-  - `System`, `SystemDraft`, `SystemVersion`, `VersionDiff`.
+  - `System`, `SystemDraft`, `SystemVersion`, `VersionDiff`, `SystemTemplateProfile`.
 - Owns:
-  - publication flow and immutable version contracts.
+  - publication flow and immutable version contracts,
+  - deterministic template seed payloads.
 
 ## 4) Tournament Usage Binding
 

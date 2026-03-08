@@ -16,3 +16,6 @@ This feature stream adds platform-level lifecycle around editor data.
 - `plan.md`
 - `tasks.md`
 - `linear-mapping.md`
+- `rollout-notes.md`
+- `pr-11-f04-tournament-bindings.md` (PR body/title template)
+- `pr-11-f05-template-profiles.md` (PR body/title template)

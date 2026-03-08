@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-09 02:23 +03:00
+Updated: 2026-03-09 02:29 +03:00
 
 ## Active Context
 
@@ -11,6 +11,7 @@ Updated: 2026-03-09 02:23 +03:00
   - F03: done
   - F04: implemented on branch `codex/spec-008-f04-tournament-bindings` (pending merge to `main`)
   - F05: done (`codex/BRI-63-f05-template-profiles`)
+  - F06: done (`codex/BRI-63-f05-template-profiles`)
 
 ## Timeline (MSK, +03:00)
 
@@ -63,6 +64,20 @@ Updated: 2026-03-09 02:23 +03:00
   - Added template unit tests + router forwarding test + parity template seed test.
   - Full quality gate green (`lint`, `typecheck`, `test`, `build`).
 
+### F06 Acceptance + Documentation
+
+- Start: 2026-03-09 02:22
+- End: 2026-03-09 02:29
+- Branch: `codex/BRI-63-f05-template-profiles`
+- Commit: pending
+- Result:
+  - Updated `docs/ROADMAP.md` and `docs/bounded-contexts.md` for lifecycle/templates coverage.
+  - Added rollout and migration constraints note:
+    - `specs/008-systems-lifecycle-and-tournament-usage/rollout-notes.md`
+  - Updated spec package index:
+    - `specs/008-systems-lifecycle-and-tournament-usage/README.md`
+  - Marked F06 tasks as complete in `specs/008.../tasks.md`.
+
 ### Process Reset
 
 - Start: 2026-03-09 01:19
@@ -95,11 +110,8 @@ For every next phase/subphase:
 
 ## Immediate next step
 
-- F06 / T1150-T1152:
-  - run final acceptance gate (already green on branch),
-  - update docs/architecture references,
-  - write rollout notes/migration constraints,
-  - open PR and finalize Linear evidence.
+- Open PR for `codex/BRI-63-f05-template-profiles`, attach spec links and test evidence.
+- After merge, move `BRI-63` to `Done` and start next `Now` item from `specs/009-collaboration-discussions-and-sharing`.
 
 ## Branching Rule (effective immediately)
 

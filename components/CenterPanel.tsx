@@ -44,9 +44,11 @@ export function CenterPanel() {
     batchSetAccepted,
     getSectionTree,
     getSectionPath,
+    treeViewMode,
+    setTreeViewMode,
   } = useBiddingStore();
   const allNodeIds = Object.keys(nodes);
-  const [viewMode, setViewMode] = useState<TreeViewMode>('classic');
+  const viewMode: TreeViewMode = treeViewMode;
   const [batchSectionId, setBatchSectionId] = useState('');
   const [batchError, setBatchError] = useState('');
 
@@ -305,7 +307,7 @@ export function CenterPanel() {
         <div className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5">
           <button
             type="button"
-            onClick={() => setViewMode('classic')}
+            onClick={() => setTreeViewMode('classic')}
             className={`h-7 px-2.5 text-xs font-medium rounded transition-colors ${
               viewMode === 'classic'
                 ? 'bg-white text-slate-800 shadow-sm'
@@ -316,7 +318,7 @@ export function CenterPanel() {
           </button>
           <button
             type="button"
-            onClick={() => setViewMode('compact')}
+            onClick={() => setTreeViewMode('compact')}
             className={`h-7 px-2.5 text-xs font-medium rounded transition-colors ${
               viewMode === 'compact'
                 ? 'bg-white text-slate-800 shadow-sm'
@@ -327,6 +329,11 @@ export function CenterPanel() {
           </button>
         </div>
       </div>
+      {viewMode === 'compact' && (
+        <div className="px-4 py-1.5 border-b border-slate-100 text-[11px] text-slate-500">
+          <span className="font-medium text-slate-600">Compact legend:</span> left lane = opener, right lane = responder, `(call)` = opponent action.
+        </div>
+      )}
 
       {selectedNodeIdsResolved.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-200 bg-blue-50/50">

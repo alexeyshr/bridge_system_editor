@@ -38,11 +38,11 @@ Plan: `specs/007-editor-surface-v2/plan.md`
 
 ## F05 Persisted UI + Domain UX
 
-- [ ] T1040 Persist panel/tree/mode/filter UI state to local storage.
-- [ ] T1041 Add explicit actor marker in center rows for classic and compact modes.
-- [ ] T1042 Add legal/illegal/duplicate validation hints in continuation add flows.
-- [ ] T1043 Add compact lanes legend and inline quick-add path.
-- [ ] T1044 Add command palette scaffold with primary editor actions.
+- [x] T1040 Persist panel/tree/mode/filter UI state to local storage.
+- [x] T1041 Add explicit actor marker in center rows for classic and compact modes.
+- [x] T1042 Add legal/illegal/duplicate validation hints in continuation add flows.
+- [x] T1043 Add compact lanes legend and inline quick-add path.
+- [x] T1044 Add command palette scaffold with primary editor actions.
 
 ## F06 QA Smart Views + Final Acceptance
 

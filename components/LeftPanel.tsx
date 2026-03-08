@@ -46,6 +46,18 @@ type RootDeleteDialogState = {
   label: string;
 } | null;
 
+interface LeftPanelUiPrefs {
+  isRootsOpen: boolean;
+  isOurRootsOpen: boolean;
+  isSequenceOppRootsOpen: boolean;
+  isSectionsOpen: boolean;
+  isBookmarksOpen: boolean;
+  isSmartViewsOpen: boolean;
+  rootViewMode: RootViewMode;
+}
+
+const LEFT_PANEL_UI_PREFS_KEY = 'bridge-system-editor:left-panel-ui:v1';
+
 const ROOT_BID_CALLS = Array.from({ length: 7 }, (_, levelIdx) =>
   ['NT', 'S', 'H', 'D', 'C'].map((suit) => `${levelIdx + 1}${suit}`),
 ).flat();
@@ -121,6 +133,27 @@ function toSmartViewErrorMessage(result: SmartViewMutationResult): string {
   return result.error || 'Operation failed.';
 }
 
+function loadLeftPanelUiPrefs(): Partial<LeftPanelUiPrefs> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(LEFT_PANEL_UI_PREFS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<LeftPanelUiPrefs>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLeftPanelUiPrefs(input: LeftPanelUiPrefs): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LEFT_PANEL_UI_PREFS_KEY, JSON.stringify(input));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function LeftPanel() {
   const {
     nodes,
@@ -157,6 +190,7 @@ export function LeftPanel() {
     getSmartViewCount,
     customSmartViewsById,
   } = useBiddingStore();
+  const initialUiPrefs = useMemo(() => loadLeftPanelUiPrefs(), []);
 
   const [actionMenuSectionId, setActionMenuSectionId] = useState<string | null>(null);
   const [actionMenuSmartViewId, setActionMenuSmartViewId] = useState<string | null>(null);
@@ -168,12 +202,12 @@ export function LeftPanel() {
   const [smartViewQueryInput, setSmartViewQueryInput] = useState('');
   const [smartViewFieldInput, setSmartViewFieldInput] = useState<CustomSmartViewField>('all');
   const [smartViewModalError, setSmartViewModalError] = useState('');
-  const [isRootsOpen, setIsRootsOpen] = useState(true);
-  const [isOurRootsOpen, setIsOurRootsOpen] = useState(true);
-  const [isSequenceOppRootsOpen, setIsSequenceOppRootsOpen] = useState(true);
-  const [isSectionsOpen, setIsSectionsOpen] = useState(true);
-  const [isBookmarksOpen, setIsBookmarksOpen] = useState(true);
-  const [isSmartViewsOpen, setIsSmartViewsOpen] = useState(true);
+  const [isRootsOpen, setIsRootsOpen] = useState(initialUiPrefs.isRootsOpen ?? true);
+  const [isOurRootsOpen, setIsOurRootsOpen] = useState(initialUiPrefs.isOurRootsOpen ?? true);
+  const [isSequenceOppRootsOpen, setIsSequenceOppRootsOpen] = useState(initialUiPrefs.isSequenceOppRootsOpen ?? true);
+  const [isSectionsOpen, setIsSectionsOpen] = useState(initialUiPrefs.isSectionsOpen ?? true);
+  const [isBookmarksOpen, setIsBookmarksOpen] = useState(initialUiPrefs.isBookmarksOpen ?? true);
+  const [isSmartViewsOpen, setIsSmartViewsOpen] = useState(initialUiPrefs.isSmartViewsOpen ?? true);
   const [isRootPickerOpen, setIsRootPickerOpen] = useState(false);
   const [rootPickerMode, setRootPickerMode] = useState<RootPickerMode>('single');
   const [rootEditEntryNodeId, setRootEditEntryNodeId] = useState<string | null>(null);
@@ -183,7 +217,7 @@ export function LeftPanel() {
   const [sequenceNextActor, setSequenceNextActor] = useState<'our' | 'opp'>('our');
   const [rootPickerError, setRootPickerError] = useState('');
   const [rootDeleteDialog, setRootDeleteDialog] = useState<RootDeleteDialogState>(null);
-  const [rootViewMode, setRootViewMode] = useState<RootViewMode>('matrix');
+  const [rootViewMode, setRootViewMode] = useState<RootViewMode>(initialUiPrefs.rootViewMode ?? 'matrix');
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
   const [sectionDropHint, setSectionDropHint] = useState<SectionDropHint>(null);
   const [sectionDragError, setSectionDragError] = useState('');
@@ -474,6 +508,26 @@ export function LeftPanel() {
       window.removeEventListener('mousedown', handleGlobalMouseDown);
     };
   }, [actionMenuSectionId, actionMenuSmartViewId]);
+
+  useEffect(() => {
+    saveLeftPanelUiPrefs({
+      isRootsOpen,
+      isOurRootsOpen,
+      isSequenceOppRootsOpen,
+      isSectionsOpen,
+      isBookmarksOpen,
+      isSmartViewsOpen,
+      rootViewMode,
+    });
+  }, [
+    isRootsOpen,
+    isOurRootsOpen,
+    isSequenceOppRootsOpen,
+    isSectionsOpen,
+    isBookmarksOpen,
+    isSmartViewsOpen,
+    rootViewMode,
+  ]);
 
   const openCreateModal = (parentId: string | null) => {
     setSectionModal({

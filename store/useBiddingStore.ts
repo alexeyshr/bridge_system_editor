@@ -51,6 +51,7 @@ export interface BiddingNode {
 }
 
 export type LeftPrimaryMode = 'roots' | 'sections' | 'smartViews';
+export type EditorTreeViewMode = 'classic' | 'compact';
 
 export interface SectionRecord {
   id: string;
@@ -152,9 +153,14 @@ interface DraftPayload {
   customSmartViewOrder?: string[];
   smartViewPinnedById?: Record<string, boolean>;
   nodeTouchedAtById?: Record<string, string>;
+  sectionExpandedById?: Record<string, boolean>;
   leftPrimaryMode?: LeftPrimaryMode;
   activeSectionId?: string | null;
   activeSmartViewId?: string | null;
+  searchQuery?: string;
+  isLeftPanelOpen?: boolean;
+  isRightPanelOpen?: boolean;
+  treeViewMode?: EditorTreeViewMode;
 }
 
 interface EditorHistorySnapshot {
@@ -219,6 +225,7 @@ interface BiddingState {
   searchQuery: string;
   isLeftPanelOpen: boolean;
   isRightPanelOpen: boolean;
+  treeViewMode: EditorTreeViewMode;
   hasUnsavedChanges: boolean;
   isDraftSaving: boolean;
   isServerSyncing: boolean;
@@ -247,6 +254,7 @@ interface BiddingState {
   toggleBookmark: (id: string) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
+  setTreeViewMode: (mode: EditorTreeViewMode) => void;
   expandAll: () => void;
   collapseAll: () => void;
   expandToDepth: (depth: number) => void;
@@ -1502,9 +1510,29 @@ const initialLeftPrimaryMode: LeftPrimaryMode =
     : initialLeftPrimaryModeRaw === 'smartViews' && !initialActiveSmartViewId
       ? 'roots'
       : initialLeftPrimaryModeRaw;
+const initialSectionExpandedByIdRaw = initialDraft?.sectionExpandedById
+  && typeof initialDraft.sectionExpandedById === 'object'
+  ? initialDraft.sectionExpandedById
+  : {};
 const initialSectionExpandedById: Record<string, boolean> = Object.fromEntries(
-  Object.keys(initialSectionsById).map((sectionId) => [sectionId, true]),
+  Object.keys(initialSectionsById).map((sectionId) => {
+    const draftValue = initialSectionExpandedByIdRaw[sectionId];
+    return [sectionId, typeof draftValue === 'boolean' ? draftValue : true];
+  }),
 );
+const initialSearchQuery = typeof initialDraft?.searchQuery === 'string'
+  ? initialDraft.searchQuery
+  : '';
+const initialIsLeftPanelOpen = typeof initialDraft?.isLeftPanelOpen === 'boolean'
+  ? initialDraft.isLeftPanelOpen
+  : true;
+const initialIsRightPanelOpen = typeof initialDraft?.isRightPanelOpen === 'boolean'
+  ? initialDraft.isRightPanelOpen
+  : true;
+const initialTreeViewMode: EditorTreeViewMode =
+  initialDraft?.treeViewMode === 'compact'
+    ? 'compact'
+    : 'classic';
 
 export const useBiddingStore = create<BiddingState>((set, get) => {
   const queueDraftSave = () => {
@@ -1534,9 +1562,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         customSmartViewOrder: state.customSmartViewOrder,
         smartViewPinnedById: state.smartViewPinnedById,
         nodeTouchedAtById: state.nodeTouchedAtById,
+        sectionExpandedById: state.sectionExpandedById,
         leftPrimaryMode: state.leftPrimaryMode,
         activeSectionId: state.activeSectionId,
         activeSmartViewId: state.activeSmartViewId,
+        searchQuery: state.searchQuery,
+        isLeftPanelOpen: state.isLeftPanelOpen,
+        isRightPanelOpen: state.isRightPanelOpen,
+        treeViewMode: state.treeViewMode,
       });
       set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
       draftSaveTimer = null;
@@ -1568,9 +1601,14 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       customSmartViewOrder: state.customSmartViewOrder,
       smartViewPinnedById: state.smartViewPinnedById,
       nodeTouchedAtById: state.nodeTouchedAtById,
+      sectionExpandedById: state.sectionExpandedById,
       leftPrimaryMode: state.leftPrimaryMode,
       activeSectionId: state.activeSectionId,
       activeSmartViewId: state.activeSmartViewId,
+      searchQuery: state.searchQuery,
+      isLeftPanelOpen: state.isLeftPanelOpen,
+      isRightPanelOpen: state.isRightPanelOpen,
+      treeViewMode: state.treeViewMode,
     });
     set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
   };
@@ -1713,9 +1751,10 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     activeSmartViewId: initialActiveSmartViewId,
     activeSystemId: null,
     activeSystemRevision: null,
-    searchQuery: '',
-    isLeftPanelOpen: true,
-    isRightPanelOpen: true,
+    searchQuery: initialSearchQuery,
+    isLeftPanelOpen: initialIsLeftPanelOpen,
+    isRightPanelOpen: initialIsRightPanelOpen,
+    treeViewMode: initialTreeViewMode,
     hasUnsavedChanges: !!initialDraft,
     isDraftSaving: false,
     isServerSyncing: false,
@@ -2201,7 +2240,12 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       };
     }),
 
-    setSearchQuery: (query: string) => set({ searchQuery: query }),
+    setSearchQuery: (query: string) => {
+      const nextQuery = query ?? '';
+      if (get().searchQuery === nextQuery) return;
+      set({ searchQuery: nextQuery });
+      queueDraftSave();
+    },
 
     toggleBookmark: (id: string) => set((state) => {
       const canonicalId = canonicalizeNodeId(id);
@@ -2214,8 +2258,20 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       };
     }),
 
-    toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
-    toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
+    toggleLeftPanel: () => {
+      set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen }));
+      queueDraftSave();
+    },
+    toggleRightPanel: () => {
+      set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen }));
+      queueDraftSave();
+    },
+    setTreeViewMode: (mode: EditorTreeViewMode) => {
+      const normalizedMode: EditorTreeViewMode = mode === 'compact' ? 'compact' : 'classic';
+      if (get().treeViewMode === normalizedMode) return;
+      set({ treeViewMode: normalizedMode });
+      queueDraftSave();
+    },
 
     expandAll: () => set((state) => {
       const newNodes = { ...state.nodes };
@@ -2928,7 +2984,11 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return result;
     },
 
-    setLeftPrimaryMode: (mode: LeftPrimaryMode) => set({ leftPrimaryMode: mode }),
+    setLeftPrimaryMode: (mode: LeftPrimaryMode) => {
+      if (get().leftPrimaryMode === mode) return;
+      set({ leftPrimaryMode: mode });
+      queueDraftSave();
+    },
 
     addRootEntry: (nodeId: string) => {
       let result: RootEntryMutationResult = { ok: false, error: 'Failed to add root entry.' };
@@ -3191,65 +3251,99 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       return result;
     },
 
-    setActiveRootEntryNodeId: (nodeId: string | null) => set((state) => {
-      if (!nodeId) {
-        return { activeRootEntryNodeId: null };
-      }
-      const canonicalNodeId = canonicalizeNodeId(nodeId);
-      if (!state.rootEntryNodeIds.includes(canonicalNodeId)) return state;
-
-      const pathTokens = canonicalNodeId.split(' ').filter(Boolean);
-      let nextNodes = state.nodes;
-      let didExpandPath = false;
-      for (let i = 1; i <= pathTokens.length; i += 1) {
-        const pathNodeId = pathTokens.slice(0, i).join(' ');
-        const pathNode = nextNodes[pathNodeId];
-        if (!pathNode || pathNode.isExpanded) continue;
-        if (!didExpandPath) {
-          nextNodes = { ...nextNodes };
-          didExpandPath = true;
+    setActiveRootEntryNodeId: (nodeId: string | null) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!nodeId) {
+          if (state.activeRootEntryNodeId === null) return state;
+          didUpdate = true;
+          return { activeRootEntryNodeId: null };
         }
-        nextNodes[pathNodeId] = { ...pathNode, isExpanded: true };
-      }
+        const canonicalNodeId = canonicalizeNodeId(nodeId);
+        if (!state.rootEntryNodeIds.includes(canonicalNodeId)) return state;
 
-      return {
-        activeRootEntryNodeId: canonicalNodeId,
-        ...(didExpandPath ? { nodes: nextNodes } : {}),
-      };
-    }),
+        const pathTokens = canonicalNodeId.split(' ').filter(Boolean);
+        let nextNodes = state.nodes;
+        let didExpandPath = false;
+        for (let i = 1; i <= pathTokens.length; i += 1) {
+          const pathNodeId = pathTokens.slice(0, i).join(' ');
+          const pathNode = nextNodes[pathNodeId];
+          if (!pathNode || pathNode.isExpanded) continue;
+          if (!didExpandPath) {
+            nextNodes = { ...nextNodes };
+            didExpandPath = true;
+          }
+          nextNodes[pathNodeId] = { ...pathNode, isExpanded: true };
+        }
 
-    setActiveSectionId: (sectionId: string | null) => set((state) => {
-      if (sectionId && !state.sectionsById[sectionId]) return state;
-      return { activeSectionId: sectionId };
-    }),
+        if (state.activeRootEntryNodeId === canonicalNodeId && !didExpandPath) return state;
+        didUpdate = true;
+        return {
+          activeRootEntryNodeId: canonicalNodeId,
+          ...(didExpandPath ? { nodes: nextNodes } : {}),
+        };
+      });
+      if (didUpdate) queueDraftSave();
+    },
 
-    setActiveSmartViewId: (smartViewId: string | null) => set((state) => {
-      if (!smartViewId) return { activeSmartViewId: null };
-      const knownSmartView = isBuiltInSmartViewId(smartViewId) || !!state.customSmartViewsById[smartViewId];
-      if (!knownSmartView) return state;
-      return { activeSmartViewId: smartViewId };
-    }),
+    setActiveSectionId: (sectionId: string | null) => {
+      let didUpdate = false;
+      set((state) => {
+        if (sectionId && !state.sectionsById[sectionId]) return state;
+        if (state.activeSectionId === sectionId) return state;
+        didUpdate = true;
+        return { activeSectionId: sectionId };
+      });
+      if (didUpdate) queueDraftSave();
+    },
 
-    toggleSectionExpanded: (sectionId: string) => set((state) => {
-      if (!state.sectionsById[sectionId]) return state;
-      const isExpanded = state.sectionExpandedById[sectionId] ?? true;
-      return {
-        sectionExpandedById: {
-          ...state.sectionExpandedById,
-          [sectionId]: !isExpanded,
-        },
-      };
-    }),
+    setActiveSmartViewId: (smartViewId: string | null) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!smartViewId) {
+          if (state.activeSmartViewId === null) return state;
+          didUpdate = true;
+          return { activeSmartViewId: null };
+        }
+        const knownSmartView = isBuiltInSmartViewId(smartViewId) || !!state.customSmartViewsById[smartViewId];
+        if (!knownSmartView || state.activeSmartViewId === smartViewId) return state;
+        didUpdate = true;
+        return { activeSmartViewId: smartViewId };
+      });
+      if (didUpdate) queueDraftSave();
+    },
 
-    setSectionExpanded: (sectionId: string, expanded: boolean) => set((state) => {
-      if (!state.sectionsById[sectionId]) return state;
-      return {
-        sectionExpandedById: {
-          ...state.sectionExpandedById,
-          [sectionId]: expanded,
-        },
-      };
-    }),
+    toggleSectionExpanded: (sectionId: string) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!state.sectionsById[sectionId]) return state;
+        const isExpanded = state.sectionExpandedById[sectionId] ?? true;
+        didUpdate = true;
+        return {
+          sectionExpandedById: {
+            ...state.sectionExpandedById,
+            [sectionId]: !isExpanded,
+          },
+        };
+      });
+      if (didUpdate) queueDraftSave();
+    },
+
+    setSectionExpanded: (sectionId: string, expanded: boolean) => {
+      let didUpdate = false;
+      set((state) => {
+        if (!state.sectionsById[sectionId]) return state;
+        if ((state.sectionExpandedById[sectionId] ?? true) === expanded) return state;
+        didUpdate = true;
+        return {
+          sectionExpandedById: {
+            ...state.sectionExpandedById,
+            [sectionId]: expanded,
+          },
+        };
+      });
+      if (didUpdate) queueDraftSave();
+    },
 
     getSectionChildren: (parentId: string | null) => {
       const state = get();

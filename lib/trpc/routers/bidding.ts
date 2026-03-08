@@ -9,6 +9,7 @@ import {
   UserLookupError,
   createDraftFromVersion,
   createSystemForUser,
+  freezeTournamentBindings,
   freezeTournamentBinding,
   getSystemForUser,
   listSystemVersions,
@@ -16,6 +17,7 @@ import {
   listSystemShares,
   listSystemsForUser,
   publishSystemVersion,
+  removeTournamentBinding,
   updateSystemMetadata,
   upsertTournamentBinding,
   upsertSystemNodes,
@@ -26,10 +28,12 @@ import {
   compareDraftWithVersionSchema,
   createDraftFromVersionSchema,
   createSystemSchema,
+  freezeTournamentBindingsSchema,
   freezeTournamentBindingSchema,
   listSystemsSchema,
   listTournamentBindingsSchema,
   publishSystemVersionSchema,
+  removeTournamentBindingSchema,
   updateSystemSchema,
   upsertTournamentBindingSchema,
   upsertNodesSchema,
@@ -61,6 +65,8 @@ export interface BiddingRouterDeps {
   listTournamentBindings: typeof listTournamentBindings;
   upsertTournamentBinding: typeof upsertTournamentBinding;
   freezeTournamentBinding: typeof freezeTournamentBinding;
+  removeTournamentBinding: typeof removeTournamentBinding;
+  freezeTournamentBindings: typeof freezeTournamentBindings;
   listInvitesForSystem: typeof listInvitesForSystem;
   createInviteForSystem: typeof createInviteForSystem;
   acceptInviteToken: typeof acceptInviteToken;
@@ -105,6 +111,8 @@ const defaultDeps: BiddingRouterDeps = {
   listTournamentBindings,
   upsertTournamentBinding,
   freezeTournamentBinding,
+  removeTournamentBinding,
+  freezeTournamentBindings,
   listInvitesForSystem,
   createInviteForSystem,
   acceptInviteToken,
@@ -313,6 +321,44 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
               input.data.bindingId,
             );
             return { binding };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      remove: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: removeTournamentBindingSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const result = await deps.removeTournamentBinding(
+              input.systemId,
+              ctx.userId,
+              input.data.bindingId,
+            );
+            return { result };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      freezeTournament: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: freezeTournamentBindingsSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const result = await deps.freezeTournamentBindings(
+              input.systemId,
+              ctx.userId,
+              input.data.tournamentId,
+            );
+            return { result };
           } catch (error) {
             mapServiceError(error);
           }

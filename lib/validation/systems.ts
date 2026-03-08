@@ -82,3 +82,11 @@ export const upsertTournamentBindingSchema = z
 export const freezeTournamentBindingSchema = z.object({
   bindingId: z.string().trim().min(1),
 });
+
+export const removeTournamentBindingSchema = z.object({
+  bindingId: z.string().trim().min(1),
+});
+
+export const freezeTournamentBindingsSchema = z.object({
+  tournamentId: z.string().trim().min(1),
+});

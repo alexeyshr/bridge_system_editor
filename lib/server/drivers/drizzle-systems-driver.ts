@@ -853,10 +853,40 @@ export const drizzleSystemsDriver: SystemsDriver = {
       throw new UserLookupError('scopeId is required for pair/team scope');
     }
 
+    const [existing] = await db
+      .select({
+        id: tournamentSystemBindings.id,
+        status: tournamentSystemBindings.status,
+      })
+      .from(tournamentSystemBindings)
+      .where(
+        and(
+          eq(tournamentSystemBindings.systemId, systemId),
+          eq(tournamentSystemBindings.tournamentId, input.tournamentId),
+          eq(tournamentSystemBindings.scopeType, input.scopeType),
+          eq(tournamentSystemBindings.scopeId, scopeIdNormalized),
+        ),
+      )
+      .limit(1);
+    if (existing?.status === 'frozen') {
+      throw new InvalidStateError('Cannot update a frozen binding');
+    }
+
     const now = new Date();
-    await db
-      .insert(tournamentSystemBindings)
-      .values({
+    if (existing) {
+      await db
+        .update(tournamentSystemBindings)
+        .set({
+          versionId: input.versionId,
+          status: 'active',
+          boundById: userId,
+          boundAt: now,
+          frozenAt: null,
+          updatedAt: now,
+        })
+        .where(eq(tournamentSystemBindings.id, existing.id));
+    } else {
+      await db.insert(tournamentSystemBindings).values({
         id: createEntityId('bind'),
         systemId,
         tournamentId: input.tournamentId,
@@ -868,23 +898,8 @@ export const drizzleSystemsDriver: SystemsDriver = {
         boundAt: now,
         frozenAt: null,
         updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          tournamentSystemBindings.systemId,
-          tournamentSystemBindings.tournamentId,
-          tournamentSystemBindings.scopeType,
-          tournamentSystemBindings.scopeId,
-        ],
-        set: {
-          versionId: input.versionId,
-          status: 'active',
-          boundById: userId,
-          boundAt: now,
-          frozenAt: null,
-          updatedAt: now,
-        },
       });
+    }
 
     const [binding] = await db
       .select({
@@ -968,6 +983,81 @@ export const drizzleSystemsDriver: SystemsDriver = {
       status: 'frozen' as const,
       frozenAt: toIso(updated.frozenAt),
       updatedAt: toIso(updated.updatedAt),
+    };
+  },
+
+  async removeTournamentBinding(systemId, userId, bindingId) {
+    const access = await this.resolveSystemAccess(systemId, userId);
+    if (!access.systemExists) throw new NotFoundError('System not found');
+    if (!(access.role === 'owner' || access.role === 'editor')) throw new AccessDeniedError();
+
+    const [binding] = await db
+      .select({
+        id: tournamentSystemBindings.id,
+        status: tournamentSystemBindings.status,
+      })
+      .from(tournamentSystemBindings)
+      .where(and(eq(tournamentSystemBindings.id, bindingId), eq(tournamentSystemBindings.systemId, systemId)))
+      .limit(1);
+    if (!binding) throw new NotFoundError('Binding not found');
+    if (binding.status === 'frozen') {
+      throw new InvalidStateError('Cannot remove a frozen binding');
+    }
+
+    await db.delete(tournamentSystemBindings).where(eq(tournamentSystemBindings.id, bindingId));
+    return {
+      id: binding.id,
+      removed: true as const,
+    };
+  },
+
+  async freezeTournamentBindings(systemId, userId, tournamentId) {
+    const access = await this.resolveSystemAccess(systemId, userId);
+    if (!access.systemExists) throw new NotFoundError('System not found');
+    if (!(access.role === 'owner' || access.role === 'editor')) throw new AccessDeniedError();
+
+    const rows = await db
+      .select({
+        id: tournamentSystemBindings.id,
+        status: tournamentSystemBindings.status,
+      })
+      .from(tournamentSystemBindings)
+      .where(
+        and(
+          eq(tournamentSystemBindings.systemId, systemId),
+          eq(tournamentSystemBindings.tournamentId, tournamentId),
+        ),
+      );
+    if (rows.length === 0) {
+      return {
+        tournamentId,
+        frozenCount: 0,
+        alreadyFrozenCount: 0,
+      };
+    }
+
+    const alreadyFrozenCount = rows.filter((row) => row.status === 'frozen').length;
+    const now = new Date();
+    const frozenRows = await db
+      .update(tournamentSystemBindings)
+      .set({
+        status: 'frozen',
+        frozenAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(tournamentSystemBindings.systemId, systemId),
+          eq(tournamentSystemBindings.tournamentId, tournamentId),
+          eq(tournamentSystemBindings.status, 'active'),
+        ),
+      )
+      .returning({ id: tournamentSystemBindings.id });
+
+    return {
+      tournamentId,
+      frozenCount: frozenRows.length,
+      alreadyFrozenCount,
     };
   },
 };

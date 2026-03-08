@@ -6,7 +6,7 @@ import { TRPCError } from '@trpc/server';
 
 function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]> = {}) {
   return {
-    listSystemsForUser: async () => [],
+    listSystemsForUser: async (_userId: string, _filters?: { query?: string; access?: 'all' | 'owner' | 'shared'; status?: 'all' | 'active' | 'stale'; tag?: string }) => [],
     createSystemForUser: async (_userId: string, input: { title: string; description?: string | null }) => ({
       id: 'sys-1',
       title: input.title,
@@ -142,6 +142,31 @@ test('bidding.systems.list returns payload for authenticated user', async () => 
   const result = await caller.systems.list();
   assert.equal(result.systems.length, 1);
   assert.equal(result.systems[0].id, 'sys-1');
+});
+
+test('bidding.systems.list forwards filters to service dependency', async () => {
+  let receivedFilters: { query?: string; access?: 'all' | 'owner' | 'shared'; status?: 'all' | 'active' | 'stale'; tag?: string } | undefined;
+
+  const caller = createCaller('user-1', {
+    listSystemsForUser: async (_userId, filters) => {
+      receivedFilters = filters;
+      return [];
+    },
+  });
+
+  await caller.systems.list({
+    query: 'precision',
+    access: 'owner',
+    status: 'active',
+    tag: 'relay',
+  });
+
+  assert.deepEqual(receivedFilters, {
+    query: 'precision',
+    access: 'owner',
+    status: 'active',
+    tag: 'relay',
+  });
 });
 
 test('bidding.systems.get maps access denied to FORBIDDEN', async () => {

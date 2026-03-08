@@ -25,6 +25,7 @@ import {
   createDraftFromVersionSchema,
   createSystemSchema,
   freezeTournamentBindingSchema,
+  listSystemsSchema,
   listTournamentBindingsSchema,
   publishSystemVersionSchema,
   updateSystemSchema,
@@ -111,9 +112,9 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
 
   return router({
     systems: router({
-      list: protectedProcedure.query(async ({ ctx }) => {
+      list: protectedProcedure.input(listSystemsSchema.optional()).query(async ({ ctx, input }) => {
         try {
-          const systems = await deps.listSystemsForUser(ctx.userId);
+          const systems = await deps.listSystemsForUser(ctx.userId, input);
           return { systems };
         } catch (error) {
           mapServiceError(error);

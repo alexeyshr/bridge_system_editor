@@ -5,6 +5,13 @@ export const createSystemSchema = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
 });
 
+export const listSystemsSchema = z.object({
+  query: z.string().trim().max(120).optional(),
+  access: z.enum(['all', 'owner', 'shared']).optional(),
+  status: z.enum(['all', 'active', 'stale']).optional(),
+  tag: z.string().trim().min(1).max(40).optional(),
+});
+
 export const updateSystemSchema = z
   .object({
     title: z.string().trim().min(1).max(120).optional(),

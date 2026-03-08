@@ -1,4 +1,5 @@
 import { drizzleSystemsDriver } from '@/lib/server/drivers/drizzle-systems-driver';
+import { type SystemsHubFilterInput, filterSystemsForHub } from '@/lib/systems-hub';
 import type { ResolvedAccess, ShareRole, TournamentBindingScope } from './drivers/types';
 
 export { AccessDeniedError, InvalidStateError, NotFoundError, RevisionConflictError, UserLookupError } from './domain-errors';
@@ -7,8 +8,9 @@ export async function resolveSystemAccess(systemId: string, userId: string): Pro
   return drizzleSystemsDriver.resolveSystemAccess(systemId, userId);
 }
 
-export async function listSystemsForUser(userId: string) {
-  return drizzleSystemsDriver.listSystemsForUser(userId);
+export async function listSystemsForUser(userId: string, filters?: SystemsHubFilterInput) {
+  const systems = await drizzleSystemsDriver.listSystemsForUser(userId);
+  return filterSystemsForHub(systems, filters);
 }
 
 export async function createSystemForUser(userId: string, input: { title: string; description?: string | null }) {

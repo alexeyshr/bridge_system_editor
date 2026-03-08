@@ -17,10 +17,10 @@ Plan: `specs/008-systems-lifecycle-and-tournament-usage/plan.md`
 
 ## F02 Systems Hub
 
-- [ ] T1110 Implement systems list with ownership/access filters.
-- [ ] T1111 Implement search/tag/status filtering.
-- [ ] T1112 Implement open-system flow into editor context.
-- [ ] T1113 [P] Add hub query/mutation integration tests.
+- [x] T1110 Implement systems list with ownership/access filters.
+- [x] T1111 Implement search/tag/status filtering.
+- [x] T1112 Implement open-system flow into editor context.
+- [x] T1113 [P] Add hub query/mutation integration tests.
 
 ## F03 Draft/Published Lifecycle
 

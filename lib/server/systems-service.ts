@@ -1,12 +1,32 @@
+import { canRoleAccessCapability, type CollaborationCapability } from '@/lib/server/collaboration-policy';
 import { drizzleSystemsDriver } from '@/lib/server/drivers/drizzle-systems-driver';
 import type { SystemTemplateId } from '@/lib/system-templates';
 import { type SystemsHubFilterInput, filterSystemsForHub } from '@/lib/systems-hub';
 import type { ResolvedAccess, ShareRole, TournamentBindingScope } from './drivers/types';
 
-export { AccessDeniedError, InvalidStateError, NotFoundError, RevisionConflictError, UserLookupError } from './domain-errors';
+export {
+  AccessDeniedError,
+  InvalidStateError,
+  NotFoundError,
+  RateLimitError,
+  RevisionConflictError,
+  UserLookupError,
+} from './domain-errors';
+import { AccessDeniedError, NotFoundError } from './domain-errors';
 
 export async function resolveSystemAccess(systemId: string, userId: string): Promise<ResolvedAccess> {
   return drizzleSystemsDriver.resolveSystemAccess(systemId, userId);
+}
+
+export async function assertSystemCapability(
+  systemId: string,
+  userId: string,
+  capability: CollaborationCapability,
+): Promise<ResolvedAccess['role']> {
+  const access = await resolveSystemAccess(systemId, userId);
+  if (!access.systemExists) throw new NotFoundError('System not found');
+  if (!canRoleAccessCapability(access.role, capability)) throw new AccessDeniedError();
+  return access.role;
 }
 
 export async function listSystemsForUser(userId: string, filters?: SystemsHubFilterInput) {

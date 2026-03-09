@@ -65,6 +65,7 @@ export const drizzleSystemsDriver: SystemsDriver = {
       .limit(1);
 
     if (share?.role === 'editor') return { role: 'editor', systemExists: true };
+    if (share?.role === 'reviewer') return { role: 'reviewer', systemExists: true };
     if (share?.role === 'viewer') return { role: 'viewer', systemExists: true };
     return { role: 'none', systemExists: true };
   },

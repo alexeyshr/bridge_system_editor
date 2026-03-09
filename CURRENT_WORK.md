@@ -1,108 +1,80 @@
 # CURRENT_WORK
 
-Updated: 2026-03-09 02:23 +03:00
+Updated: 2026-03-09 11:52 +03:00
 
 ## Active Context
 
-- Main spec in progress: `specs/008-systems-lifecycle-and-tournament-usage`
-- Current phase status:
-  - F01: done
-  - F02: done
-  - F03: done
-  - F04: implemented on branch `codex/spec-008-f04-tournament-bindings` (pending merge to `main`)
-  - F05: done (`codex/BRI-63-f05-template-profiles`)
+- Main spec in progress: `specs/009-collaboration-discussions-and-sharing`
+- Current branch: `codex/BRI-65-f01-access-control-matrix`
+- Delivery mode: sequential implementation of F01 → F05 on one branch
+
+## Phase Status
+
+- F01: committed and pushed (`8776c5d`)
+- F02: implemented (invite flows, states, rate-limit)
+- F03: implemented (discussion threads/messages, mentions, notifications)
+- F04: implemented (read-only publish links + public token access + audit)
+- F05: implemented (structured logging baseline, docs, QA evidence, quality gate)
 
 ## Timeline (MSK, +03:00)
 
-> Start times for completed phases are estimated from commit sequence. End times are exact commit times.
+### F01 Access Control Matrix
 
-### F01 Data Model + Contracts
+- Start: 2026-03-09 02:46
+- End: 2026-03-09 03:17
+- Commit: `8776c5d`
 
-- Start (estimated): 2026-03-08 23:35
-- End: 2026-03-09 00:43
-- Commit: `3a64413`
-- Result: schema + migrations + lifecycle/binding contracts + tests.
+### F02 Invite Flows
 
-### F02 Systems Hub
-
-- Start (estimated): 2026-03-09 00:44
-- End: 2026-03-09 00:58
-- Commit: `535f426`
-- Result: systems hub UI, filters, open-system flow, tests.
-
-### F03 Draft/Published Lifecycle
-
-- Start (estimated): 2026-03-09 00:59
-- End: 2026-03-09 01:15
-- Commit: `b7a557c`
-- Result: publish/compare/create-draft UI + compare endpoint + tests.
-
-### F04 Tournament Usage Binding
-
-- Start: 2026-03-09 01:17
-- End: 2026-03-09 01:38
-- Branch: `codex/spec-008-f04-tournament-bindings`
-- Commits:
-  - `02d29bf` feature implementation
-  - `9ae26cb` process log update
-  - `8210681` spec PR-note
-- Status: implemented and pushed, pending merge
-
-### F05 Template Profiles
-
-- Start: 2026-03-09 02:07
-- End: 2026-03-09 02:21
-- Branch: `codex/BRI-63-f05-template-profiles`
-- Linear: `BRI-63` moved to `In Progress`
-- Commit: `60b2237`
+- Start: 2026-03-09 11:12
+- End: 2026-03-09 11:31
 - Result:
-  - Added template profiles (`Standard`, `2/1`, `Precision`) in `lib/system-templates.ts`.
-  - Extended create-system contracts with optional `templateId`.
-  - Seeded template nodes in Drizzle `createSystemForUser`.
-  - Added template selector to Systems Hub create flow.
-  - Added template unit tests + router forwarding test + parity template seed test.
-  - Full quality gate green (`lint`, `typecheck`, `test`, `build`).
+  - invite channels (`email`, `internal`, `telegram`) validated by contract
+  - invite state transitions: `pending`, `accepted`, `revoked`, `expired`
+  - invite revoke endpoint (`PATCH` + tRPC mutation)
+  - abuse protection: create-invite throttling (`20/min` by `userId+systemId`)
+  - editor permission enabled for invite management/search flow
 
-### Process Reset
+### F03 Discussions + Mentions
 
-- Start: 2026-03-09 01:19
-- End: 2026-03-09 01:23
+- Start: 2026-03-09 11:31
+- End: 2026-03-09 11:43
 - Result:
-  - Added strict process contract in `docs/PROCESS.md`.
-  - Confirmed next work must run through: Linear issue -> branch -> PR -> merge.
+  - thread scopes: `system` and `node`
+  - message posting + thread listing APIs
+  - mention parsing (`[user:<id>]`, `@telegram_username`)
+  - mention dispatch to `discussion_mentions` + `notification_events`
+  - explicit boundary: discussion path does not route through node mutation path
 
-## Why process drift happened
+### F04 Read-Only Publish Links
 
-1. Work was pushed directly to `main` because we stayed in execution mode after prior `main`-first requests.
-2. Linear was not updated per phase in lockstep while code was moving quickly.
-3. Feature branches/PR-per-phase were skipped to keep momentum, but this reduced process visibility.
+- Start: 2026-03-09 11:43
+- End: 2026-03-09 11:48
+- Result:
+  - create/revoke/rotate read-only links
+  - protected management endpoints (owner capability)
+  - public token access endpoint `GET /api/publish-links/[token]`
+  - audit events for create/revoke/rotate/access
 
-## Process from now (strict)
+### F05 Acceptance + Documentation
 
-For every next phase/subphase:
+- Start: 2026-03-09 11:48
+- End: 2026-03-09 11:52
+- Result:
+  - structured JSON logger (`lib/server/logger.ts`) wired into sensitive routes
+  - collaboration contracts doc: `docs/COLLABORATION_CONTRACTS.md`
+  - QA/rollout evidence: `specs/009-collaboration-discussions-and-sharing/qa-acceptance-2026-03-09.md`
+  - full quality gate completed successfully
 
-1. Create/confirm Linear issue (status `In Progress`).
-2. Create branch `codex/<issue-or-phase>`.
-3. Implement + tests.
-4. Open PR with spec links.
-5. Update Linear:
-   - Acceptance Criteria
-   - Test Evidence
-   - Definition of Done
-   - move to `Done` only after merge.
-6. Merge to `main`.
-7. Update this file (`CURRENT_WORK.md`) with start/end + result.
+## Quality Gate (latest run)
 
-## Immediate next step
+- `npm run lint` ✅
+- `npm run typecheck` ✅
+- `npm run test` ✅
+- `npm run build` ✅
 
-- F06 / T1150-T1152:
-  - run final acceptance gate (already green on branch),
-  - update docs/architecture references,
-  - write rollout notes/migration constraints,
-  - open PR and finalize Linear evidence.
+## Immediate Next Step
 
-## Branching Rule (effective immediately)
-
-- No more direct implementation on `main`.
-- Next implementation starts from a dedicated branch:
-  - `codex/BRI-63-f05-template-profiles` for current phase.
+- Stage F02–F05 changes.
+- Commit and push.
+- Open PR with spec links and QA evidence.

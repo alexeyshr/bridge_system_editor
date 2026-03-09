@@ -11,11 +11,14 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-export const shareRoleEnum = pgEnum('share_role', ['viewer', 'editor']);
+export const shareRoleEnum = pgEnum('share_role', ['viewer', 'reviewer', 'editor']);
 export const inviteChannelEnum = pgEnum('invite_channel', ['email', 'internal', 'telegram']);
 export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'revoked', 'expired']);
 export const tournamentBindingScopeEnum = pgEnum('tournament_binding_scope', ['global', 'pair', 'team']);
 export const tournamentBindingStatusEnum = pgEnum('tournament_binding_status', ['active', 'frozen']);
+export const discussionScopeEnum = pgEnum('discussion_scope', ['system', 'node']);
+export const readOnlyLinkStatusEnum = pgEnum('read_only_link_status', ['active', 'revoked']);
+export const notificationTypeEnum = pgEnum('notification_type', ['mention']);
 
 export const users = pgTable('users', {
   id: varchar('id', { length: 191 }).primaryKey(),
@@ -94,6 +97,7 @@ export const shareInvites = pgTable('share_invites', {
   status: inviteStatusEnum('status').notNull().default('pending'),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
   acceptedById: varchar('accepted_by_id', { length: 191 }).references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
@@ -168,6 +172,95 @@ export const tournamentSystemBindings = pgTable('tournament_system_bindings', {
   boundByIdIdx: index('tournament_system_bindings_bound_by_id_idx').on(table.boundById),
 }));
 
+export const discussionThreads = pgTable('discussion_threads', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  scope: discussionScopeEnum('scope').notNull().default('system'),
+  scopeNodeId: varchar('scope_node_id', { length: 500 }),
+  title: varchar('title', { length: 240 }),
+  isResolved: boolean('is_resolved').notNull().default(false),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  systemScopeIdx: index('discussion_threads_system_scope_idx').on(table.systemId, table.scope),
+  systemNodeIdx: index('discussion_threads_system_node_idx').on(table.systemId, table.scopeNodeId),
+  createdByIdx: index('discussion_threads_created_by_idx').on(table.createdById),
+}));
+
+export const discussionMessages = pgTable('discussion_messages', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  threadId: varchar('thread_id', { length: 191 }).notNull().references(() => discussionThreads.id, { onDelete: 'cascade' }),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  authorId: varchar('author_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  editedAt: timestamp('edited_at', { withTimezone: true }),
+}, (table) => ({
+  threadCreatedIdx: index('discussion_messages_thread_created_idx').on(table.threadId, table.createdAt),
+  systemCreatedIdx: index('discussion_messages_system_created_idx').on(table.systemId, table.createdAt),
+  authorIdx: index('discussion_messages_author_idx').on(table.authorId),
+}));
+
+export const discussionMentions = pgTable('discussion_mentions', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  threadId: varchar('thread_id', { length: 191 }).notNull().references(() => discussionThreads.id, { onDelete: 'cascade' }),
+  messageId: varchar('message_id', { length: 191 }).notNull().references(() => discussionMessages.id, { onDelete: 'cascade' }),
+  mentionedUserId: varchar('mentioned_user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mentionToken: varchar('mention_token', { length: 120 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  messageUserUnique: uniqueIndex('discussion_mentions_message_user_unique').on(table.messageId, table.mentionedUserId),
+  mentionedUserIdx: index('discussion_mentions_mentioned_user_idx').on(table.mentionedUserId),
+}));
+
+export const notificationEvents = pgTable('notification_events', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  userId: varchar('user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  systemId: varchar('system_id', { length: 191 }).references(() => biddingSystems.id, { onDelete: 'set null' }),
+  type: notificationTypeEnum('type').notNull().default('mention'),
+  payload: jsonb('payload').notNull(),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userReadIdx: index('notification_events_user_read_idx').on(table.userId, table.readAt),
+  systemIdx: index('notification_events_system_idx').on(table.systemId),
+}));
+
+export const readOnlyPublishLinks = pgTable('read_only_publish_links', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).notNull().references(() => biddingSystems.id, { onDelete: 'cascade' }),
+  versionId: varchar('version_id', { length: 191 }).notNull().references(() => systemVersions.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 191 }).notNull(),
+  label: varchar('label', { length: 120 }),
+  status: readOnlyLinkStatusEnum('status').notNull().default('active'),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  lastAccessAt: timestamp('last_access_at', { withTimezone: true }),
+}, (table) => ({
+  tokenUnique: uniqueIndex('read_only_publish_links_token_unique').on(table.token),
+  systemStatusIdx: index('read_only_publish_links_system_status_idx').on(table.systemId, table.status),
+  createdByIdx: index('read_only_publish_links_created_by_idx').on(table.createdById),
+}));
+
+export const auditEvents = pgTable('audit_events', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  systemId: varchar('system_id', { length: 191 }).references(() => biddingSystems.id, { onDelete: 'set null' }),
+  actorUserId: varchar('actor_user_id', { length: 191 }).references(() => users.id, { onDelete: 'set null' }),
+  action: varchar('action', { length: 120 }).notNull(),
+  targetType: varchar('target_type', { length: 80 }).notNull(),
+  targetId: varchar('target_id', { length: 191 }),
+  payload: jsonb('payload'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  systemActionIdx: index('audit_events_system_action_idx').on(table.systemId, table.action),
+  actorIdx: index('audit_events_actor_idx').on(table.actorUserId),
+  createdAtIdx: index('audit_events_created_at_idx').on(table.createdAt),
+}));
+
 export const schema = {
   users,
   authAccounts,
@@ -179,6 +272,12 @@ export const schema = {
   systemVersions,
   systemDrafts,
   tournamentSystemBindings,
+  discussionThreads,
+  discussionMessages,
+  discussionMentions,
+  notificationEvents,
+  readOnlyPublishLinks,
+  auditEvents,
 };
 
 export type ShareRole = (typeof shareRoleEnum.enumValues)[number];
@@ -186,3 +285,6 @@ export type InviteChannel = (typeof inviteChannelEnum.enumValues)[number];
 export type InviteStatus = (typeof inviteStatusEnum.enumValues)[number];
 export type TournamentBindingScope = (typeof tournamentBindingScopeEnum.enumValues)[number];
 export type TournamentBindingStatus = (typeof tournamentBindingStatusEnum.enumValues)[number];
+export type DiscussionScope = (typeof discussionScopeEnum.enumValues)[number];
+export type ReadOnlyLinkStatus = (typeof readOnlyLinkStatusEnum.enumValues)[number];
+export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];

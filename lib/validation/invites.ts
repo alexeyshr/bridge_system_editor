@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const inviteBaseSchema = z.object({
   channel: z.enum(['email', 'internal', 'telegram']),
-  role: z.enum(['viewer', 'editor']),
+  role: z.enum(['viewer', 'reviewer', 'editor']),
   targetEmail: z.string().trim().email().optional(),
   targetUserId: z.string().trim().min(1).optional(),
   targetTelegramUsername: z.string().trim().min(2).max(64).optional(),
@@ -33,4 +33,8 @@ export const createInviteSchema = inviteBaseSchema.superRefine((value, ctx) => {
       message: 'targetTelegramUsername is required for telegram channel',
     });
   }
+});
+
+export const revokeInviteSchema = z.object({
+  inviteId: z.string().trim().min(1),
 });

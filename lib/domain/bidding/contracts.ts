@@ -92,7 +92,7 @@ export const biddingNodesMapSchema = z.record(z.string(), biddingNodeSchema).sup
   }
 });
 
-export const systemAccessRoleSchema = z.enum(['owner', 'editor', 'viewer']);
+export const systemAccessRoleSchema = z.enum(['owner', 'editor', 'reviewer', 'viewer']);
 
 export const biddingSystemSummarySchema = z.object({
   id: z.string().min(1),

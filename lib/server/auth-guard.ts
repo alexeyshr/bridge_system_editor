@@ -3,7 +3,7 @@ import { db } from '@/lib/db/drizzle/client';
 import { biddingSystems, systemShares } from '@/lib/db/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 
-export type SystemAccessRole = 'owner' | 'editor' | 'viewer' | 'none';
+export type SystemAccessRole = 'owner' | 'editor' | 'reviewer' | 'viewer' | 'none';
 
 export interface AuthenticatedUser {
   id: string;
@@ -44,6 +44,7 @@ export async function getSystemAccessRole(systemId: string, userId: string): Pro
 
   if (!share) return 'none';
   if (share.role === 'editor') return 'editor';
+  if (share.role === 'reviewer') return 'reviewer';
   return 'viewer';
 }
 

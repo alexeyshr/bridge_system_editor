@@ -27,3 +27,12 @@ export class InvalidStateError extends Error {
     super(message);
   }
 }
+
+export class RateLimitError extends Error {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number, message = 'Too many requests') {
+    super(message);
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}

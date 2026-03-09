@@ -19,6 +19,7 @@
     "ui:baseline": "node scripts/run-ui-baseline-check.mjs"
   },
   "dependencies": {
+    "@base-ui/react": "^1.2.0",
     "@hookform/resolvers": "^5.2.1",
     "@tanstack/react-query": "^5.90.21",
     "@trpc/client": "^11.12.0",
@@ -40,8 +41,9 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-resizable-panels": "^4.7.1",
+    "shadcn": "^4.0.2",
     "superjson": "^2.2.6",
-    "tailwind-merge": "^3.3.1",
+    "tailwind-merge": "^3.5.0",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },

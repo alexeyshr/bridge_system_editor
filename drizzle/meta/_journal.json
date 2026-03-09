@@ -15,6 +15,13 @@
       "when": 1772999857733,
       "tag": "0001_sticky_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773015257847,
+      "tag": "0002_ambiguous_vertigo",
+      "breakpoints": true
     }
   ]
 }

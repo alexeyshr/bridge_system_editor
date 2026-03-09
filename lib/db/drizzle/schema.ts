@@ -11,7 +11,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-export const shareRoleEnum = pgEnum('share_role', ['viewer', 'editor']);
+export const shareRoleEnum = pgEnum('share_role', ['viewer', 'reviewer', 'editor']);
 export const inviteChannelEnum = pgEnum('invite_channel', ['email', 'internal', 'telegram']);
 export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'revoked', 'expired']);
 export const tournamentBindingScopeEnum = pgEnum('tournament_binding_scope', ['global', 'pair', 'team']);

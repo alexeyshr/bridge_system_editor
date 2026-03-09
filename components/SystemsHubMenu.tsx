@@ -30,9 +30,10 @@ function formatUpdatedAt(iso: string): string {
   });
 }
 
-function roleLabel(role: 'owner' | 'editor' | 'viewer'): string {
+function roleLabel(role: 'owner' | 'editor' | 'reviewer' | 'viewer'): string {
   if (role === 'owner') return 'Owner';
   if (role === 'editor') return 'Editor';
+  if (role === 'reviewer') return 'Reviewer';
   return 'Viewer';
 }
 
@@ -92,7 +93,7 @@ export function SystemsHubMenu() {
         acc[system.role] += 1;
         return acc;
       },
-      { owner: 0, editor: 0, viewer: 0 },
+      { owner: 0, editor: 0, reviewer: 0, viewer: 0 },
     )
   ), [systems]);
 
@@ -253,7 +254,7 @@ export function SystemsHubMenu() {
             )}
 
             <div className="text-[11px] text-slate-500">
-              Owner {roleCounts.owner} | Editor {roleCounts.editor} | Viewer {roleCounts.viewer}
+              Owner {roleCounts.owner} | Editor {roleCounts.editor} | Reviewer {roleCounts.reviewer} | Viewer {roleCounts.viewer}
             </div>
           </div>
 

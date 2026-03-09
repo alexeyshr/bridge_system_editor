@@ -39,7 +39,7 @@ export const upsertShareSchema = z
   .object({
     userId: z.string().trim().min(1).optional(),
     email: z.string().trim().email().optional(),
-    role: z.enum(['viewer', 'editor']),
+    role: z.enum(['viewer', 'reviewer', 'editor']),
   })
   .refine((value) => !!value.userId || !!value.email, {
     message: 'Either userId or email must be provided',

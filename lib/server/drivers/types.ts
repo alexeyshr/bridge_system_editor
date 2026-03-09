@@ -1,13 +1,13 @@
 import type { SystemTemplateId } from '@/lib/system-templates';
 
-export type AccessRole = 'owner' | 'editor' | 'viewer' | 'none';
+export type AccessRole = 'owner' | 'editor' | 'reviewer' | 'viewer' | 'none';
 
 export type ResolvedAccess = {
   role: AccessRole;
   systemExists: boolean;
 };
 
-export type ShareRole = 'viewer' | 'editor';
+export type ShareRole = 'viewer' | 'reviewer' | 'editor';
 export type InviteChannel = 'email' | 'internal' | 'telegram';
 export type InviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
 export type TournamentBindingScope = 'global' | 'pair' | 'team';
@@ -22,7 +22,7 @@ export interface SystemsDriver {
     schemaVersion: number;
     revision: number;
     updatedAt: string;
-    role: 'owner' | 'editor' | 'viewer';
+    role: 'owner' | 'editor' | 'reviewer' | 'viewer';
   }>>;
   createSystemForUser(
     userId: string,
@@ -43,7 +43,7 @@ export interface SystemsDriver {
     description: string | null;
     schemaVersion: number;
     revision: number;
-    role: 'owner' | 'editor' | 'viewer';
+    role: 'owner' | 'editor' | 'reviewer' | 'viewer';
     updatedAt: string;
     nodes: Array<{
       sequenceId: string;

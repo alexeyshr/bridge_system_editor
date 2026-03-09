@@ -4,6 +4,7 @@ import {
   AccessDeniedError,
   NotFoundError,
   UserLookupError,
+  assertSystemCapability,
   listSystemShares,
   upsertSystemShare,
 } from '@/lib/server/systems-service';
@@ -19,6 +20,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { systemId } = await context.params;
 
   try {
+    await assertSystemCapability(systemId, user.id, 'shares.manage');
     const shares = await listSystemShares(systemId, user.id);
     return ok({ shares });
   } catch (error) {
@@ -35,6 +37,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { systemId } = await context.params;
 
   try {
+    await assertSystemCapability(systemId, user.id, 'shares.manage');
     const json = await request.json();
     const parsed = upsertShareSchema.safeParse(json);
     if (!parsed.success) {

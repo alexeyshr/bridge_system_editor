@@ -2,6 +2,7 @@ import { createInviteForSystem, listInvitesForSystem, acceptInviteToken } from '
 import { searchUsers } from '@/lib/server/users-service';
 import {
   AccessDeniedError,
+  assertSystemCapability,
   compareDraftWithVersion,
   InvalidStateError,
   NotFoundError,
@@ -51,6 +52,7 @@ type SearchUserResult = {
 };
 
 export interface BiddingRouterDeps {
+  assertSystemCapability: typeof assertSystemCapability;
   listSystemsForUser: typeof listSystemsForUser;
   createSystemForUser: typeof createSystemForUser;
   getSystemForUser: typeof getSystemForUser;
@@ -97,6 +99,7 @@ function mapServiceError(error: unknown): never {
 }
 
 const defaultDeps: BiddingRouterDeps = {
+  assertSystemCapability,
   listSystemsForUser,
   createSystemForUser,
   getSystemForUser,
@@ -188,6 +191,7 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
         .input(z.object({ systemId: z.string().min(1) }))
         .query(async ({ ctx, input }) => {
           try {
+            await deps.assertSystemCapability(input.systemId, ctx.userId, 'shares.manage');
             const shares = await deps.listSystemShares(input.systemId, ctx.userId);
             return { shares };
           } catch (error) {
@@ -203,6 +207,7 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
         )
         .mutation(async ({ ctx, input }) => {
           try {
+            await deps.assertSystemCapability(input.systemId, ctx.userId, 'shares.manage');
             const share = await deps.upsertSystemShare(input.systemId, ctx.userId, input.data);
             return { share };
           } catch (error) {
@@ -369,6 +374,7 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
         .input(z.object({ systemId: z.string().min(1) }))
         .query(async ({ ctx, input }) => {
           try {
+            await deps.assertSystemCapability(input.systemId, ctx.userId, 'invites.manage');
             const invites = await deps.listInvitesForSystem(input.systemId, ctx.userId);
             return { invites };
           } catch (error) {
@@ -384,6 +390,7 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
         )
         .mutation(async ({ ctx, input }) => {
           try {
+            await deps.assertSystemCapability(input.systemId, ctx.userId, 'invites.manage');
             const invite = await deps.createInviteForSystem(input.systemId, ctx.userId, input.data);
             return { invite };
           } catch (error) {
@@ -405,11 +412,13 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
       search: protectedProcedure
         .input(
           z.object({
+            systemId: z.string().min(1),
             q: z.string().trim().min(2),
           }),
         )
         .query(async ({ ctx, input }) => {
           try {
+            await deps.assertSystemCapability(input.systemId, ctx.userId, 'users.search');
             const users = await deps.searchUsers(input.q, ctx.userId);
             return { users };
           } catch (error) {

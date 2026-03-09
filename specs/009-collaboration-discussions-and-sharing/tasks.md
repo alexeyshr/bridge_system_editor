@@ -10,9 +10,9 @@ Plan: `specs/009-collaboration-discussions-and-sharing/plan.md`
 
 ## F01 Access Control Matrix
 
-- [ ] T1201 Define role capability matrix (`owner/editor/reviewer/viewer`).
-- [ ] T1202 Implement server-side policy guards per collaboration endpoint.
-- [ ] T1203 [P] Add role-based integration tests.
+- [x] T1201 Define role capability matrix (`owner/editor/reviewer/viewer`).
+- [x] T1202 Implement server-side policy guards per collaboration endpoint.
+- [x] T1203 [P] Add role-based integration tests.
 
 ## F02 Invite Flows
 

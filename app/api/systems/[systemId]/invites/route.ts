@@ -1,7 +1,7 @@
 import { requireAuthUser } from '@/lib/server/auth-guard';
 import { badRequest, created, forbidden, notFound, ok, serverError, unauthorized } from '@/lib/server/api-response';
 import { createInviteForSystem, listInvitesForSystem } from '@/lib/server/invite-service';
-import { AccessDeniedError, NotFoundError, UserLookupError } from '@/lib/server/systems-service';
+import { AccessDeniedError, NotFoundError, UserLookupError, assertSystemCapability } from '@/lib/server/systems-service';
 import { createInviteSchema } from '@/lib/validation/invites';
 
 type RouteContext = {
@@ -14,6 +14,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { systemId } = await context.params;
 
   try {
+    await assertSystemCapability(systemId, user.id, 'invites.manage');
     const invites = await listInvitesForSystem(systemId, user.id);
     return ok({ invites });
   } catch (error) {
@@ -30,6 +31,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { systemId } = await context.params;
 
   try {
+    await assertSystemCapability(systemId, user.id, 'invites.manage');
     const json = await request.json();
     const parsed = createInviteSchema.safeParse(json);
     if (!parsed.success) {

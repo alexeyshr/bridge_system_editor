@@ -1,4 +1,4 @@
-export type SystemAccessRole = 'owner' | 'editor' | 'viewer';
+export type SystemAccessRole = 'owner' | 'editor' | 'reviewer' | 'viewer';
 export type SystemsHubAccessFilter = 'all' | 'owner' | 'shared';
 export type SystemsHubStatusFilter = 'all' | 'active' | 'stale';
 export type SystemsHubStatus = 'active' | 'stale';
@@ -77,7 +77,8 @@ function matchesTag(system: SystemsHubSystemSummary, tag: string): boolean {
 const ROLE_SORT_PRIORITY: Record<SystemAccessRole, number> = {
   owner: 0,
   editor: 1,
-  viewer: 2,
+  reviewer: 2,
+  viewer: 3,
 };
 
 export function sortSystemsForHub(

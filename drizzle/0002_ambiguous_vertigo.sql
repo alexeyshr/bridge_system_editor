@@ -1,0 +1,1 @@
+ALTER TYPE "public"."share_role" ADD VALUE 'reviewer' BEFORE 'editor';

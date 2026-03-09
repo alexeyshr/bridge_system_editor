@@ -6,6 +6,7 @@ import { TRPCError } from '@trpc/server';
 
 function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]> = {}) {
   return {
+    assertSystemCapability: async () => 'owner' as const,
     listSystemsForUser: async (_userId: string, _filters?: { query?: string; access?: 'all' | 'owner' | 'shared'; status?: 'all' | 'active' | 'stale'; tag?: string }) => [],
     createSystemForUser: async (
       _userId: string,
@@ -119,7 +120,7 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
       alreadyFrozenCount: 0,
     }),
     listInvitesForSystem: async () => [],
-    createInviteForSystem: async (_systemId: string, _ownerId: string, _input: { channel: 'email' | 'internal' | 'telegram'; role: 'viewer' | 'editor'; targetEmail?: string; targetUserId?: string; targetTelegramUsername?: string; expiresInHours: number }) => ({
+    createInviteForSystem: async (_systemId: string, _ownerId: string, _input: { channel: 'email' | 'internal' | 'telegram'; role: 'viewer' | 'reviewer' | 'editor'; targetEmail?: string; targetUserId?: string; targetTelegramUsername?: string; expiresInHours: number }) => ({
       id: 'invite-1',
       channel: 'email' as const,
       role: 'viewer' as const,
@@ -330,6 +331,114 @@ test('bidding.bindings.freezeTournament returns aggregate payload', async () => 
 
   assert.equal(result.result.tournamentId, 'tour-1');
   assert.equal(result.result.frozenCount, 1);
+});
+
+test('bidding.shares.list checks shares.manage capability before service call', async () => {
+  let guardCalled = false;
+  let listCalled = false;
+
+  const caller = createCaller('user-1', {
+    assertSystemCapability: async (systemId, userId, capability) => {
+      guardCalled = true;
+      assert.equal(systemId, 'sys-1');
+      assert.equal(userId, 'user-1');
+      assert.equal(capability, 'shares.manage');
+      return 'owner';
+    },
+    listSystemShares: async () => {
+      listCalled = true;
+      return [];
+    },
+  });
+
+  const result = await caller.shares.list({ systemId: 'sys-1' });
+  assert.equal(guardCalled, true);
+  assert.equal(listCalled, true);
+  assert.deepEqual(result.shares, []);
+});
+
+test('bidding.shares.upsert maps capability denial to FORBIDDEN', async () => {
+  const caller = createCaller('user-1', {
+    assertSystemCapability: async () => {
+      throw new AccessDeniedError();
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      caller.shares.upsert({
+        systemId: 'sys-1',
+        data: { userId: 'user-2', role: 'reviewer' },
+      }),
+    (error: unknown) => error instanceof TRPCError && error.code === 'FORBIDDEN',
+  );
+});
+
+test('bidding.invites.create checks invites.manage capability before service call', async () => {
+  let guardCalled = false;
+
+  const caller = createCaller('user-1', {
+    assertSystemCapability: async (_systemId, _userId, capability) => {
+      guardCalled = true;
+      assert.equal(capability, 'invites.manage');
+      return 'owner';
+    },
+    createInviteForSystem: async (_systemId, _ownerId, input) => ({
+      id: 'invite-1',
+      channel: input.channel,
+      role: input.role,
+      status: 'pending',
+      token: 'token',
+      webInviteUrl: 'https://example.test/invite/token',
+      telegramInviteUrl: null,
+      expiresAt: new Date().toISOString(),
+      delivery: {
+        status: 'queued',
+        channel: input.channel,
+        message: 'queued',
+      },
+    }),
+  });
+
+  const result = await caller.invites.create({
+    systemId: 'sys-1',
+    data: {
+      channel: 'internal',
+      role: 'reviewer',
+      targetUserId: 'user-2',
+      expiresInHours: 24,
+    },
+  });
+
+  assert.equal(guardCalled, true);
+  assert.equal(result.invite.role, 'reviewer');
+});
+
+test('bidding.users.search requires users.search capability and forwards query', async () => {
+  let receivedQuery = '';
+
+  const caller = createCaller('user-1', {
+    assertSystemCapability: async (_systemId, _userId, capability) => {
+      assert.equal(capability, 'users.search');
+      return 'owner';
+    },
+    searchUsers: async (query) => {
+      receivedQuery = query;
+      return [
+        {
+          id: 'user-2',
+          email: 'user-2@example.com',
+          displayName: 'User 2',
+          telegramUsername: null,
+        },
+      ];
+    },
+  });
+
+  const result = await caller.users.search({ systemId: 'sys-1', q: 'alex' });
+  assert.equal(receivedQuery, 'alex');
+  assert.equal(result.users.length, 1);
+  assert.equal(result.users[0]?.id, 'user-2');
 });
 
 test('bidding router blocks unauthenticated access', async () => {

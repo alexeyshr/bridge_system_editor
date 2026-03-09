@@ -48,6 +48,12 @@ test('reviewer is read/comment only (no edit/share/invite/search/publish)', () =
   assert.equal(canRoleAccessCapability('reviewer', 'links.manage'), false);
 });
 
+test('editor can create invites and search users but cannot manage shares', () => {
+  assert.equal(canRoleAccessCapability('editor', 'invites.manage'), true);
+  assert.equal(canRoleAccessCapability('editor', 'users.search'), true);
+  assert.equal(canRoleAccessCapability('editor', 'shares.manage'), false);
+});
+
 test('viewer cannot write discussion messages', () => {
   assert.equal(canRoleAccessCapability('viewer', 'discussions.read'), true);
   assert.equal(canRoleAccessCapability('viewer', 'discussions.write'), false);

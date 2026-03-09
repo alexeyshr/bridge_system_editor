@@ -259,6 +259,7 @@ export interface InvitesDriver {
     createdAt: string;
     expiresAt: string;
     acceptedAt: string | null;
+    revokedAt: string | null;
     webInviteUrl: string;
     telegramInviteUrl: string | null;
   }>>;
@@ -287,6 +288,12 @@ export interface InvitesDriver {
       channel: InviteChannel;
       message: string;
     };
+  }>;
+  revokeInviteForSystem(systemId: string, ownerId: string, inviteId: string): Promise<{
+    id: string;
+    systemId: string;
+    status: 'revoked';
+    revokedAt: string;
   }>;
   acceptInviteToken(token: string, userId: string): Promise<{
     systemId: string;

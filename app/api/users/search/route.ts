@@ -2,6 +2,7 @@ import { searchUsers } from '@/lib/server/users-service';
 import { requireAuthUser } from '@/lib/server/auth-guard';
 import { AccessDeniedError, NotFoundError, assertSystemCapability } from '@/lib/server/systems-service';
 import { badRequest, forbidden, notFound, ok, serverError, unauthorized } from '@/lib/server/api-response';
+import { logError } from '@/lib/server/logger';
 
 const MIN_QUERY_LENGTH = 2;
 const MAX_RESULTS = 10;
@@ -35,7 +36,14 @@ export async function GET(request: Request) {
   } catch (error) {
     if (error instanceof NotFoundError) return notFound(error.message);
     if (error instanceof AccessDeniedError) return forbidden();
-    console.error('User search failed', error);
+    logError({
+      event: 'users.search.failed',
+      message: 'User search failed',
+      userId: currentUser.id,
+      systemId,
+      query: q,
+      error: error instanceof Error ? error.message : 'unknown_error',
+    });
     return serverError('Failed to search users');
   }
 }

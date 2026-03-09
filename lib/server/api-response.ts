@@ -69,6 +69,17 @@ export function gone(message: string) {
   );
 }
 
+export function tooManyRequests(message = 'Too many requests', retryAfterSeconds?: number) {
+  return NextResponse.json(
+    {
+      error: 'TOO_MANY_REQUESTS',
+      message,
+      retryAfterSeconds,
+    },
+    { status: 429 },
+  );
+}
+
 export function serverError(message = 'Unexpected server error') {
   return NextResponse.json(
     {

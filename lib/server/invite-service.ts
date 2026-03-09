@@ -20,6 +20,10 @@ export async function createInviteForSystem(
   return drizzleInvitesDriver.createInviteForSystem(systemId, ownerId, input);
 }
 
+export async function revokeInviteForSystem(systemId: string, ownerId: string, inviteId: string) {
+  return drizzleInvitesDriver.revokeInviteForSystem(systemId, ownerId, inviteId);
+}
+
 export async function acceptInviteToken(token: string, userId: string) {
   return drizzleInvitesDriver.acceptInviteToken(token, userId);
 }

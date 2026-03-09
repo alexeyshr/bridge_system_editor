@@ -2,9 +2,10 @@ import crypto from 'node:crypto';
 import { normalizeTelegramUsername } from '@/lib/auth/telegram';
 import { db } from '@/lib/db/drizzle/client';
 import { biddingSystems, shareInvites, systemShares, users } from '@/lib/db/drizzle/schema';
-import { AccessDeniedError, NotFoundError, UserLookupError } from '@/lib/server/domain-errors';
+import { recordAuditEvent } from '@/lib/server/audit-service';
+import { AccessDeniedError, InvalidStateError, NotFoundError, UserLookupError } from '@/lib/server/domain-errors';
 import { createEntityId } from '@/lib/server/utils/id';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { InvitesDriver } from './types';
 
@@ -33,7 +34,33 @@ function toIso(value: Date | string | null | undefined): string | null {
   return new Date(value).toISOString();
 }
 
-async function assertOwnerAccess(systemId: string, ownerId: string): Promise<void> {
+async function markExpiredInvites(systemId?: string): Promise<void> {
+  const now = new Date();
+  if (systemId) {
+    await db
+      .update(shareInvites)
+      .set({
+        status: 'expired',
+      })
+      .where(
+        and(
+          eq(shareInvites.systemId, systemId),
+          eq(shareInvites.status, 'pending'),
+          lt(shareInvites.expiresAt, now),
+        ),
+      );
+    return;
+  }
+
+  await db
+    .update(shareInvites)
+    .set({
+      status: 'expired',
+    })
+    .where(and(eq(shareInvites.status, 'pending'), lt(shareInvites.expiresAt, now)));
+}
+
+async function assertInviteManagerAccess(systemId: string, userId: string): Promise<void> {
   const [system] = await db
     .select({
       ownerId: biddingSystems.ownerId,
@@ -43,12 +70,23 @@ async function assertOwnerAccess(systemId: string, ownerId: string): Promise<voi
     .limit(1);
 
   if (!system) throw new NotFoundError('System not found');
-  if (system.ownerId !== ownerId) throw new AccessDeniedError();
+  if (system.ownerId === userId) return;
+
+  const [share] = await db
+    .select({
+      role: systemShares.role,
+    })
+    .from(systemShares)
+    .where(and(eq(systemShares.systemId, systemId), eq(systemShares.userId, userId)))
+    .limit(1);
+
+  if (share?.role !== 'editor') throw new AccessDeniedError();
 }
 
 export const drizzleInvitesDriver: InvitesDriver = {
   async listInvitesForSystem(systemId, ownerId) {
-    await assertOwnerAccess(systemId, ownerId);
+    await assertInviteManagerAccess(systemId, ownerId);
+    await markExpiredInvites(systemId);
 
     const targetUser = alias(users, 'target_user');
     const acceptedBy = alias(users, 'accepted_by');
@@ -65,6 +103,7 @@ export const drizzleInvitesDriver: InvitesDriver = {
         createdAt: shareInvites.createdAt,
         expiresAt: shareInvites.expiresAt,
         acceptedAt: shareInvites.acceptedAt,
+        revokedAt: shareInvites.revokedAt,
         targetUserId: targetUser.id,
         targetUserEmail: targetUser.email,
         targetUserDisplayName: targetUser.displayName,
@@ -105,13 +144,15 @@ export const drizzleInvitesDriver: InvitesDriver = {
       createdAt: toIso(invite.createdAt) as string,
       expiresAt: toIso(invite.expiresAt) as string,
       acceptedAt: toIso(invite.acceptedAt),
+      revokedAt: toIso(invite.revokedAt),
       webInviteUrl: getWebInviteUrl(invite.token),
       telegramInviteUrl: invite.channel === 'telegram' ? getTelegramInviteUrl(invite.token) : null,
     }));
   },
 
   async createInviteForSystem(systemId, ownerId, input) {
-    await assertOwnerAccess(systemId, ownerId);
+    await assertInviteManagerAccess(systemId, ownerId);
+    await markExpiredInvites(systemId);
 
     const token = generateToken();
     const expiresAt = addHours(new Date(), input.expiresInHours);
@@ -154,6 +195,18 @@ export const drizzleInvitesDriver: InvitesDriver = {
       createdAt: new Date(),
     });
 
+    await recordAuditEvent({
+      systemId,
+      actorUserId: ownerId,
+      action: 'invite.create',
+      targetType: 'invite',
+      targetId: id,
+      payload: {
+        channel: input.channel,
+        role: input.role,
+      },
+    });
+
     return {
       id,
       channel: input.channel,
@@ -176,7 +229,51 @@ export const drizzleInvitesDriver: InvitesDriver = {
     };
   },
 
+  async revokeInviteForSystem(systemId, ownerId, inviteId) {
+    await assertInviteManagerAccess(systemId, ownerId);
+    await markExpiredInvites(systemId);
+
+    const [invite] = await db
+      .select({
+        id: shareInvites.id,
+        systemId: shareInvites.systemId,
+        status: shareInvites.status,
+      })
+      .from(shareInvites)
+      .where(and(eq(shareInvites.id, inviteId), eq(shareInvites.systemId, systemId)))
+      .limit(1);
+    if (!invite) throw new NotFoundError('Invite not found');
+    if (invite.status !== 'pending') {
+      throw new InvalidStateError('Only pending invite can be revoked');
+    }
+
+    const now = new Date();
+    await db
+      .update(shareInvites)
+      .set({
+        status: 'revoked',
+        revokedAt: now,
+      })
+      .where(eq(shareInvites.id, invite.id));
+
+    await recordAuditEvent({
+      systemId,
+      actorUserId: ownerId,
+      action: 'invite.revoke',
+      targetType: 'invite',
+      targetId: invite.id,
+    });
+
+    return {
+      id: invite.id,
+      systemId: invite.systemId,
+      status: 'revoked' as const,
+      revokedAt: now.toISOString(),
+    };
+  },
+
   async acceptInviteToken(token, userId) {
+    await markExpiredInvites();
     const [invite] = await db
       .select({
         id: shareInvites.id,
@@ -184,6 +281,7 @@ export const drizzleInvitesDriver: InvitesDriver = {
         role: shareInvites.role,
         status: shareInvites.status,
         expiresAt: shareInvites.expiresAt,
+        revokedAt: shareInvites.revokedAt,
         targetUserId: shareInvites.targetUserId,
         targetEmail: shareInvites.targetEmail,
         targetTelegramUsername: shareInvites.targetTelegramUsername,
@@ -252,8 +350,20 @@ export const drizzleInvitesDriver: InvitesDriver = {
           status: 'accepted',
           acceptedAt: new Date(),
           acceptedById: userId,
+          revokedAt: null,
         })
         .where(and(eq(shareInvites.id, invite.id), eq(shareInvites.status, 'pending')));
+    });
+
+    await recordAuditEvent({
+      systemId: invite.systemId,
+      actorUserId: userId,
+      action: 'invite.accept',
+      targetType: 'invite',
+      targetId: invite.id,
+      payload: {
+        role: invite.role,
+      },
     });
 
     return {

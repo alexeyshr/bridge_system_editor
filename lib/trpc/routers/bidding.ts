@@ -1,4 +1,23 @@
-import { createInviteForSystem, listInvitesForSystem, acceptInviteToken } from '@/lib/server/invite-service';
+import {
+  acceptInviteToken,
+  createInviteForSystem,
+  listInvitesForSystem,
+  revokeInviteForSystem,
+} from '@/lib/server/invite-service';
+import {
+  createDiscussionThread,
+  listDiscussionMessages,
+  listDiscussionThreads,
+  postDiscussionMessage,
+} from '@/lib/server/discussion-service';
+import {
+  createReadOnlyLink,
+  getReadOnlyPublishedSnapshot,
+  listReadOnlyLinks,
+  revokeReadOnlyLink,
+  rotateReadOnlyLink,
+} from '@/lib/server/publish-links-service';
+import { checkRateLimit } from '@/lib/server/rate-limit';
 import { searchUsers } from '@/lib/server/users-service';
 import {
   AccessDeniedError,
@@ -6,6 +25,7 @@ import {
   compareDraftWithVersion,
   InvalidStateError,
   NotFoundError,
+  RateLimitError,
   RevisionConflictError,
   UserLookupError,
   createDraftFromVersion,
@@ -24,7 +44,7 @@ import {
   upsertSystemNodes,
   upsertSystemShare,
 } from '@/lib/server/systems-service';
-import { createInviteSchema } from '@/lib/validation/invites';
+import { createInviteSchema, revokeInviteSchema } from '@/lib/validation/invites';
 import {
   compareDraftWithVersionSchema,
   createDraftFromVersionSchema,
@@ -40,9 +60,15 @@ import {
   upsertNodesSchema,
   upsertShareSchema,
 } from '@/lib/validation/systems';
+import {
+  createDiscussionThreadSchema,
+  listDiscussionThreadsSchema,
+  postDiscussionMessageSchema,
+} from '@/lib/validation/discussions';
+import { createReadOnlyLinkSchema, manageReadOnlyLinkSchema } from '@/lib/validation/publish-links';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { protectedProcedure, router } from '../init';
+import { protectedProcedure, publicProcedure, router } from '../init';
 
 type SearchUserResult = {
   id: string;
@@ -71,7 +97,17 @@ export interface BiddingRouterDeps {
   freezeTournamentBindings: typeof freezeTournamentBindings;
   listInvitesForSystem: typeof listInvitesForSystem;
   createInviteForSystem: typeof createInviteForSystem;
+  revokeInviteForSystem: typeof revokeInviteForSystem;
   acceptInviteToken: typeof acceptInviteToken;
+  listDiscussionThreads: typeof listDiscussionThreads;
+  createDiscussionThread: typeof createDiscussionThread;
+  listDiscussionMessages: typeof listDiscussionMessages;
+  postDiscussionMessage: typeof postDiscussionMessage;
+  listReadOnlyLinks: typeof listReadOnlyLinks;
+  createReadOnlyLink: typeof createReadOnlyLink;
+  revokeReadOnlyLink: typeof revokeReadOnlyLink;
+  rotateReadOnlyLink: typeof rotateReadOnlyLink;
+  getReadOnlyPublishedSnapshot: typeof getReadOnlyPublishedSnapshot;
   searchUsers: (query: string, currentUserId: string) => Promise<SearchUserResult[]>;
 }
 
@@ -87,6 +123,9 @@ function mapServiceError(error: unknown): never {
   }
   if (error instanceof InvalidStateError) {
     throw new TRPCError({ code: 'CONFLICT', message: error.message });
+  }
+  if (error instanceof RateLimitError) {
+    throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: error.message });
   }
   if (error instanceof UserLookupError) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
@@ -118,7 +157,17 @@ const defaultDeps: BiddingRouterDeps = {
   freezeTournamentBindings,
   listInvitesForSystem,
   createInviteForSystem,
+  revokeInviteForSystem,
   acceptInviteToken,
+  listDiscussionThreads,
+  createDiscussionThread,
+  listDiscussionMessages,
+  postDiscussionMessage,
+  listReadOnlyLinks,
+  createReadOnlyLink,
+  revokeReadOnlyLink,
+  rotateReadOnlyLink,
+  getReadOnlyPublishedSnapshot,
   searchUsers,
 };
 
@@ -390,8 +439,33 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
         )
         .mutation(async ({ ctx, input }) => {
           try {
+            const limitKey = `invite:create:${ctx.userId}:${input.systemId}`;
+            const limit = checkRateLimit(limitKey, 20, 60_000);
+            if (!limit.allowed) {
+              throw new RateLimitError(limit.retryAfterSeconds);
+            }
             await deps.assertSystemCapability(input.systemId, ctx.userId, 'invites.manage');
             const invite = await deps.createInviteForSystem(input.systemId, ctx.userId, input.data);
+            return { invite };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      revoke: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: revokeInviteSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            await deps.assertSystemCapability(input.systemId, ctx.userId, 'invites.manage');
+            const invite = await deps.revokeInviteForSystem(
+              input.systemId,
+              ctx.userId,
+              input.data.inviteId,
+            );
             return { invite };
           } catch (error) {
             mapServiceError(error);
@@ -403,6 +477,149 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
           try {
             const invite = await deps.acceptInviteToken(input.token, ctx.userId);
             return { invite };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+    }),
+    discussions: router({
+      threads: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: listDiscussionThreadsSchema.optional(),
+          }),
+        )
+        .query(async ({ ctx, input }) => {
+          try {
+            const threads = await deps.listDiscussionThreads(input.systemId, ctx.userId, input.data);
+            return { threads };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      createThread: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: createDiscussionThreadSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const thread = await deps.createDiscussionThread(input.systemId, ctx.userId, input.data);
+            return { thread };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      messages: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            threadId: z.string().min(1),
+          }),
+        )
+        .query(async ({ ctx, input }) => {
+          try {
+            const messages = await deps.listDiscussionMessages(
+              input.systemId,
+              ctx.userId,
+              input.threadId,
+            );
+            return { messages };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      postMessage: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: postDiscussionMessageSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const limitKey = `discussion:post:${ctx.userId}:${input.systemId}`;
+            const limit = checkRateLimit(limitKey, 40, 60_000);
+            if (!limit.allowed) {
+              throw new RateLimitError(limit.retryAfterSeconds);
+            }
+
+            const message = await deps.postDiscussionMessage(input.systemId, ctx.userId, input.data);
+            return { message };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+    }),
+    links: router({
+      list: protectedProcedure
+        .input(z.object({ systemId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          try {
+            const links = await deps.listReadOnlyLinks(input.systemId, ctx.userId);
+            return { links };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      create: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: createReadOnlyLinkSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const link = await deps.createReadOnlyLink(input.systemId, ctx.userId, input.data);
+            return { link };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      revoke: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: manageReadOnlyLinkSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const link = await deps.revokeReadOnlyLink(input.systemId, ctx.userId, input.data.linkId);
+            return { link };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      rotate: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: manageReadOnlyLinkSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const link = await deps.rotateReadOnlyLink(input.systemId, ctx.userId, input.data.linkId);
+            return { link };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      access: publicProcedure
+        .input(
+          z.object({
+            token: z.string().min(1),
+          }),
+        )
+        .query(async ({ input }) => {
+          try {
+            const snapshot = await deps.getReadOnlyPublishedSnapshot(input.token);
+            return { snapshot };
           } catch (error) {
             mapServiceError(error);
           }

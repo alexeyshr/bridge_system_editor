@@ -4,7 +4,14 @@ import type { SystemTemplateId } from '@/lib/system-templates';
 import { type SystemsHubFilterInput, filterSystemsForHub } from '@/lib/systems-hub';
 import type { ResolvedAccess, ShareRole, TournamentBindingScope } from './drivers/types';
 
-export { AccessDeniedError, InvalidStateError, NotFoundError, RevisionConflictError, UserLookupError } from './domain-errors';
+export {
+  AccessDeniedError,
+  InvalidStateError,
+  NotFoundError,
+  RateLimitError,
+  RevisionConflictError,
+  UserLookupError,
+} from './domain-errors';
 import { AccessDeniedError, NotFoundError } from './domain-errors';
 
 export async function resolveSystemAccess(systemId: string, userId: string): Promise<ResolvedAccess> {

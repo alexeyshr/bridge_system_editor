@@ -34,3 +34,7 @@ export const createInviteSchema = inviteBaseSchema.superRefine((value, ctx) => {
     });
   }
 });
+
+export const revokeInviteSchema = z.object({
+  inviteId: z.string().trim().min(1),
+});

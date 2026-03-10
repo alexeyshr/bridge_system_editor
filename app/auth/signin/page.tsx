@@ -3,16 +3,35 @@
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+type TelegramAuthUser = {
+  id: number | string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number | string;
+  hash: string;
+};
+
+declare global {
+  interface Window {
+    BridgeTelegramAuth?: (user: TelegramAuthUser) => void;
+  }
+}
 
 export default function SignInPage() {
   const router = useRouter();
+  const telegramContainerRef = useRef<HTMLDivElement | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
+  const telegramBotName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_NAME?.trim() ?? '';
+  const telegramEnabled = telegramBotName.length > 0;
 
   const runSignIn = async () => {
     setIsLoading(true);
@@ -59,6 +78,77 @@ export default function SignInPage() {
       setIsLoading(false);
     }
   };
+
+  const runTelegramSignIn = useCallback(async (user: TelegramAuthUser) => {
+    const userId = user?.id ? String(user.id) : '';
+    const authDate = user?.auth_date ? String(user.auth_date) : '';
+    const hash = user?.hash ? String(user.hash) : '';
+
+    if (!userId || !authDate || !hash) {
+      setErrorMessage('Telegram payload is incomplete.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+    setInfoMessage('Signing in with Telegram...');
+
+    const result = await signIn('telegram', {
+      id: userId,
+      first_name: user.first_name ?? '',
+      last_name: user.last_name ?? '',
+      username: user.username ?? '',
+      photo_url: user.photo_url ?? '',
+      auth_date: authDate,
+      hash,
+      redirect: false,
+      callbackUrl: '/',
+    });
+
+    setIsLoading(false);
+    if (result?.ok) {
+      router.push('/');
+      router.refresh();
+      return;
+    }
+
+    setInfoMessage('');
+    setErrorMessage('Telegram sign in failed.');
+  }, [router]);
+
+  useEffect(() => {
+    const handler = (user: TelegramAuthUser) => {
+      void runTelegramSignIn(user);
+    };
+
+    window.BridgeTelegramAuth = handler;
+    return () => {
+      delete window.BridgeTelegramAuth;
+    };
+  }, [runTelegramSignIn]);
+
+  useEffect(() => {
+    if (!telegramEnabled) return;
+    if (!telegramContainerRef.current) return;
+
+    const host = telegramContainerRef.current;
+    host.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = 'https://telegram.org/js/telegram-widget.js?22';
+    script.setAttribute('data-telegram-login', telegramBotName);
+    script.setAttribute('data-size', 'large');
+    script.setAttribute('data-userpic', 'false');
+    script.setAttribute('data-radius', '8');
+    script.setAttribute('data-request-access', 'write');
+    script.setAttribute('data-onauth', 'BridgeTelegramAuth(user)');
+    host.appendChild(script);
+
+    return () => {
+      host.innerHTML = '';
+    };
+  }, [telegramBotName, telegramEnabled]);
 
   return (
     <main className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
@@ -122,10 +212,19 @@ export default function SignInPage() {
 
         <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
           <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Telegram</div>
-          <div className="text-xs text-slate-500 mt-1">
-            Telegram sign-in backend is ready. Connect Telegram Login Widget and send payload to provider
-            <code className="mx-1 text-[11px]">telegram</code>.
-          </div>
+          {telegramEnabled ? (
+            <div className="mt-2">
+              <div ref={telegramContainerRef} className="min-h-10" />
+              <p className="mt-2 text-[11px] text-slate-500">
+                Use Telegram Login Widget to sign in or auto-create account.
+              </p>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 mt-1">
+              Set <code className="mx-1 text-[11px]">NEXT_PUBLIC_TELEGRAM_BOT_NAME</code> to enable Telegram sign-in
+              widget.
+            </div>
+          )}
         </div>
 
         <div className="mt-4 text-xs text-slate-500">

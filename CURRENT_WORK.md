@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-10 03:05 +03:00
+Updated: 2026-03-10 03:25 +03:00
 
 ## Active Context
 
@@ -88,3 +88,13 @@ Updated: 2026-03-10 03:05 +03:00
   - canonical server scripts added under `scripts/server/`
   - standalone assets copy fixed in deploy pipeline (prevents UI without CSS/JS)
   - fix note added in `fix/2026-03-10-standalone-assets-and-server-scripts.md`
+
+## Auth Update (Telegram)
+
+- Start: 2026-03-10 03:10
+- End: 2026-03-10 03:25
+- Result:
+  - Telegram login widget added on sign-in page
+  - callback wiring to `signIn('telegram', payload)`
+  - `.env.example` updated with `NEXT_PUBLIC_TELEGRAM_BOT_NAME`
+  - fix note added in `fix/2026-03-10-telegram-login-widget.md`

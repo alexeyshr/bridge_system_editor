@@ -21,6 +21,7 @@ REPO_DIR=""
 SERVICE=""
 CHECKOUT_MAIN=0
 PACKAGE_MANAGER="${PACKAGE_MANAGER:-auto}"
+ENV_FILE="${ENV_FILE:-/etc/bridgeoneclub/env}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,6 +62,14 @@ fi
 
 cd "$REPO_DIR"
 echo "[rebuild-instance] repo: $(pwd)"
+
+if [[ -f "$ENV_FILE" ]]; then
+  # Needed for compile-time NEXT_PUBLIC_* values (e.g. Telegram widget bot name).
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
 
 if [[ "$CHECKOUT_MAIN" == "1" ]]; then
   git fetch origin --prune

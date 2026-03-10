@@ -35,6 +35,9 @@ No anchor -> no coding.
 4. **Open PR**
 - Fill `.github/pull_request_template.md` fully.
 - Required: `Spec Link`, scope, acceptance checklist, test evidence.
+- PR must be opened via compare URL with prefilled `title` and `body` parameters.
+- For each PR, keep a draft file in spec folder:
+  - `specs/<feature>/pr-<short-topic>.md` (source of truth for Title/Body).
 
 5. **Update Linear**
 - Populate:
@@ -55,6 +58,7 @@ Work is considered incomplete if any gate is missing:
 - no Linear issue link,
 - no feature branch,
 - no PR with spec link,
+- no prefilled PR Title/Body from spec draft file,
 - no green quality checks,
 - no `CURRENT_WORK.md` update.
 

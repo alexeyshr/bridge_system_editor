@@ -17,6 +17,8 @@
 - Wire widget callback to `signIn('telegram', payload)`.
 - Add public env var in `.env.example`:
   - `NEXT_PUBLIC_TELEGRAM_BOT_NAME`.
+- Ensure server rebuild flow loads env file before build:
+  - `scripts/server/rebuild-instance.sh`.
 - Update runtime docs in `readme.md`.
 - Add fix note:
   - `fix/2026-03-10-telegram-login-widget.md`.

@@ -87,6 +87,9 @@ npm run ui:baseline # automated UI baseline run (requires running dev server on 
 ## Runtime Flags
 
 - `API_TRANSPORT=rest|trpc` (default in `.env.example`: `trpc`)
+- Telegram auth:
+  - `TELEGRAM_BOT_TOKEN`
+  - `NEXT_PUBLIC_TELEGRAM_BOT_NAME` (widget username without `@`)
 
 Drizzle foundation files:
 

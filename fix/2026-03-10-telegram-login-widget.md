@@ -12,6 +12,8 @@ Users could not start Telegram auth flow from browser.
 - Added env requirement:
   - `NEXT_PUBLIC_TELEGRAM_BOT_NAME` (without `@`) in `.env.example`.
 - Updated runtime docs in `readme.md`.
+- Updated `scripts/server/rebuild-instance.sh` to source `/etc/bridgeoneclub/env` before build,
+  so `NEXT_PUBLIC_*` variables are available at compile-time.
 
 ## Verification
 

@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-10 03:25 +03:00
+Updated: 2026-03-10 17:49 +03:00
 
 ## Active Context
 
@@ -98,3 +98,19 @@ Updated: 2026-03-10 03:25 +03:00
   - callback wiring to `signIn('telegram', payload)`
   - `.env.example` updated with `NEXT_PUBLIC_TELEGRAM_BOT_NAME`
   - fix note added in `fix/2026-03-10-telegram-login-widget.md`
+
+## Operational Update (anti-drift guardrails)
+
+- Start: 2026-03-10 17:42
+- End: 2026-03-10 17:49
+- Branch: `codex/server-workflow-guardrails-20260310`
+- Result:
+  - added `scripts/server/post-merge.sh` to enforce `prod-deploy -> dev-sync -> bridge-status`
+  - added shortcut `bridge-post-merge` in `scripts/server/install-shortcuts.sh`
+  - upgraded `scripts/server/bridge-status.sh` with drift warnings:
+    - non-main branch
+    - ahead/behind vs `origin/main`
+    - dirty worktree
+  - updated process docs:
+    - `docs/ops/SERVER_DEV_PROD_WORKFLOW.md`
+    - `readme.md`

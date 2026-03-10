@@ -78,6 +78,7 @@ npm run ui:baseline # automated UI baseline run (requires running dev server on 
 - `scripts/server/rebuild-dev.sh`
 - `scripts/server/sync-dev.sh`
 - `scripts/server/deploy-prod.sh`
+- `scripts/server/post-merge.sh`
 - `scripts/server/bridge-status.sh`
 - `scripts/server/install-shortcuts.sh`
 

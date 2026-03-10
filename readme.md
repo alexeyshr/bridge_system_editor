@@ -70,6 +70,20 @@ npm run db:seed
 npm run ui:baseline # automated UI baseline run (requires running dev server on :3000)
 ```
 
+## Server Deploy Scripts (dev/prod mirrors)
+
+Для server-first потока (разработка на VPS + prod на том же VPS):
+
+- `scripts/server/rebuild-instance.sh`
+- `scripts/server/rebuild-dev.sh`
+- `scripts/server/sync-dev.sh`
+- `scripts/server/deploy-prod.sh`
+- `scripts/server/bridge-status.sh`
+- `scripts/server/install-shortcuts.sh`
+
+Подробно:
+- `docs/ops/SERVER_DEV_PROD_WORKFLOW.md`
+
 ## Runtime Flags
 
 - `API_TRANSPORT=rest|trpc` (default in `.env.example`: `trpc`)

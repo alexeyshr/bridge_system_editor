@@ -1,6 +1,6 @@
 # CURRENT_WORK
 
-Updated: 2026-03-09 11:52 +03:00
+Updated: 2026-03-10 03:05 +03:00
 
 ## Active Context
 
@@ -78,3 +78,13 @@ Updated: 2026-03-09 11:52 +03:00
 - Stage F02–F05 changes.
 - Commit and push.
 - Open PR with spec links and QA evidence.
+
+## Operational Update (VPS)
+
+- Start: 2026-03-10 02:20
+- End: 2026-03-10 03:05
+- Result:
+  - server deploy flow documented in repo (`docs/ops/SERVER_DEV_PROD_WORKFLOW.md`)
+  - canonical server scripts added under `scripts/server/`
+  - standalone assets copy fixed in deploy pipeline (prevents UI without CSS/JS)
+  - fix note added in `fix/2026-03-10-standalone-assets-and-server-scripts.md`

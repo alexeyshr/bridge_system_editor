@@ -42,6 +42,7 @@ Location: `scripts/server/`
 - `rebuild-dev.sh` - rebuild current branch in dev copy
 - `sync-dev.sh` - fast-forward dev copy to `origin/main`, then rebuild
 - `deploy-prod.sh` - fast-forward prod copy to `origin/main`, then rebuild
+- `post-merge.sh` - one-command flow: `prod-deploy` then `dev-sync`
 - `bridge-status.sh` - health/status report for dev/prod
 - `install-shortcuts.sh` - installs shortcuts into `/usr/local/bin`
 
@@ -59,6 +60,7 @@ After setup, these commands are globally available:
 - `dev-rebuild`
 - `dev-sync`
 - `prod-deploy`
+- `bridge-post-merge`
 - `bridge-status`
 
 ## 6) Daily workflow
@@ -70,16 +72,29 @@ dev-rebuild
 ```
 3. Commit and push branch to GitHub.
 4. Open PR, pass checks, merge to `main`.
-5. Deploy production:
+5. Run the mandatory post-merge command:
 ```bash
-prod-deploy
-```
-6. Optionally align dev copy with merged main:
-```bash
-dev-sync
+bridge-post-merge
 ```
 
-## 7) Why standalone assets copy is required
+This command does:
+1. `prod-deploy` (prod = `origin/main`)
+2. `dev-sync` (dev = `origin/main`)
+3. `bridge-status` (prints drift warnings)
+
+Use manual commands (`prod-deploy` / `dev-sync`) only when needed for debugging.
+
+## 7) Anti-drift rules (must follow)
+
+1. Do not commit directly on server clones.
+2. After each merge to `main`, always run `bridge-post-merge`.
+3. Keep feature work in PR branches, delete branch after merge.
+4. Treat `bridge-status` warnings as blocking:
+   - `branch is not main`
+   - `branch is not aligned with origin/main`
+   - `uncommitted server changes detected`
+
+## 8) Why standalone assets copy is required
 
 When running Next.js with:
 

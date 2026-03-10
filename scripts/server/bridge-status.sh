@@ -21,16 +21,34 @@ print_repo() {
   fi
 
   cd "$dir"
-  local branch head remote_head
+  local branch head remote_head ahead behind dirty_state
   branch="$(git branch --show-current 2>/dev/null || echo '?')"
   head="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
   git fetch origin --prune >/dev/null 2>&1 || true
   remote_head="$(git rev-parse --short origin/main 2>/dev/null || echo '?')"
+  read -r ahead behind < <(git rev-list --left-right --count HEAD...origin/main 2>/dev/null || echo "0 0")
+  if git diff --quiet && git diff --cached --quiet; then
+    dirty_state="clean"
+  else
+    dirty_state="dirty"
+  fi
 
   echo "path: $dir"
   echo "branch: $branch"
   echo "head: $head"
   echo "origin/main: $remote_head"
+  echo "ahead(origin/main): $ahead"
+  echo "behind(origin/main): $behind"
+  echo "worktree: $dirty_state"
+  if [[ "$branch" != "main" ]]; then
+    echo "warning: branch is not main (possible drift)"
+  fi
+  if [[ "$ahead" != "0" || "$behind" != "0" ]]; then
+    echo "warning: branch is not aligned with origin/main"
+  fi
+  if [[ "$dirty_state" != "clean" ]]; then
+    echo "warning: uncommitted server changes detected"
+  fi
   git status --short --branch | sed -n '1,6p'
   echo
 }

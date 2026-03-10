@@ -25,6 +25,7 @@ EOF
 install_cmd "dev-rebuild" "$SCRIPT_DIR/rebuild-dev.sh"
 install_cmd "dev-sync" "$SCRIPT_DIR/sync-dev.sh"
 install_cmd "prod-deploy" "$SCRIPT_DIR/deploy-prod.sh"
+install_cmd "bridge-post-merge" "$SCRIPT_DIR/post-merge.sh"
 install_cmd "bridge-status" "$SCRIPT_DIR/bridge-status.sh"
 
 echo "All shortcuts are installed in /usr/local/bin"

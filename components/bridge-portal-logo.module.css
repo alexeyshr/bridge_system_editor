@@ -1,0 +1,83 @@
+.logoLink {
+  display: inline-block;
+  text-decoration: none;
+  border-radius: 10px;
+}
+
+.logoSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.bridgeText {
+  font-family: "Montserrat", var(--font-sans), "Segoe UI", sans-serif;
+  font-size: 90px;
+  font-weight: 800;
+  fill: #2c354d;
+  letter-spacing: 0.2px;
+}
+
+.oneclubText {
+  font-family: "Montserrat", var(--font-sans), "Segoe UI", sans-serif;
+  font-size: 78px;
+  font-weight: 500;
+  fill: #4b4f57;
+  letter-spacing: 5px;
+  font-kerning: none;
+}
+
+.redDot {
+  fill: #b32d32;
+  transition: fill 0.3s ease;
+}
+
+.clubRing {
+  fill: none;
+  stroke: #4b4f57;
+  stroke-width: 6;
+}
+
+.clubSymbol {
+  fill: #4b4f57;
+  transition: fill 0.3s ease;
+  transform-origin: 37px 31px;
+  transform-box: fill-box;
+}
+
+.logoLink:hover .redDot,
+.logoLink:focus-visible .redDot {
+  fill: #2c354d;
+}
+
+.logoLink:hover .clubSymbol,
+.logoLink:focus-visible .clubSymbol {
+  fill: #b32d32;
+  animation: heartbeat 1.2s ease-in-out infinite;
+}
+
+@keyframes heartbeat {
+  0% {
+    transform: scale(1);
+  }
+
+  15% {
+    transform: scale(1.15);
+  }
+
+  30% {
+    transform: scale(1);
+  }
+
+  45% {
+    transform: scale(1.15);
+  }
+
+  60% {
+    transform: scale(1);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}

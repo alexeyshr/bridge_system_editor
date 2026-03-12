@@ -1,7 +1,9 @@
 import { count, eq } from 'drizzle-orm';
+import { closeDrizzleConnection } from '../lib/db/drizzle/client';
 
 const seedUserId = 'seed-user-demo';
 const seedSystemId = 'seed-system-demo';
+const seedTournamentId = 'demo';
 
 async function main() {
   if (!process.env.DATABASE_URL) {
@@ -9,7 +11,7 @@ async function main() {
     process.exit(1);
   }
 
-  const [{ db }, { biddingNodes, biddingSystems, users }] = await Promise.all([
+  const [{ db }, { biddingNodes, biddingSystems, userGlobalRoles, userScopedRoles, users }] = await Promise.all([
     import('../lib/db/drizzle/client'),
     import('../lib/db/drizzle/schema'),
   ]);
@@ -34,6 +36,22 @@ async function main() {
     createdAt: now,
     updatedAt: now,
     updatedById: seedUserId,
+  }).onConflictDoNothing();
+
+  await db.insert(userGlobalRoles).values({
+    id: 'seed-global-role-user',
+    userId: seedUserId,
+    role: 'user',
+    createdAt: now,
+  }).onConflictDoNothing();
+
+  await db.insert(userScopedRoles).values({
+    id: 'seed-scoped-role-organizer',
+    userId: seedUserId,
+    scopeType: 'tournament',
+    scopeId: seedTournamentId,
+    role: 'organizer',
+    createdAt: now,
   }).onConflictDoNothing();
 
   await db.insert(biddingNodes).values([
@@ -100,10 +118,14 @@ async function main() {
     .from(biddingNodes)
     .where(eq(biddingNodes.systemId, seedSystemId));
 
-  console.log(`Seed completed. System '${seedSystemId}' has ${total} node(s).`);
+  console.log(`Seed completed. System '${seedSystemId}' has ${total} node(s). Tournament scope '${seedTournamentId}' organizer role assigned.`);
 }
 
-main().catch((error) => {
-  console.error('Seed failed:', error);
-  process.exit(1);
-});
+main()
+  .catch((error) => {
+    console.error('Seed failed:', error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await closeDrizzleConnection();
+  });

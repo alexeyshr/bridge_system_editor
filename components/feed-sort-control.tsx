@@ -11,26 +11,48 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
+export type FeedSortValue = "newest" | "popular" | "active"
+
 type SortOption = {
   label: string
-  value: string
+  value: FeedSortValue
 }
 
-const sortOptions: SortOption[] = [
+const SORT_OPTIONS: SortOption[] = [
   { label: "Newest", value: "newest" },
   { label: "Popular", value: "popular" },
   { label: "Most active", value: "active" },
 ]
 
-export function FeedSortControl({ className }: { className?: string }) {
-  const [selected, setSelected] = React.useState<SortOption>(sortOptions[0])
+type FeedSortControlProps = {
+  className?: string
+  value?: FeedSortValue
+  onValueChange?: (value: FeedSortValue) => void
+}
+
+export function FeedSortControl({
+  className,
+  value,
+  onValueChange,
+}: FeedSortControlProps) {
+  const isControlled = value !== undefined
+  const [internalValue, setInternalValue] = React.useState<FeedSortValue>("newest")
+  const selectedValue = isControlled ? value : internalValue
+  const selected = SORT_OPTIONS.find((option) => option.value === selectedValue) ?? SORT_OPTIONS[0]
+
+  const handleSelect = (next: FeedSortValue) => {
+    if (!isControlled) {
+      setInternalValue(next)
+    }
+    onValueChange?.(next)
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Sort feed"
         className={cn(
-          "hidden items-center gap-2 rounded-xl border border-[#cfd5df] bg-white px-2.5 py-1.5 text-[#1f2734] shadow-sm transition-colors hover:bg-[#edf2fa] md:inline-flex",
+          "inline-flex items-center gap-2 rounded-xl border border-[#cfd5df] bg-white px-2.5 py-1.5 text-[#1f2734] shadow-sm transition-colors hover:bg-[#edf2fa]",
           className
         )}
       >
@@ -49,10 +71,10 @@ export function FeedSortControl({ className }: { className?: string }) {
         sideOffset={8}
         className="w-52 rounded-xl border border-[#cfd5df] bg-white/98 p-1.5 text-[#1f2734] shadow-[0_12px_35px_-20px_rgba(15,23,42,0.75)]"
       >
-        {sortOptions.map((option) => (
+        {SORT_OPTIONS.map((option) => (
           <DropdownMenuItem
             key={option.value}
-            onClick={() => setSelected(option)}
+            onClick={() => handleSelect(option.value)}
             className={cn(
               "flex items-center justify-between rounded-lg px-2.5 py-2 text-[15px] font-medium text-[#1f2734] focus:bg-[#e6edf9] focus:text-[#12213c]",
               selected.value === option.value && "bg-[#e9effb] text-[#12213c]"

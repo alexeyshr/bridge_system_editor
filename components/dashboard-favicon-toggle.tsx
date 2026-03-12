@@ -1,7 +1,5 @@
 "use client"
 
-import Image from "next/image"
-
 import { useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 
@@ -16,19 +14,60 @@ export function DashboardFaviconToggle({ className }: { className?: string }) {
       aria-label={actionLabel}
       title={actionLabel}
       className={cn(
-        "inline-flex size-9 items-center justify-center rounded-md border border-[#cfd5df] bg-transparent transition-colors hover:bg-[#eef2f7]/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9aa5bb]",
+        "inline-flex size-9 items-center justify-center rounded-md bg-transparent transition-colors hover:bg-[#eef2f7]/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9aa5bb]",
         className
       )}
     >
-      <Image
-        src="/dashboard-toggle-favicon.svg"
-        alt=""
-        width={24}
-        height={24}
-        className="size-6 select-none"
-        aria-hidden="true"
-      />
-      <span className="sr-only">{actionLabel}</span>
+      {open ? (
+        <svg
+          viewBox="0 0 24 24"
+          className="size-9 select-none"
+          aria-hidden="true"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="8.5"
+            fill="none"
+            stroke="#4b4f57"
+            strokeWidth="1.9"
+          />
+          <text
+            x="12"
+            y="15.2"
+            textAnchor="middle"
+            fontSize="11.4"
+            fill="#4b4f57"
+            fontFamily="Georgia, serif"
+          >
+            {"\u2663"}
+          </text>
+        </svg>
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          className="size-9 select-none"
+          aria-hidden="true"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="8.5"
+            fill="none"
+            stroke="#4b4f57"
+            strokeWidth="1.9"
+          />
+          <circle
+            cx="12"
+            cy="12"
+            r="3.2"
+            fill="#b32d32"
+          />
+        </svg>
+      )}
+      <span className="sr-only">
+        {actionLabel}
+      </span>
     </button>
   )
 }

@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx scripts/dev-auto.ts",
+    "dev:local": "next dev",
+    "dev:remote": "tsx scripts/run-with-db-tunnel.ts -- npm run dev:local",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -12,10 +14,17 @@
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('.next',{recursive:true,force:true}); fs.rmSync('tsconfig.tsbuildinfo',{force:true});\"",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
+    "db:migrate:remote": "tsx scripts/run-with-db-tunnel.ts migrate",
     "db:push": "drizzle-kit push --config=drizzle.config.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:healthcheck": "tsx scripts/db-healthcheck.ts",
+    "db:healthcheck:remote": "tsx scripts/run-with-db-tunnel.ts healthcheck",
     "db:seed": "tsx scripts/db-seed.ts",
+    "db:seed:remote": "tsx scripts/run-with-db-tunnel.ts seed",
+    "db:ingest:bridgesport": "tsx scripts/ingest-bridgesport.ts",
+    "db:ingest:bridgesport:remote": "tsx scripts/run-with-db-tunnel.ts ingest-bridgesport",
+    "db:reload:player-tournaments": "tsx scripts/reload-player-tournaments.ts",
+    "db:reload:player-tournaments:remote": "tsx scripts/run-with-db-tunnel.ts -- npm run db:reload:player-tournaments",
     "ui:baseline": "node scripts/run-ui-baseline-check.mjs"
   },
   "dependencies": {

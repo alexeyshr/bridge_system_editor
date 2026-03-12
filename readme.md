@@ -48,13 +48,18 @@ npm ci
 npm run dev
 ```
 
+`npm run dev` now auto-detects remote DB tunnel settings (`REMOTE_DB_*`) and starts with tunnel when available.
+Use `BRIDGE_DEV_DB_MODE=local npm run dev` to force local mode.
+
 Открыть:
 - `http://localhost:3000`
 
 ## Скрипты
 
 ```bash
-npm run dev        # локальная разработка
+npm run dev        # dev auto mode (remote tunnel if REMOTE_DB_* is configured)
+npm run dev:local  # локальная разработка без туннеля
+npm run dev:remote # dev с SSH-туннелем к удаленной БД
 npm run lint       # ESLint
 npm run test       # smoke tests (node:test)
 npm run typecheck  # TypeScript check (no emit)
@@ -68,6 +73,12 @@ npm run db:studio
 npm run db:healthcheck
 npm run db:seed
 npm run ui:baseline # automated UI baseline run (requires running dev server on :3000)
+
+# Run local DB CLI commands against VPS-local Postgres via SSH tunnel
+npm run db:migrate:remote
+npm run db:healthcheck:remote
+npm run db:seed:remote
+npm run db:ingest:bridgesport:remote
 ```
 
 ## Server Deploy Scripts (dev/prod mirrors)

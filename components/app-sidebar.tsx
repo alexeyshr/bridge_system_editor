@@ -1,73 +1,71 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
-
-import { NavUser } from "@/components/nav-user"
-import { cn } from "@/lib/utils"
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarInput,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarSeparator,
-  SidebarRail,
-} from "@/components/ui/sidebar"
-import {
+  BarChart3Icon,
   BookOpenIcon,
   CalendarIcon,
   FlaskConicalIcon,
+  HistoryIcon,
   HomeIcon,
   MessageSquareIcon,
   NewspaperIcon,
+  PanelTopCloseIcon,
+  PanelTopOpenIcon,
+  SearchIcon,
   ShieldCheckIcon,
   WrenchIcon,
   type LucideIcon,
 } from "lucide-react"
 
-type NavItem = {
-  title: string
-  url: string
-  icon: LucideIcon
-}
+import {
+  type SidebarIconKey,
+  SIDEBAR_GROUPS,
+} from "@/lib/portal-config/sidebar"
+import {
+  type PortalRole,
+  formatPortalRoleSummary,
+  hasAnyCapability,
+  listCapabilitiesForRoles,
+} from "@/lib/portal-access"
+import { BridgePortalLogo } from "@/components/bridge-portal-logo"
+import { cn } from "@/lib/utils"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarSeparator,
+} from "@/components/ui/sidebar"
 
-const primaryItems: NavItem[] = [
-  { title: "Frontpage", url: "/dashboard", icon: HomeIcon },
-  { title: "Latest", url: "#", icon: NewspaperIcon },
-  { title: "Discussions", url: "#", icon: MessageSquareIcon },
-  { title: "Sequences", url: "#", icon: BookOpenIcon },
-]
-
-const operationsItems: NavItem[] = [
-  { title: "Calendar", url: "#", icon: CalendarIcon },
-  { title: "Experiments", url: "#", icon: FlaskConicalIcon },
-  { title: "Moderation", url: "#", icon: ShieldCheckIcon },
-  { title: "Tools", url: "#", icon: WrenchIcon },
-]
-
-const user = {
-  name: "Portal Admin",
-  email: "admin@bridge.local",
-  avatar: "https://github.com/shadcn.png",
+const SIDEBAR_ICONS: Record<SidebarIconKey, LucideIcon> = {
+  home: HomeIcon,
+  newspaper: NewspaperIcon,
+  message: MessageSquareIcon,
+  book: BookOpenIcon,
+  calendar: CalendarIcon,
+  chart: BarChart3Icon,
+  history: HistoryIcon,
+  search: SearchIcon,
+  flask: FlaskConicalIcon,
+  shield: ShieldCheckIcon,
+  wrench: WrenchIcon,
 }
 
 export type DashboardVisualVariant = "dense" | "editorial" | "mono"
+const SIDEBAR_LOGO_COLLAPSED_KEY = "portal.sidebar.logo.collapsed"
 
 const sidebarThemes: Record<
   DashboardVisualVariant,
   {
     shell: string
     header: string
-    eyebrow: string
-    title: string
-    input: string
     content: string
     groupLabel: string
     menuButton: string
@@ -77,11 +75,7 @@ const sidebarThemes: Record<
 > = {
   dense: {
     shell: "border-r border-[#d8dbe1] bg-[#f3f5f9] text-[#1f2734]",
-    header: "gap-2 border-b border-[#d8dbe1] px-2 py-3",
-    eyebrow: "text-[9px] font-semibold uppercase tracking-[0.16em] text-[#6b7280]",
-    title: "text-[13px] font-semibold text-[#1f2734]",
-    input:
-      "h-7 rounded-md border-[#cfd5df] bg-white text-[#1f2734] placeholder:text-[#7b8392]",
+    header: "gap-1.5 border-b border-[#d8dbe1] px-2 py-2.5",
     content: "gap-0 px-1 py-2",
     groupLabel:
       "text-[10px] uppercase tracking-[0.1em] text-[#707887] group-data-[collapsible=icon]:hidden",
@@ -92,11 +86,7 @@ const sidebarThemes: Record<
   },
   editorial: {
     shell: "border-r border-[#e6dfd2] bg-[#f7f3ea] text-[#2f2a21]",
-    header: "gap-3 border-b border-[#e6dfd2] px-3 py-4",
-    eyebrow: "text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7b756b]",
-    title: "text-sm font-semibold text-[#1f1b16]",
-    input:
-      "h-8 border-[#ddd4c6] bg-[#fcfaf4] text-[#2f2a21] placeholder:text-[#8f887b]",
+    header: "gap-2 border-b border-[#e6dfd2] px-3 py-3.5",
     content: "gap-0 px-2 py-2",
     groupLabel: "text-[11px] uppercase tracking-[0.12em] text-[#7b756b]",
     menuButton:
@@ -106,11 +96,7 @@ const sidebarThemes: Record<
   },
   mono: {
     shell: "border-r border-zinc-300 bg-zinc-100 text-zinc-900",
-    header: "gap-3 border-b border-zinc-300 px-3 py-4",
-    eyebrow: "text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500",
-    title: "text-sm font-semibold text-zinc-900",
-    input:
-      "h-8 border-zinc-300 bg-zinc-50 text-zinc-900 placeholder:text-zinc-500",
+    header: "gap-2 border-b border-zinc-300 px-3 py-3.5",
     content: "gap-0 px-2 py-2",
     groupLabel: "text-[11px] uppercase tracking-[0.12em] text-zinc-500",
     menuButton:
@@ -122,16 +108,53 @@ const sidebarThemes: Record<
 
 export function AppSidebar({
   visualVariant = "dense",
+  roles = ["anonymous"],
   ...props
-}: React.ComponentProps<typeof Sidebar> & { visualVariant?: DashboardVisualVariant }) {
+}: React.ComponentProps<typeof Sidebar> & {
+  visualVariant?: DashboardVisualVariant
+  roles?: PortalRole[]
+}) {
   const pathname = usePathname()
   const theme = sidebarThemes[visualVariant]
+  const capabilities = listCapabilitiesForRoles(roles)
+  const [logoCollapsed, setLogoCollapsed] = React.useState(false)
 
-  const renderMenu = (items: NavItem[]) => (
+  React.useEffect(() => {
+    const persisted = window.localStorage.getItem(SIDEBAR_LOGO_COLLAPSED_KEY)
+    if (persisted === "1") {
+      setLogoCollapsed(true)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    window.localStorage.setItem(
+      SIDEBAR_LOGO_COLLAPSED_KEY,
+      logoCollapsed ? "1" : "0"
+    )
+  }, [logoCollapsed])
+
+  const visibleGroups = SIDEBAR_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      !item.requires || hasAnyCapability(capabilities, item.requires)
+    ),
+  })).filter((group) => group.items.length > 0)
+
+  const profileLabel = formatPortalRoleSummary(roles)
+  const logoToggleLabel = logoCollapsed ? "Show logo" : "Hide logo"
+
+  const renderMenu = (
+    items: Array<{ title: string; url: string; icon: SidebarIconKey }>
+  ) => (
     <SidebarMenu>
       {items.map((item) => {
-        const Icon = item.icon
-        const isActive = item.url !== "#" && pathname === item.url
+        const Icon = SIDEBAR_ICONS[item.icon]
+        const isActive =
+          item.url !== "#" &&
+          (
+            pathname === item.url ||
+            (item.url !== "/dashboard" && pathname.startsWith(`${item.url}/`))
+          )
         return (
           <SidebarMenuItem key={item.title}>
             <SidebarMenuButton
@@ -149,47 +172,63 @@ export function AppSidebar({
   )
 
   return (
-    <Sidebar
-      collapsible="offcanvas"
-      className={theme.shell}
-      {...props}
-    >
-      <SidebarHeader className={theme.header}>
-        <div className="space-y-2">
-          <div className="px-1 py-1">
-            <Image
-              src="/main-logo-transparent.png"
-              alt="Bridge OneClub"
-              width={2854}
-              height={1234}
-              className="h-auto w-full max-w-[170px]"
-              priority
-            />
+    <Sidebar collapsible="offcanvas" className={theme.shell} {...props}>
+      <SidebarHeader className={cn(theme.header, logoCollapsed && "gap-0 py-1.5")}>
+        <div className="flex items-center justify-end px-1">
+          <button
+            type="button"
+            aria-label={logoToggleLabel}
+            title={logoToggleLabel}
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-transparent text-[#6a7589] transition-colors hover:bg-[#ebf0f8]/70 hover:text-[#1f2734] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9aa5bb]"
+            onClick={() => setLogoCollapsed((prev) => !prev)}
+          >
+            {logoCollapsed ? (
+              <PanelTopOpenIcon className="size-3.5" />
+            ) : (
+              <PanelTopCloseIcon className="size-3.5" />
+            )}
+          </button>
+        </div>
+        <div
+          className={cn(
+            "space-y-1 overflow-hidden transition-all duration-200",
+            logoCollapsed
+              ? "max-h-0 -translate-y-1 opacity-0"
+              : "max-h-[260px] translate-y-0 opacity-100"
+          )}
+        >
+          <div className="px-1">
+            <div className="py-0.5">
+              <BridgePortalLogo className="w-full max-w-[228px]" />
+            </div>
+          </div>
+          <div className="mx-2 h-px bg-[#d8dbe1]/90" />
+          <div className="mx-1 px-2 py-1.5">
+            <div className="flex items-center gap-1.5 text-[#7b8392]">
+              <ShieldCheckIcon className="size-3.5" />
+              <span className="text-[10px] font-medium uppercase tracking-[0.12em]">
+                Access profile
+              </span>
+            </div>
+            <p className="mt-1 truncate text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2b3446]">
+              {profileLabel}
+            </p>
           </div>
         </div>
-        <SidebarInput
-          placeholder="Search posts, teams, notes..."
-          className={theme.input}
-        />
       </SidebarHeader>
       <SidebarContent className={theme.content}>
-        <SidebarGroup>
-          <SidebarGroupLabel className={theme.groupLabel}>
-            Reading
-          </SidebarGroupLabel>
-          {renderMenu(primaryItems)}
-        </SidebarGroup>
-        <SidebarSeparator className={theme.separator} />
-        <SidebarGroup>
-          <SidebarGroupLabel className={theme.groupLabel}>
-            Operations
-          </SidebarGroupLabel>
-          {renderMenu(operationsItems)}
-        </SidebarGroup>
+        {visibleGroups.map((group, index) => (
+          <React.Fragment key={group.id}>
+            {index > 0 ? <SidebarSeparator className={theme.separator} /> : null}
+            <SidebarGroup>
+              <SidebarGroupLabel className={theme.groupLabel}>
+                {group.label}
+              </SidebarGroupLabel>
+              {renderMenu(group.items)}
+            </SidebarGroup>
+          </React.Fragment>
+        ))}
       </SidebarContent>
-      <SidebarFooter className={theme.footer}>
-        <NavUser user={user} />
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

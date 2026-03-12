@@ -12,6 +12,9 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export const shareRoleEnum = pgEnum('share_role', ['viewer', 'reviewer', 'editor']);
+export const portalGlobalRoleEnum = pgEnum('portal_global_role', ['user', 'teacher', 'judge', 'organizer', 'admin']);
+export const portalScopeTypeEnum = pgEnum('portal_scope_type', ['tournament', 'school']);
+export const portalScopedRoleEnum = pgEnum('portal_scoped_role', ['teacher', 'judge', 'organizer', 'admin']);
 export const inviteChannelEnum = pgEnum('invite_channel', ['email', 'internal', 'telegram']);
 export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'revoked', 'expired']);
 export const tournamentBindingScopeEnum = pgEnum('tournament_binding_scope', ['global', 'pair', 'team']);
@@ -41,6 +44,34 @@ export const authAccounts = pgTable('auth_accounts', {
 }, (table) => ({
   providerAccountUnique: uniqueIndex('auth_accounts_provider_account_unique').on(table.provider, table.providerAccountId),
   userIdIdx: index('auth_accounts_user_id_idx').on(table.userId),
+}));
+
+export const userGlobalRoles = pgTable('user_global_roles', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  userId: varchar('user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: portalGlobalRoleEnum('role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userRoleUnique: uniqueIndex('user_global_roles_user_role_unique').on(table.userId, table.role),
+  userIdIdx: index('user_global_roles_user_id_idx').on(table.userId),
+}));
+
+export const userScopedRoles = pgTable('user_scoped_roles', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  userId: varchar('user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  scopeType: portalScopeTypeEnum('scope_type').notNull(),
+  scopeId: varchar('scope_id', { length: 191 }).notNull(),
+  role: portalScopedRoleEnum('role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userScopeRoleUnique: uniqueIndex('user_scoped_roles_user_scope_role_unique').on(
+    table.userId,
+    table.scopeType,
+    table.scopeId,
+    table.role,
+  ),
+  userScopeIdx: index('user_scoped_roles_user_scope_idx').on(table.userId, table.scopeType, table.scopeId),
+  scopeRoleIdx: index('user_scoped_roles_scope_role_idx').on(table.scopeType, table.scopeId, table.role),
 }));
 
 export const biddingSystems = pgTable('bidding_systems', {
@@ -261,9 +292,120 @@ export const auditEvents = pgTable('audit_events', {
   createdAtIdx: index('audit_events_created_at_idx').on(table.createdAt),
 }));
 
+export const bridgesportTournaments = pgTable('bridgesport_tournaments', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  sourceTournamentId: integer('source_tournament_id').notNull(),
+  name: varchar('name', { length: 512 }).notNull(),
+  year: integer('year'),
+  sourceType: varchar('source_type', { length: 32 }),
+  tournamentUrl: text('tournament_url'),
+  resultsUrl: text('results_url'),
+  resultsRows: integer('results_rows').notNull().default(0),
+  startDate: timestamp('start_date', { withTimezone: true }),
+  city: varchar('city', { length: 191 }),
+  monthLabel: varchar('month_label', { length: 120 }),
+  raw: jsonb('raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  sourceTournamentIdUnique: uniqueIndex('bridgesport_tournaments_source_id_unique').on(table.sourceTournamentId),
+  yearIdx: index('bridgesport_tournaments_year_idx').on(table.year),
+  startDateIdx: index('bridgesport_tournaments_start_date_idx').on(table.startDate),
+}));
+
+export const bridgesportPlayers = pgTable('bridgesport_players', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  sourcePlayerId: integer('source_player_id').notNull(),
+  name: varchar('name', { length: 191 }).notNull(),
+  city: varchar('city', { length: 191 }),
+  rank: varchar('rank', { length: 32 }),
+  rating: integer('rating'),
+  ratingPosition: integer('rating_position'),
+  maxRatingPosition: integer('max_rating_position'),
+  prizePoints: integer('prize_points'),
+  masterPoints: integer('master_points'),
+  onlineMasterPoints: integer('online_master_points'),
+  gamblerNick: varchar('gambler_nick', { length: 120 }),
+  bboNick: varchar('bbo_nick', { length: 120 }),
+  club: varchar('club', { length: 255 }),
+  tournamentsCount: integer('tournaments_count').notNull().default(0),
+  profileUrl: text('profile_url'),
+  raw: jsonb('raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  sourcePlayerIdUnique: uniqueIndex('bridgesport_players_source_id_unique').on(table.sourcePlayerId),
+  nameIdx: index('bridgesport_players_name_idx').on(table.name),
+  ratingIdx: index('bridgesport_players_rating_idx').on(table.rating),
+}));
+
+export const bridgesportPlayerTournaments = pgTable('bridgesport_player_tournaments', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  sourcePlayerId: integer('source_player_id').notNull(),
+  playerName: varchar('player_name', { length: 191 }),
+  year: integer('year'),
+  masterPoints: integer('master_points'),
+  prizePoints: integer('prize_points'),
+  ratingPoints: varchar('rating_points', { length: 64 }),
+  place: varchar('place', { length: 64 }),
+  partnerTeam: varchar('partner_team', { length: 255 }),
+  tournament: varchar('tournament', { length: 512 }).notNull(),
+  rowOrder: integer('row_order').notNull().default(0),
+  raw: jsonb('raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  sourcePlayerIdx: index('bridgesport_player_tournaments_source_player_idx').on(table.sourcePlayerId),
+  sourcePlayerYearIdx: index('bridgesport_player_tournaments_source_player_year_idx').on(table.sourcePlayerId, table.year),
+}));
+
+export const bridgesportRatingSnapshots = pgTable('bridgesport_rating_snapshots', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  sourceRatingId: integer('source_rating_id').notNull(),
+  ratingType: varchar('rating_type', { length: 32 }).notNull(),
+  ratingTypeName: varchar('rating_type_name', { length: 120 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  sourceUrl: text('source_url'),
+  snapshotDate: timestamp('snapshot_date', { withTimezone: true }),
+  entriesCount: integer('entries_count').notNull().default(0),
+  raw: jsonb('raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  sourceRatingIdUnique: uniqueIndex('bridgesport_rating_snapshots_source_id_unique').on(table.sourceRatingId),
+  typeDateIdx: index('bridgesport_rating_snapshots_type_date_idx').on(table.ratingTypeName, table.snapshotDate),
+}));
+
+export const bridgesportCalendarTournaments = pgTable('bridgesport_calendar_tournaments', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  sourceTournamentId: integer('source_tournament_id').notNull(),
+  name: varchar('name', { length: 512 }).notNull(),
+  sourceUrl: text('source_url'),
+  city: varchar('city', { length: 191 }),
+  dateLabel: varchar('date_label', { length: 120 }),
+  monthLabel: varchar('month_label', { length: 120 }),
+  tournamentCategory: varchar('tournament_category', { length: 120 }),
+  tournamentType: varchar('tournament_type', { length: 120 }),
+  tournamentFormat: varchar('tournament_format', { length: 191 }),
+  registrationOpen: boolean('registration_open').notNull().default(false),
+  registeredCount: integer('registered_count'),
+  startDate: timestamp('start_date', { withTimezone: true }).notNull(),
+  participantsCount: integer('participants_count').notNull().default(0),
+  participants: jsonb('participants'),
+  raw: jsonb('raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  sourceTournamentIdUnique: uniqueIndex('bridgesport_calendar_tournaments_source_id_unique').on(table.sourceTournamentId),
+  startDateIdx: index('bridgesport_calendar_tournaments_start_date_idx').on(table.startDate),
+  cityIdx: index('bridgesport_calendar_tournaments_city_idx').on(table.city),
+}));
+
 export const schema = {
   users,
   authAccounts,
+  userGlobalRoles,
+  userScopedRoles,
   biddingSystems,
   biddingNodes,
   systemShares,
@@ -278,9 +420,17 @@ export const schema = {
   notificationEvents,
   readOnlyPublishLinks,
   auditEvents,
+  bridgesportTournaments,
+  bridgesportPlayers,
+  bridgesportPlayerTournaments,
+  bridgesportRatingSnapshots,
+  bridgesportCalendarTournaments,
 };
 
 export type ShareRole = (typeof shareRoleEnum.enumValues)[number];
+export type PortalGlobalRole = (typeof portalGlobalRoleEnum.enumValues)[number];
+export type PortalScopeType = (typeof portalScopeTypeEnum.enumValues)[number];
+export type PortalScopedRole = (typeof portalScopedRoleEnum.enumValues)[number];
 export type InviteChannel = (typeof inviteChannelEnum.enumValues)[number];
 export type InviteStatus = (typeof inviteStatusEnum.enumValues)[number];
 export type TournamentBindingScope = (typeof tournamentBindingScopeEnum.enumValues)[number];

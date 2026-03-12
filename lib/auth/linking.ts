@@ -70,3 +70,19 @@ export async function linkTelegramIdentity(
     telegramUsername: username,
   };
 }
+
+export async function unlinkTelegramIdentity(userId: string) {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(authAccounts)
+      .where(and(eq(authAccounts.userId, userId), eq(authAccounts.provider, 'telegram')));
+
+    await tx
+      .update(users)
+      .set({
+        telegramUsername: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  });
+}

@@ -41,3 +41,12 @@ export const db = globalForDrizzle.drizzleDb ?? createDrizzleDb();
 if (process.env.NODE_ENV !== 'production') {
   globalForDrizzle.drizzleDb = db;
 }
+
+export async function closeDrizzleConnection(): Promise<void> {
+  if (!globalForDrizzle.postgresClient) return;
+  await globalForDrizzle.postgresClient.end({ timeout: 5 });
+  globalForDrizzle.postgresClient = undefined;
+  if (process.env.NODE_ENV !== 'production') {
+    globalForDrizzle.drizzleDb = undefined;
+  }
+}

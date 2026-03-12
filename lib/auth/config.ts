@@ -2,7 +2,7 @@ import { verifyPassword } from '@/lib/auth/password';
 import { normalizeTelegramUsername, TelegramAuthPayload, verifyTelegramAuth } from '@/lib/auth/telegram';
 import { db } from '@/lib/db/drizzle/client';
 import { authAccounts, users } from '@/lib/db/drizzle/schema';
-import { createEntityId } from '@/lib/server/utils/id';
+import { listGlobalRolesForUser } from '@/lib/server/portal-rbac';
 import { and, eq } from 'drizzle-orm';
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
@@ -20,15 +20,6 @@ function toSessionUser(user: Pick<AuthUserRow, 'id' | 'email' | 'displayName'>) 
     email: user.email ?? undefined,
     name: user.displayName ?? undefined,
   };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === '23505'
-  );
 }
 
 async function findUserByEmail(email: string): Promise<AuthUserRow | null> {
@@ -118,65 +109,55 @@ export const authOptions: NextAuthOptions = {
         if (!verifyTelegramAuth(payload, botToken)) return null;
 
         const existingLink = await findTelegramLinkedUser(payload.id);
-        if (existingLink) {
-          return toSessionUser(existingLink);
+        if (!existingLink) {
+          // Strict mode: Telegram can only be used for accounts linked beforehand.
+          return null;
         }
 
         const username = normalizeTelegramUsername(payload.username);
         const displayName = [payload.first_name, payload.last_name].filter(Boolean).join(' ').trim() || null;
-        const now = new Date();
-        const userId = createEntityId('usr');
 
-        try {
-          await db.transaction(async (tx) => {
-            await tx.insert(users).values({
-              id: userId,
-              displayName,
-              telegramUsername: username,
-              createdAt: now,
-              updatedAt: now,
-            });
-
-            await tx.insert(authAccounts).values({
-              id: createEntityId('acct'),
-              userId,
-              provider: 'telegram',
-              providerAccountId: payload.id,
-              createdAt: now,
-            });
-          });
-        } catch (error) {
-          if (isUniqueViolation(error)) {
-            const linked = await findTelegramLinkedUser(payload.id);
-            if (linked) {
-              return toSessionUser(linked);
-            }
-          }
-          throw error;
+        if (username || displayName) {
+          await db
+            .update(users)
+            .set({
+              telegramUsername: username ?? undefined,
+              displayName: displayName ?? undefined,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, existingLink.id));
         }
 
         return {
-          id: userId,
-          email: undefined,
-          name: displayName ?? undefined,
+          id: existingLink.id,
+          email: existingLink.email ?? undefined,
+          name: displayName ?? existingLink.displayName ?? undefined,
         };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user?.id) {
-        token.userId = user.id;
+      const resolvedUserId = user?.id ?? token.userId;
+      if (resolvedUserId) {
+        token.userId = resolvedUserId;
+        try {
+          token.globalRoles = await listGlobalRolesForUser(resolvedUserId);
+        } catch (error) {
+          console.error('Failed to load global roles for session token', error);
+          token.globalRoles = ['user'];
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (!session.user) {
-        session.user = { id: '' };
+        session.user = { id: '', globalRoles: [] };
       }
       if (token.userId) {
         session.user.id = token.userId;
       }
+      session.user.globalRoles = token.globalRoles ?? ['user'];
       return session;
     },
   },

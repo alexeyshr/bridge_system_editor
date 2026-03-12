@@ -1,6 +1,7 @@
 import { getServerAuthSession } from '@/lib/auth/session';
 import { db } from '@/lib/db/drizzle/client';
 import { biddingSystems, systemShares } from '@/lib/db/drizzle/schema';
+import type { PortalGlobalRole } from '@/lib/portal-access';
 import { and, eq } from 'drizzle-orm';
 
 export type SystemAccessRole = 'owner' | 'editor' | 'reviewer' | 'viewer' | 'none';
@@ -9,6 +10,7 @@ export interface AuthenticatedUser {
   id: string;
   email?: string | null;
   name?: string | null;
+  globalRoles: PortalGlobalRole[];
 }
 
 export async function requireAuthUser(): Promise<AuthenticatedUser | null> {
@@ -20,6 +22,7 @@ export async function requireAuthUser(): Promise<AuthenticatedUser | null> {
     id: userId,
     email: session.user.email ?? null,
     name: session.user.name ?? null,
+    globalRoles: session.user.globalRoles ?? ['user'],
   };
 }
 

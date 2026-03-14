@@ -74,6 +74,7 @@ export const drizzleSystemsDriver: SystemsDriver = {
     const rows = await db
       .select({
         id: biddingSystems.id,
+        spaceId: biddingSystems.spaceId,
         title: biddingSystems.title,
         description: biddingSystems.description,
         schemaVersion: biddingSystems.schemaVersion,
@@ -92,6 +93,7 @@ export const drizzleSystemsDriver: SystemsDriver = {
 
     return rows.map((row) => ({
       id: row.id,
+      spaceId: row.spaceId,
       title: row.title,
       description: row.description,
       schemaVersion: row.schemaVersion,
@@ -111,7 +113,9 @@ export const drizzleSystemsDriver: SystemsDriver = {
     const id = createEntityId('sys');
     await db.insert(biddingSystems).values({
       id,
+      creatorUserId: input.creatorUserId,
       ownerId: userId,
+      spaceId: input.spaceId,
       title,
       description,
       schemaVersion: 1,
@@ -147,6 +151,8 @@ export const drizzleSystemsDriver: SystemsDriver = {
 
     return {
       id,
+      spaceId: input.spaceId,
+      creatorUserId: input.creatorUserId,
       title,
       description,
       schemaVersion: 1,
@@ -165,6 +171,8 @@ export const drizzleSystemsDriver: SystemsDriver = {
     const [system] = await db
       .select({
         id: biddingSystems.id,
+        spaceId: biddingSystems.spaceId,
+        creatorUserId: biddingSystems.creatorUserId,
         title: biddingSystems.title,
         description: biddingSystems.description,
         schemaVersion: biddingSystems.schemaVersion,
@@ -188,6 +196,8 @@ export const drizzleSystemsDriver: SystemsDriver = {
 
     return {
       id: system.id,
+      spaceId: system.spaceId,
+      creatorUserId: system.creatorUserId,
       title: system.title,
       description: system.description,
       schemaVersion: system.schemaVersion,
@@ -219,6 +229,7 @@ export const drizzleSystemsDriver: SystemsDriver = {
       .where(eq(biddingSystems.id, systemId))
       .returning({
         id: biddingSystems.id,
+        spaceId: biddingSystems.spaceId,
         title: biddingSystems.title,
         description: biddingSystems.description,
         schemaVersion: biddingSystems.schemaVersion,
@@ -230,6 +241,7 @@ export const drizzleSystemsDriver: SystemsDriver = {
 
     return {
       id: updated.id,
+      spaceId: updated.spaceId,
       title: updated.title,
       description: updated.description,
       schemaVersion: updated.schemaVersion,
@@ -493,7 +505,7 @@ export const drizzleSystemsDriver: SystemsDriver = {
   async publishSystemVersion(systemId, userId, input) {
     const access = await this.resolveSystemAccess(systemId, userId);
     if (!access.systemExists) throw new NotFoundError('System not found');
-    if (!(access.role === 'owner' || access.role === 'editor')) throw new AccessDeniedError();
+    if (access.role !== 'owner') throw new AccessDeniedError();
 
     return db.transaction(async (tx) => {
       const [system] = await tx
@@ -564,6 +576,47 @@ export const drizzleSystemsDriver: SystemsDriver = {
         publishedAt: now.toISOString(),
       };
     });
+  },
+
+  async moveSystemToSpace(systemId, userId, targetSpaceId) {
+    const access = await this.resolveSystemAccess(systemId, userId);
+    if (!access.systemExists) throw new NotFoundError('System not found');
+    if (access.role !== 'owner') throw new AccessDeniedError();
+
+    const [current] = await db
+      .select({
+        id: biddingSystems.id,
+        spaceId: biddingSystems.spaceId,
+      })
+      .from(biddingSystems)
+      .where(eq(biddingSystems.id, systemId))
+      .limit(1);
+    if (!current) throw new NotFoundError('System not found');
+    if (current.spaceId === targetSpaceId) {
+      throw new InvalidStateError('System is already in target space');
+    }
+
+    const movedAt = new Date();
+    const [updated] = await db
+      .update(biddingSystems)
+      .set({
+        spaceId: targetSpaceId,
+        updatedAt: movedAt,
+        updatedById: userId,
+      })
+      .where(eq(biddingSystems.id, systemId))
+      .returning({
+        id: biddingSystems.id,
+        spaceId: biddingSystems.spaceId,
+      });
+    if (!updated) throw new NotFoundError('System not found');
+
+    return {
+      id: updated.id,
+      previousSpaceId: current.spaceId,
+      spaceId: updated.spaceId,
+      movedAt: movedAt.toISOString(),
+    };
   },
 
   async createDraftFromVersion(systemId, userId, versionId) {

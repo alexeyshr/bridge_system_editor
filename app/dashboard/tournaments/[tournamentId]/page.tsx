@@ -45,6 +45,9 @@ export default async function TournamentScopePage({ params }: PageProps) {
           <span className="font-medium text-[#1f2734]">tournament:{tournamentId}</span>
           .
         </p>
+        <p className="mt-2 text-sm text-[#6e7788]">
+          Tournament-system binding is optional: systems can be published first, then linked here for organizer workflows.
+        </p>
 
         <dl className="mt-4 grid gap-3 rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] p-4 text-sm text-[#1f2734]">
           <div className="flex items-center justify-between">

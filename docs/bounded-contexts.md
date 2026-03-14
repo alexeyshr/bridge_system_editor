@@ -1,6 +1,6 @@
 # Bounded Contexts
 
-Last updated: 2026-03-08
+Last updated: 2026-03-14
 
 This document defines domain boundaries so models do not collapse into one mixed schema.
 
@@ -65,17 +65,33 @@ This document defines domain boundaries so models do not collapse into one mixed
   - collaboration lifecycle and invitation status,
   - conversation domain around systems and nodes.
 
-## 6) Discovery and Search
+## 6) Spaces and Content Publishing
+
+- Responsibility:
+  - space lifecycle (personal/team scope, visibility policy),
+  - membership and join/invite flows,
+  - content lifecycle (draft/published/archived),
+  - content block schema and publication visibility.
+- Core entities:
+  - `Space`, `SpaceMembership`, `SpaceJoinRequest`, `SpaceInvite`,
+  - `ContentItem`, `ContentVersion`, `ContentTag`, `ContentLink`.
+- Owns:
+  - where content lives,
+  - who can see/publish content,
+  - strict visibility rule enforcement (`hidden` space cannot publish public content).
+
+## 7) Discovery and Search
 
 - Responsibility:
   - indexing and search over systems and notes,
+  - indexing and search over content and spaces,
   - saved search views.
 - Core entities:
   - `SearchDocument`, `SavedQuery`, `SmartView`.
 - Owns:
   - search schema and ranking behavior.
 
-## 7) Notification and Bot Integration
+## 8) Notification and Bot Integration
 
 - Responsibility:
   - Telegram bot events,
@@ -85,6 +101,25 @@ This document defines domain boundaries so models do not collapse into one mixed
   - `BotEvent`, `NotificationDelivery`, `TelegramUserLink`.
 - Owns:
   - channel-specific message and delivery contracts.
+
+## 9) Deal Study and Analysis Experience
+
+- Responsibility:
+  - bridge-native deal authoring surface,
+  - W/N/E/S hands composition and masking,
+  - auction, lead, and play timeline interaction,
+  - DD snapshot presentation,
+  - analysis-bound comments and polls.
+- Core entities:
+  - `DealStudy`, `DealHandMask`, `AuctionSequence`, `LeadSelection`,
+  - `PlayStep`, `DoubleDummySnapshot`, `StudyPoll`.
+- Owns:
+  - the canonical UX and payload contract for study analysis flows,
+  - rendering and interaction semantics for educational/tournament review studies.
+- Traceability:
+  - ADR: `docs/adr/ADR-0011-deal-study-workspace-and-interactive-analysis-model.md`
+  - Spec: `specs/015-deal-study-workspace-and-interactive-analysis/`
+  - Linear: `BRI-99..BRI-107`
 
 ## Integration Rules
 
@@ -101,5 +136,7 @@ Near-term execution focuses on:
 3. System Lifecycle and Versioning
 4. Tournament Usage Binding
 5. Collaboration and Sharing
+6. Spaces and Content Publishing
+7. Deal Study and Analysis Experience
 
 Search and bot contexts can evolve incrementally after persistence/auth baseline is stable.

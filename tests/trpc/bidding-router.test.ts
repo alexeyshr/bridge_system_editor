@@ -14,6 +14,8 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
       input: { title: string; description?: string | null; templateId?: 'standard' | 'two_over_one' | 'precision' },
     ) => ({
       id: 'sys-1',
+      spaceId: 'space-personal-1',
+      creatorUserId: _userId,
       title: input.title,
       description: input.description ?? null,
       schemaVersion: 1,
@@ -24,6 +26,8 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
     }),
     getSystemForUser: async (_systemId: string) => ({
       id: 'sys-1',
+      spaceId: 'space-personal-1',
+      creatorUserId: 'user-1',
       title: 'Demo',
       description: null,
       schemaVersion: 1,
@@ -34,6 +38,7 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
     }),
     updateSystemMetadata: async (_systemId: string, _userId: string, input: { title?: string; description?: string | null; schemaVersion?: number }) => ({
       id: 'sys-1',
+      spaceId: 'space-personal-1',
       title: input.title ?? 'Demo',
       description: input.description ?? null,
       schemaVersion: input.schemaVersion ?? 1,
@@ -58,6 +63,21 @@ function createDeps(overrides: Partial<Parameters<typeof createBiddingRouter>[0]
       },
     }),
     listSystemVersions: async () => [],
+    listSystemTimelineForUser: async () => ({
+      events: [],
+      pageInfo: {
+        limit: 40,
+        windowDays: 90,
+        hasMore: false,
+        nextCursor: null,
+      },
+    }),
+    moveSystemToSpace: async (_systemId: string, _userId: string, targetSpaceId: string) => ({
+      id: 'sys-1',
+      previousSpaceId: 'space-personal-1',
+      spaceId: targetSpaceId,
+      movedAt: new Date().toISOString(),
+    }),
     publishSystemVersion: async (_systemId: string, _userId: string, input: { label?: string | null; notes?: string | null }) => ({
       id: 'ver-1',
       systemId: 'sys-1',
@@ -280,6 +300,8 @@ test('bidding.systems.create forwards template payload to service dependency', a
       receivedInput = input;
       return {
         id: 'sys-1',
+        spaceId: 'space-personal-1',
+        creatorUserId: _userId,
         title: input.title,
         description: input.description ?? null,
         schemaVersion: 1,
@@ -366,6 +388,77 @@ test('bidding.lifecycle.compare returns comparison payload', async () => {
   assert.deepEqual(result.comparison.changedSequenceIds, ['1C-1D', '1C-1NT']);
 });
 
+test('bidding.lifecycle.timeline returns recent timeline payload', async () => {
+  let receivedInput:
+    | {
+      limit?: number;
+      windowDays?: number;
+      categories?: Array<'node' | 'lifecycle' | 'binding' | 'sharing' | 'discussion' | 'link' | 'system' | 'other'>;
+      cursor?: { createdAt: string; id: string };
+    }
+    | undefined;
+
+  const caller = createCaller('user-1', {
+    listSystemTimelineForUser: async (_systemId, _userId, input) => {
+      receivedInput = input;
+      return {
+      events: [
+        {
+          id: 'audit-1',
+          action: 'node.sync',
+          category: 'node',
+          targetType: 'system',
+          targetId: 'sys-1',
+          payload: { upserted: 3, removed: 1 },
+          createdAt: new Date().toISOString(),
+          actor: {
+            id: 'user-1',
+            displayName: 'Alexey',
+            email: 'alexey@example.com',
+            telegramUsername: null,
+            label: 'Alexey',
+            profileHref: '/dashboard/settings',
+          },
+        },
+      ],
+      pageInfo: {
+        limit: 20,
+        windowDays: 30,
+        hasMore: true,
+        nextCursor: {
+          id: 'audit-1',
+          createdAt: new Date().toISOString(),
+        },
+      },
+    };
+    },
+  });
+
+  const cursor = {
+    id: 'audit-0',
+    createdAt: new Date(Date.now() - 60_000).toISOString(),
+  };
+  const result = await caller.lifecycle.timeline({
+    systemId: 'sys-1',
+    limit: 20,
+    windowDays: 30,
+    categories: ['node'],
+    cursor,
+  });
+
+  assert.deepEqual(receivedInput, {
+    limit: 20,
+    windowDays: 30,
+    categories: ['node'],
+    cursor,
+  });
+  assert.equal(result.timeline.events.length, 1);
+  assert.equal(result.timeline.events[0]?.category, 'node');
+  assert.equal(result.timeline.events[0]?.action, 'node.sync');
+  assert.equal(result.timeline.pageInfo.windowDays, 30);
+  assert.equal(result.timeline.pageInfo.hasMore, true);
+});
+
 test('bidding.bindings.freeze maps invalid state to CONFLICT', async () => {
   const caller = createCaller('user-1', {
     freezeTournamentBinding: async () => {
@@ -403,6 +496,32 @@ test('bidding.bindings.freezeTournament returns aggregate payload', async () => 
 
   assert.equal(result.result.tournamentId, 'tour-1');
   assert.equal(result.result.frozenCount, 1);
+});
+
+test('bidding.systems.move forwards target space and returns payload', async () => {
+  let receivedTargetSpaceId = '';
+  const caller = createCaller('user-1', {
+    moveSystemToSpace: async (_systemId, _userId, targetSpaceId) => {
+      receivedTargetSpaceId = targetSpaceId;
+      return {
+        id: 'sys-1',
+        previousSpaceId: 'space-personal-1',
+        spaceId: targetSpaceId,
+        movedAt: new Date().toISOString(),
+      };
+    },
+  });
+
+  const result = await caller.systems.move({
+    systemId: 'sys-1',
+    data: {
+      targetSpaceId: 'space-team-42',
+    },
+  });
+
+  assert.equal(receivedTargetSpaceId, 'space-team-42');
+  assert.equal(result.moved.previousSpaceId, 'space-personal-1');
+  assert.equal(result.moved.spaceId, 'space-team-42');
 });
 
 test('bidding.shares.list checks shares.manage capability before service call', async () => {

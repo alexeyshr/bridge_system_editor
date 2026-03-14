@@ -28,7 +28,7 @@ const CAPABILITY_MATRIX: CapabilityMatrix = {
   editor: {
     'system.read': true,
     'system.edit': true,
-    'lifecycle.publish': true,
+    'lifecycle.publish': false,
     'shares.manage': false,
     'invites.manage': true,
     'users.search': true,

@@ -32,7 +32,9 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     label: "Reading",
     items: [
       { title: "Frontpage", url: "/dashboard", icon: "home", requires: ["feed.read"] },
+      { title: "Content", url: "/dashboard/content", icon: "newspaper", requires: ["feed.read"] },
       { title: "Latest", url: "#", icon: "newspaper", requires: ["feed.read"] },
+      { title: "Spaces", url: "/dashboard/spaces", icon: "message", requires: ["feed.read"] },
       { title: "Discussions", url: "#", icon: "message", requires: ["discussion.read"] },
       { title: "Sequences", url: "#", icon: "book", requires: ["lesson.read"] },
     ],

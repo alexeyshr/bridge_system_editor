@@ -64,6 +64,48 @@
       "when": 1773370200000,
       "tag": "0008_bridgesport_player_tournaments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1773373800000,
+      "tag": "0009_bridgesport_tournament_results",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1773377400000,
+      "tag": "0010_space_membership_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1773381000000,
+      "tag": "0011_system_space_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1773420000000,
+      "tag": "0012_content_domain_mvp",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1773507600000,
+      "tag": "0013_deal_study_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1773511200000,
+      "tag": "0014_fix_deal_study_doubled_state_default",
+      "breakpoints": true
     }
   ]
 }

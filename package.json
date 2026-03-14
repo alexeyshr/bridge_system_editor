@@ -23,6 +23,8 @@
     "db:seed:remote": "tsx scripts/run-with-db-tunnel.ts seed",
     "db:ingest:bridgesport": "tsx scripts/ingest-bridgesport.ts",
     "db:ingest:bridgesport:remote": "tsx scripts/run-with-db-tunnel.ts ingest-bridgesport",
+    "db:reload:tournament-results": "tsx scripts/reload-tournament-results.ts",
+    "db:reload:tournament-results:remote": "tsx scripts/run-with-db-tunnel.ts -- npm run db:reload:tournament-results",
     "db:reload:player-tournaments": "tsx scripts/reload-player-tournaments.ts",
     "db:reload:player-tournaments:remote": "tsx scripts/run-with-db-tunnel.ts -- npm run db:reload:player-tournaments",
     "ui:baseline": "node scripts/run-ui-baseline-check.mjs"

@@ -15,6 +15,19 @@ export const shareRoleEnum = pgEnum('share_role', ['viewer', 'reviewer', 'editor
 export const portalGlobalRoleEnum = pgEnum('portal_global_role', ['user', 'teacher', 'judge', 'organizer', 'admin']);
 export const portalScopeTypeEnum = pgEnum('portal_scope_type', ['tournament', 'school']);
 export const portalScopedRoleEnum = pgEnum('portal_scoped_role', ['teacher', 'judge', 'organizer', 'admin']);
+export const spaceTypeEnum = pgEnum('space_type', ['personal', 'team']);
+export const spaceVisibilityEnum = pgEnum('space_visibility', ['public', 'hidden']);
+export const spaceJoinPolicyEnum = pgEnum('space_join_policy', ['request', 'invite_only']);
+export const spaceReviewPolicyEnum = pgEnum('space_review_policy', ['none', 'required']);
+export const spaceMemberRoleEnum = pgEnum('space_member_role', ['owner', 'admin', 'editor', 'member']);
+export const spaceJoinRequestStatusEnum = pgEnum('space_join_request_status', ['pending', 'approved', 'rejected', 'cancelled']);
+export const spaceInviteStatusEnum = pgEnum('space_invite_status', ['pending', 'accepted', 'revoked', 'expired']);
+export const contentFormatEnum = pgEnum('content_format', ['article', 'deal_analysis', 'auction_lesson', 'tournament_recap', 'quiz']);
+export const contentVisibilityEnum = pgEnum('content_visibility', ['public', 'members_only']);
+export const contentStatusEnum = pgEnum('content_status', ['draft', 'published', 'archived']);
+export const contentLinkTargetEnum = pgEnum('content_link_target', ['system', 'tournament', 'content', 'external']);
+export const dealStudyDdSourceEnum = pgEnum('deal_study_dd_source', ['solver', 'import']);
+export const dealStudyPollScopeEnum = pgEnum('deal_study_poll_scope', ['auction', 'lead', 'play', 'general']);
 export const inviteChannelEnum = pgEnum('invite_channel', ['email', 'internal', 'telegram']);
 export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'revoked', 'expired']);
 export const tournamentBindingScopeEnum = pgEnum('tournament_binding_scope', ['global', 'pair', 'team']);
@@ -33,6 +46,251 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   emailUnique: uniqueIndex('users_email_unique').on(table.email),
+}));
+
+export const spaces = pgTable('spaces', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  slug: varchar('slug', { length: 191 }),
+  name: varchar('name', { length: 120 }).notNull(),
+  description: text('description'),
+  type: spaceTypeEnum('type').notNull().default('personal'),
+  visibility: spaceVisibilityEnum('visibility').notNull().default('hidden'),
+  joinPolicy: spaceJoinPolicyEnum('join_policy').notNull().default('invite_only'),
+  reviewPolicy: spaceReviewPolicyEnum('review_policy').notNull().default('none'),
+  ownerUserId: varchar('owner_user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  slugUnique: uniqueIndex('spaces_slug_unique').on(table.slug),
+  ownerTypeIdx: index('spaces_owner_type_idx').on(table.ownerUserId, table.type),
+  visibilityJoinIdx: index('spaces_visibility_join_idx').on(table.visibility, table.joinPolicy),
+  createdByIdx: index('spaces_created_by_idx').on(table.createdById),
+}));
+
+export const spaceMembers = pgTable('space_members', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  spaceId: varchar('space_id', { length: 191 }).notNull().references(() => spaces.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: spaceMemberRoleEnum('role').notNull().default('member'),
+  invitedById: varchar('invited_by_id', { length: 191 }).references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  spaceUserUnique: uniqueIndex('space_members_space_user_unique').on(table.spaceId, table.userId),
+  spaceRoleIdx: index('space_members_space_role_idx').on(table.spaceId, table.role),
+  userIdIdx: index('space_members_user_id_idx').on(table.userId),
+  invitedByIdIdx: index('space_members_invited_by_id_idx').on(table.invitedById),
+}));
+
+export const spaceJoinRequests = pgTable('space_join_requests', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  spaceId: varchar('space_id', { length: 191 }).notNull().references(() => spaces.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  message: text('message'),
+  status: spaceJoinRequestStatusEnum('status').notNull().default('pending'),
+  reviewedById: varchar('reviewed_by_id', { length: 191 }).references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  spaceStatusIdx: index('space_join_requests_space_status_idx').on(table.spaceId, table.status),
+  userStatusIdx: index('space_join_requests_user_status_idx').on(table.userId, table.status),
+  spaceUserIdx: index('space_join_requests_space_user_idx').on(table.spaceId, table.userId),
+  reviewedByIdIdx: index('space_join_requests_reviewed_by_id_idx').on(table.reviewedById),
+}));
+
+export const spaceInvites = pgTable('space_invites', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  spaceId: varchar('space_id', { length: 191 }).notNull().references(() => spaces.id, { onDelete: 'cascade' }),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: spaceMemberRoleEnum('role').notNull().default('member'),
+  targetEmail: varchar('target_email', { length: 255 }),
+  targetUserId: varchar('target_user_id', { length: 191 }).references(() => users.id, { onDelete: 'set null' }),
+  token: varchar('token', { length: 191 }).notNull(),
+  status: spaceInviteStatusEnum('status').notNull().default('pending'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  acceptedById: varchar('accepted_by_id', { length: 191 }).references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tokenUnique: uniqueIndex('space_invites_token_unique').on(table.token),
+  spaceStatusIdx: index('space_invites_space_status_idx').on(table.spaceId, table.status),
+  targetUserIdIdx: index('space_invites_target_user_id_idx').on(table.targetUserId),
+}));
+
+export const contentItems = pgTable('content_items', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  spaceId: varchar('space_id', { length: 191 }).notNull().references(() => spaces.id, { onDelete: 'cascade' }),
+  authorUserId: varchar('author_user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 160 }).notNull(),
+  summary: text('summary'),
+  format: contentFormatEnum('format').notNull().default('article'),
+  visibility: contentVisibilityEnum('visibility').notNull().default('members_only'),
+  status: contentStatusEnum('status').notNull().default('draft'),
+  blocks: jsonb('blocks').notNull().default([]),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  lastVersionNumber: integer('last_version_number').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedById: varchar('updated_by_id', { length: 191 }).notNull().references(() => users.id),
+}, (table) => ({
+  spaceStatusUpdatedIdx: index('content_items_space_status_updated_idx').on(table.spaceId, table.status, table.updatedAt),
+  spaceVisibilityStatusIdx: index('content_items_space_visibility_status_idx').on(table.spaceId, table.visibility, table.status),
+  authorIdIdx: index('content_items_author_id_idx').on(table.authorUserId),
+  updatedByIdIdx: index('content_items_updated_by_id_idx').on(table.updatedById),
+}));
+
+export const contentVersions = pgTable('content_versions', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  versionNumber: integer('version_number').notNull(),
+  title: varchar('title', { length: 160 }).notNull(),
+  summary: text('summary'),
+  format: contentFormatEnum('format').notNull(),
+  visibility: contentVisibilityEnum('visibility').notNull(),
+  status: contentStatusEnum('status').notNull(),
+  snapshot: jsonb('snapshot').notNull(),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemVersionUnique: uniqueIndex('content_versions_item_version_unique').on(table.contentItemId, table.versionNumber),
+  itemCreatedIdx: index('content_versions_item_created_idx').on(table.contentItemId, table.createdAt),
+  createdByIdIdx: index('content_versions_created_by_id_idx').on(table.createdById),
+}));
+
+export const contentTags = pgTable('content_tags', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  tag: varchar('tag', { length: 64 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemTagUnique: uniqueIndex('content_tags_item_tag_unique').on(table.contentItemId, table.tag),
+  tagIdx: index('content_tags_tag_idx').on(table.tag),
+}));
+
+export const contentLinks = pgTable('content_links', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  targetType: contentLinkTargetEnum('target_type').notNull(),
+  targetId: varchar('target_id', { length: 191 }),
+  url: text('url'),
+  label: varchar('label', { length: 120 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemTargetIdx: index('content_links_item_target_idx').on(table.contentItemId, table.targetType, table.targetId),
+}));
+
+export const contentDealStudies = pgTable('content_deal_studies', {
+  contentItemId: varchar('content_item_id', { length: 191 }).primaryKey().references(() => contentItems.id, { onDelete: 'cascade' }),
+  board: varchar('board', { length: 64 }),
+  dealer: varchar('dealer', { length: 1 }).notNull().default('N'),
+  vulnerability: varchar('vulnerability', { length: 8 }).notNull().default('none'),
+  contractLevel: integer('contract_level'),
+  contractDenom: varchar('contract_denom', { length: 4 }),
+  declarer: varchar('declarer', { length: 1 }),
+  doubledState: varchar('doubled_state', { length: 2 }).notNull().default('N'),
+  resultDelta: integer('result_delta'),
+  leadSuit: varchar('lead_suit', { length: 1 }),
+  leadRank: varchar('lead_rank', { length: 2 }),
+  hands: jsonb('hands').notNull().default({
+    W: { S: '', H: '', D: '', C: '' },
+    N: { S: '', H: '', D: '', C: '' },
+    E: { S: '', H: '', D: '', C: '' },
+    S: { S: '', H: '', D: '', C: '' },
+  }),
+  visibilityMask: jsonb('visibility_mask').notNull().default({ hiddenSeats: [], hiddenCards: [] }),
+  auctionStartingSeat: varchar('auction_starting_seat', { length: 1 }).notNull().default('W'),
+  auctionSequence: jsonb('auction_sequence').notNull().default([]),
+  auctionNotes: text('auction_notes'),
+  narrativeMarkdown: text('narrative_markdown').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedById: varchar('updated_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  updatedByIdIdx: index('content_deal_studies_updated_by_id_idx').on(table.updatedById),
+}));
+
+export const contentDealStudyPlaySteps = pgTable('content_deal_study_play_steps', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  trickNo: integer('trick_no').notNull(),
+  leader: varchar('leader', { length: 1 }).notNull(),
+  cards: jsonb('cards').notNull().default([]),
+  winner: varchar('winner', { length: 1 }),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemTrickUnique: uniqueIndex('content_deal_study_play_steps_item_trick_unique').on(table.contentItemId, table.trickNo),
+  itemTrickIdx: index('content_deal_study_play_steps_item_trick_idx').on(table.contentItemId, table.trickNo),
+}));
+
+export const contentDealStudyDdSnapshots = pgTable('content_deal_study_dd_snapshots', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  source: dealStudyDdSourceEnum('source').notNull().default('import'),
+  matrix: jsonb('matrix').notNull().default({}),
+  par: jsonb('par').notNull().default({}),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemCreatedIdx: index('content_deal_study_dd_snapshots_item_created_idx').on(table.contentItemId, table.createdAt),
+  createdByIdx: index('content_deal_study_dd_snapshots_created_by_idx').on(table.createdById),
+}));
+
+export const contentDealStudyComments = pgTable('content_deal_study_comments', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  parentCommentId: varchar('parent_comment_id', { length: 191 }),
+  authorId: varchar('author_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  anchor: jsonb('anchor'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemCreatedIdx: index('content_deal_study_comments_item_created_idx').on(table.contentItemId, table.createdAt),
+  parentIdx: index('content_deal_study_comments_parent_idx').on(table.parentCommentId),
+  authorIdx: index('content_deal_study_comments_author_idx').on(table.authorId),
+}));
+
+export const contentDealStudyPolls = pgTable('content_deal_study_polls', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  scope: dealStudyPollScopeEnum('scope').notNull().default('general'),
+  question: varchar('question', { length: 500 }).notNull(),
+  isClosed: boolean('is_closed').notNull().default(false),
+  createdById: varchar('created_by_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemCreatedIdx: index('content_deal_study_polls_item_created_idx').on(table.contentItemId, table.createdAt),
+  createdByIdx: index('content_deal_study_polls_created_by_idx').on(table.createdById),
+}));
+
+export const contentDealStudyPollOptions = pgTable('content_deal_study_poll_options', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  pollId: varchar('poll_id', { length: 191 }).notNull().references(() => contentDealStudyPolls.id, { onDelete: 'cascade' }),
+  optionOrder: integer('option_order').notNull(),
+  label: varchar('label', { length: 300 }).notNull(),
+}, (table) => ({
+  pollOrderUnique: uniqueIndex('content_deal_study_poll_options_poll_order_unique').on(table.pollId, table.optionOrder),
+  pollIdx: index('content_deal_study_poll_options_poll_idx').on(table.pollId),
+}));
+
+export const contentDealStudyPollVotes = pgTable('content_deal_study_poll_votes', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  pollId: varchar('poll_id', { length: 191 }).notNull().references(() => contentDealStudyPolls.id, { onDelete: 'cascade' }),
+  optionId: varchar('option_id', { length: 191 }).notNull().references(() => contentDealStudyPollOptions.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  pollUserUnique: uniqueIndex('content_deal_study_poll_votes_poll_user_unique').on(table.pollId, table.userId),
+  pollIdx: index('content_deal_study_poll_votes_poll_idx').on(table.pollId),
+  optionIdx: index('content_deal_study_poll_votes_option_idx').on(table.optionId),
+  userIdx: index('content_deal_study_poll_votes_user_idx').on(table.userId),
 }));
 
 export const authAccounts = pgTable('auth_accounts', {
@@ -76,7 +334,9 @@ export const userScopedRoles = pgTable('user_scoped_roles', {
 
 export const biddingSystems = pgTable('bidding_systems', {
   id: varchar('id', { length: 191 }).primaryKey(),
+  creatorUserId: varchar('creator_user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   ownerId: varchar('owner_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  spaceId: varchar('space_id', { length: 191 }).notNull().references(() => spaces.id, { onDelete: 'restrict' }),
   title: varchar('title', { length: 120 }).notNull(),
   description: text('description'),
   schemaVersion: integer('schema_version').notNull().default(1),
@@ -85,7 +345,9 @@ export const biddingSystems = pgTable('bidding_systems', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   updatedById: varchar('updated_by_id', { length: 191 }).notNull().references(() => users.id),
 }, (table) => ({
+  creatorIdIdx: index('bidding_systems_creator_id_idx').on(table.creatorUserId),
   ownerIdIdx: index('bidding_systems_owner_id_idx').on(table.ownerId),
+  spaceIdIdx: index('bidding_systems_space_id_idx').on(table.spaceId),
   updatedByIdIdx: index('bidding_systems_updated_by_id_idx').on(table.updatedById),
 }));
 
@@ -313,6 +575,25 @@ export const bridgesportTournaments = pgTable('bridgesport_tournaments', {
   startDateIdx: index('bridgesport_tournaments_start_date_idx').on(table.startDate),
 }));
 
+export const bridgesportTournamentResults = pgTable('bridgesport_tournament_results', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  sourceTournamentId: integer('source_tournament_id').notNull(),
+  rowOrder: integer('row_order').notNull().default(0),
+  placeLabel: text('place_label'),
+  teamName: text('team_name'),
+  players: text('players'),
+  resultLabel: text('result_label'),
+  prizePoints: text('prize_points'),
+  ratingPoints: text('rating_points'),
+  masterPoints: text('master_points'),
+  raw: jsonb('raw').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  sourceTournamentIdx: index('bridgesport_tournament_results_source_tournament_idx').on(table.sourceTournamentId),
+  sourceTournamentRowUnique: uniqueIndex('bridgesport_tournament_results_source_row_unique').on(table.sourceTournamentId, table.rowOrder),
+}));
+
 export const bridgesportPlayers = pgTable('bridgesport_players', {
   id: varchar('id', { length: 191 }).primaryKey(),
   sourcePlayerId: integer('source_player_id').notNull(),
@@ -403,6 +684,21 @@ export const bridgesportCalendarTournaments = pgTable('bridgesport_calendar_tour
 
 export const schema = {
   users,
+  spaces,
+  spaceMembers,
+  spaceJoinRequests,
+  spaceInvites,
+  contentItems,
+  contentVersions,
+  contentTags,
+  contentLinks,
+  contentDealStudies,
+  contentDealStudyPlaySteps,
+  contentDealStudyDdSnapshots,
+  contentDealStudyComments,
+  contentDealStudyPolls,
+  contentDealStudyPollOptions,
+  contentDealStudyPollVotes,
   authAccounts,
   userGlobalRoles,
   userScopedRoles,
@@ -421,6 +717,7 @@ export const schema = {
   readOnlyPublishLinks,
   auditEvents,
   bridgesportTournaments,
+  bridgesportTournamentResults,
   bridgesportPlayers,
   bridgesportPlayerTournaments,
   bridgesportRatingSnapshots,
@@ -431,6 +728,19 @@ export type ShareRole = (typeof shareRoleEnum.enumValues)[number];
 export type PortalGlobalRole = (typeof portalGlobalRoleEnum.enumValues)[number];
 export type PortalScopeType = (typeof portalScopeTypeEnum.enumValues)[number];
 export type PortalScopedRole = (typeof portalScopedRoleEnum.enumValues)[number];
+export type SpaceType = (typeof spaceTypeEnum.enumValues)[number];
+export type SpaceVisibility = (typeof spaceVisibilityEnum.enumValues)[number];
+export type SpaceJoinPolicy = (typeof spaceJoinPolicyEnum.enumValues)[number];
+export type SpaceReviewPolicy = (typeof spaceReviewPolicyEnum.enumValues)[number];
+export type SpaceMemberRole = (typeof spaceMemberRoleEnum.enumValues)[number];
+export type SpaceJoinRequestStatus = (typeof spaceJoinRequestStatusEnum.enumValues)[number];
+export type SpaceInviteStatus = (typeof spaceInviteStatusEnum.enumValues)[number];
+export type ContentFormat = (typeof contentFormatEnum.enumValues)[number];
+export type ContentVisibility = (typeof contentVisibilityEnum.enumValues)[number];
+export type ContentStatus = (typeof contentStatusEnum.enumValues)[number];
+export type ContentLinkTarget = (typeof contentLinkTargetEnum.enumValues)[number];
+export type DealStudyDdSource = (typeof dealStudyDdSourceEnum.enumValues)[number];
+export type DealStudyPollScope = (typeof dealStudyPollScopeEnum.enumValues)[number];
 export type InviteChannel = (typeof inviteChannelEnum.enumValues)[number];
 export type InviteStatus = (typeof inviteStatusEnum.enumValues)[number];
 export type TournamentBindingScope = (typeof tournamentBindingScopeEnum.enumValues)[number];

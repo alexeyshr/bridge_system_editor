@@ -29,10 +29,12 @@ import {
   RevisionConflictError,
   UserLookupError,
   createDraftFromVersion,
+  listSystemTimelineForUser,
   createSystemForUser,
   freezeTournamentBindings,
   freezeTournamentBinding,
   getSystemForUser,
+  moveSystemToSpace,
   listSystemVersions,
   listTournamentBindings,
   listSystemShares,
@@ -53,6 +55,8 @@ import {
   freezeTournamentBindingSchema,
   listSystemsSchema,
   listTournamentBindingsSchema,
+  listSystemTimelineSchema,
+  moveSystemToSpaceSchema,
   publishSystemVersionSchema,
   removeTournamentBindingSchema,
   updateSystemSchema,
@@ -83,10 +87,12 @@ export interface BiddingRouterDeps {
   createSystemForUser: typeof createSystemForUser;
   getSystemForUser: typeof getSystemForUser;
   updateSystemMetadata: typeof updateSystemMetadata;
+  moveSystemToSpace: typeof moveSystemToSpace;
   upsertSystemNodes: typeof upsertSystemNodes;
   listSystemShares: typeof listSystemShares;
   upsertSystemShare: typeof upsertSystemShare;
   listSystemVersions: typeof listSystemVersions;
+  listSystemTimelineForUser: typeof listSystemTimelineForUser;
   publishSystemVersion: typeof publishSystemVersion;
   createDraftFromVersion: typeof createDraftFromVersion;
   compareDraftWithVersion: typeof compareDraftWithVersion;
@@ -143,10 +149,12 @@ const defaultDeps: BiddingRouterDeps = {
   createSystemForUser,
   getSystemForUser,
   updateSystemMetadata,
+  moveSystemToSpace,
   upsertSystemNodes,
   listSystemShares,
   upsertSystemShare,
   listSystemVersions,
+  listSystemTimelineForUser,
   publishSystemVersion,
   createDraftFromVersion,
   compareDraftWithVersion,
@@ -213,6 +221,25 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
           try {
             const system = await deps.updateSystemMetadata(input.systemId, ctx.userId, input.data);
             return { system };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      move: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: moveSystemToSpaceSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const moved = await deps.moveSystemToSpace(
+              input.systemId,
+              ctx.userId,
+              input.data.targetSpaceId,
+            );
+            return { moved };
           } catch (error) {
             mapServiceError(error);
           }
@@ -324,6 +351,21 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
               input.data.versionId,
             );
             return { comparison };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      timeline: protectedProcedure
+        .input(
+          listSystemTimelineSchema.extend({
+            systemId: z.string().min(1),
+          }),
+        )
+        .query(async ({ ctx, input }) => {
+          try {
+            const { systemId, ...timelineInput } = input;
+            const timeline = await deps.listSystemTimelineForUser(systemId, ctx.userId, timelineInput);
+            return { timeline };
           } catch (error) {
             mapServiceError(error);
           }
@@ -477,6 +519,26 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
           try {
             const invite = await deps.acceptInviteToken(input.token, ctx.userId);
             return { invite };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      move: protectedProcedure
+        .input(
+          z.object({
+            systemId: z.string().min(1),
+            data: moveSystemToSpaceSchema,
+          }),
+        )
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const moved = await deps.moveSystemToSpace(
+              input.systemId,
+              ctx.userId,
+              input.data.targetSpaceId,
+              ctx.session?.user?.globalRoles,
+            );
+            return { moved };
           } catch (error) {
             mapServiceError(error);
           }

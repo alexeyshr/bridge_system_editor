@@ -24,6 +24,13 @@ type FeedEntry = {
   href?: string | null;
 };
 
+type ContentFeedItem = {
+  id: string;
+  title: string;
+  summary: string | null;
+  updatedAt: string;
+};
+
 type QuickAction = {
   id: string;
   label: string;
@@ -60,26 +67,43 @@ const FALLBACK_FEED: FeedEntry[] = [
   },
 ];
 
-const QUICK_ACTIONS: QuickAction[] = [
-  {
-    id: 'action-calendar',
-    label: 'Open tournament calendar',
-    hint: 'Future tournaments and dates',
-    href: '/dashboard/tournaments/calendar',
-  },
-  {
-    id: 'action-results',
-    label: 'Open tournament results',
-    hint: 'Archive of completed events',
-    href: '/dashboard/tournaments/results',
-  },
-  {
-    id: 'action-settings',
-    label: 'Account settings',
-    hint: 'Profile and Telegram link',
-    href: '/dashboard/settings',
-  },
-];
+function buildQuickActions(isGuest: boolean): QuickAction[] {
+  const base: QuickAction[] = [
+    {
+      id: 'action-content',
+      label: 'Open content workspace',
+      hint: 'Drafts and published materials',
+      href: '/dashboard/content',
+    },
+    {
+      id: 'action-calendar',
+      label: 'Open tournament calendar',
+      hint: 'Future tournaments and dates',
+      href: '/dashboard/tournaments/calendar',
+    },
+    {
+      id: 'action-results',
+      label: 'Open tournament results',
+      hint: 'Archive of completed events',
+      href: '/dashboard/tournaments/results',
+    },
+    {
+      id: 'action-settings',
+      label: 'Account settings',
+      hint: 'Profile and Telegram link',
+      href: '/dashboard/settings',
+    },
+  ];
+  if (!isGuest) {
+    base.unshift({
+      id: 'action-content-new',
+      label: 'Create content draft',
+      hint: 'Start a new article or lesson',
+      href: '/dashboard/content/new',
+    });
+  }
+  return base;
+}
 
 const GUEST_START_STEPS: GuestStartStep[] = [
   {
@@ -127,7 +151,18 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function buildFeed(data: DashboardSummaryResponse | null): FeedEntry[] {
+function buildFeed(data: DashboardSummaryResponse | null, contentFeed: ContentFeedItem[]): FeedEntry[] {
+  const contentRows = contentFeed.slice(0, 3).map((item) => ({
+    id: `content-${item.id}`,
+    title: item.title,
+    description: item.summary ?? 'Published community content',
+    meta: 'Published content',
+    href: `/dashboard/content/${encodeURIComponent(item.id)}`,
+  }));
+
+  if (contentRows.length > 0) {
+    return contentRows;
+  }
   if (!data?.ready) return FALLBACK_FEED;
 
   const upcoming = data.upcoming.slice(0, 3).map((item) => ({
@@ -182,6 +217,7 @@ type DashboardSummaryWidgetProps = {
 
 export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidgetProps) {
   const [data, setData] = useState<DashboardSummaryResponse | null>(null);
+  const [contentFeed, setContentFeed] = useState<ContentFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,10 +229,21 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
       setError(null);
 
       try {
-        const response = await fetch('/api/dashboard/summary', { cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const payload = (await response.json()) as DashboardSummaryResponse;
-        if (mounted) setData(payload);
+        const [summaryResponse, feedResponse] = await Promise.all([
+          fetch('/api/dashboard/summary', { cache: 'no-store' }),
+          fetch('/api/content/feed?limit=6', { cache: 'no-store' }),
+        ]);
+
+        if (!summaryResponse.ok) throw new Error(`HTTP ${summaryResponse.status}`);
+        const summaryPayload = (await summaryResponse.json()) as DashboardSummaryResponse;
+        if (mounted) setData(summaryPayload);
+
+        if (feedResponse.ok) {
+          const feedPayload = (await feedResponse.json()) as { items?: ContentFeedItem[] };
+          if (mounted) setContentFeed(feedPayload.items ?? []);
+        } else if (mounted) {
+          setContentFeed([]);
+        }
       } catch (requestError) {
         if (!mounted) return;
         setError(requestError instanceof Error ? requestError.message : 'Failed to load dashboard summary');
@@ -215,7 +262,8 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
     if (!data?.generatedAt) return null;
     return formatDate(data.generatedAt);
   }, [data?.generatedAt]);
-  const feed = useMemo(() => buildFeed(data), [data]);
+  const feed = useMemo(() => buildFeed(data, contentFeed), [contentFeed, data]);
+  const quickActions = useMemo(() => buildQuickActions(isGuest), [isGuest]);
   const stats = data?.stats ?? {
     totalPlayers: 0,
     totalTournaments: 0,
@@ -335,7 +383,7 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
           </div>
 
           <div className="mt-3 space-y-2">
-            {QUICK_ACTIONS.map((action) => (
+            {quickActions.map((action) => (
               <a
                 key={action.id}
                 href={action.href}

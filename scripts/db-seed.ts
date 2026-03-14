@@ -11,9 +11,10 @@ async function main() {
     process.exit(1);
   }
 
-  const [{ db }, { biddingNodes, biddingSystems, userGlobalRoles, userScopedRoles, users }] = await Promise.all([
+  const [{ db }, { biddingNodes, biddingSystems, userGlobalRoles, userScopedRoles, users }, { ensurePersonalSpaceForUser }] = await Promise.all([
     import('../lib/db/drizzle/client'),
     import('../lib/db/drizzle/schema'),
+    import('../lib/server/spaces-service'),
   ]);
 
   const now = new Date();
@@ -26,9 +27,13 @@ async function main() {
     updatedAt: now,
   }).onConflictDoNothing();
 
+  const personalSpace = await ensurePersonalSpaceForUser(seedUserId);
+
   await db.insert(biddingSystems).values({
     id: seedSystemId,
+    creatorUserId: seedUserId,
     ownerId: seedUserId,
+    spaceId: personalSpace.id,
     title: 'Seed 1C Starter',
     description: 'Sample bidding system for local development',
     schemaVersion: 1,

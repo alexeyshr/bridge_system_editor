@@ -1,6 +1,6 @@
 # Product Roadmap (Now / Next / Later)
 
-Last updated: 2026-03-08
+Last updated: 2026-03-14
 
 Cadence:
 - 6-week build cycles + cooldown window (Shape Up style).
@@ -35,6 +35,36 @@ Source alignment:
    - invite channels (email/username/Telegram),
    - discussion threads + mentions,
    - publish read-only link.
+5. Start space-scoped portal content and systems integration (`specs/011-space-scoped-content-and-system-integration/`):
+   - personal and team spaces,
+   - strict content visibility policy (`hidden` spaces cannot publish public content),
+   - owner-only system publishing,
+   - optional tournament binding for organizer/judge workflows.
+   - status: F01-F06 delivered, stabilization and UX polish continue.
+6. Deliver content authoring UX and publication workflow (`specs/012-content-authoring-ux-and-publication/`):
+   - content workspace routes (`list/create/edit/view`),
+   - block-based draft authoring UI,
+   - draft save/publish/archive controls with guardrails,
+   - discovery integration in dashboard and navigation.
+   - status: F01-F06 delivered.
+7. Deliver spaces governance workspace and invite flow (`specs/013-space-governance-and-invite-workflow/`):
+   - unified spaces workspace (directory + own spaces),
+   - team space create/edit policy controls,
+   - join request moderation and invite operations,
+   - invite token acceptance route (`/space-invite/[token]`).
+   - status: F01-F06 delivered.
+8. Deliver node change timeline and audit surface (`specs/014-node-change-timeline-and-audit-surface/`):
+   - system timeline contract and audit category model,
+   - audit coverage for node/lifecycle/binding operations,
+   - lifecycle menu timeline surface with category/window filters, cursor paging, and sequence jump affordances.
+   - status: F01-F06 delivered.
+9. Deliver deal study workspace and interactive analysis (`specs/015-deal-study-workspace-and-interactive-analysis/`):
+   - single-surface central deal canvas (non-dashboard style),
+   - W/N/E/S hands composer with mask controls,
+   - dual auction entry (quick text + guided bid pad) and lead picker,
+   - step-by-step play timeline and DD analysis panel,
+   - anchored comments and decision polls.
+   - status: delivered (F01-F08, Linear `BRI-99..BRI-107`).
 
 ## Next
 
@@ -45,9 +75,12 @@ Source alignment:
 2. System profile templates and onboarding:
    - `Standard`, `2/1`, `Precision`,
    - starter roots/sections and guided setup.
-3. Node change timeline:
+3. Node change timeline deepening:
    - node-level history in right panel,
-   - audit-based attribution (`who/when/what`).
+   - richer attribution and drill-down (`who/when/what`).
+4. Deal study enhancements after MVP:
+   - solver adapter hardening and performance budget,
+   - reusable study templates for lessons and tournament review.
 
 ## Later
 

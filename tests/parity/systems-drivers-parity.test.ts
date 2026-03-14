@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../lib/db/drizzle/client';
-import { biddingNodes, biddingSystems, systemShares, users } from '../../lib/db/drizzle/schema';
-import { InvalidStateError } from '../../lib/server/domain-errors';
+import { biddingNodes, biddingSystems, spaceMembers, spaces, systemShares, users } from '../../lib/db/drizzle/schema';
+import { AccessDeniedError, InvalidStateError } from '../../lib/server/domain-errors';
 import { drizzleSystemsDriver } from '../../lib/server/drivers/drizzle-systems-driver';
+import { ensurePersonalSpaceForUser } from '../../lib/server/spaces-service';
 import { createEntityId } from '../../lib/server/utils/id';
 
 const testIfDb = process.env.DATABASE_URL ? test : test.skip;
@@ -29,11 +30,14 @@ testIfDb('drizzle systems driver read path', async () => {
     { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
     { id: viewerId, email: `${viewerId}@example.test`, displayName: 'Viewer', createdAt: now, updatedAt: now },
   ]);
+  const ownerSpace = await ensurePersonalSpaceForUser(ownerId);
 
   try {
     await db.insert(biddingSystems).values({
       id: systemId,
+      creatorUserId: ownerId,
       ownerId,
+      spaceId: ownerSpace.id,
       updatedById: ownerId,
       title: 'Drizzle Read',
       description: 'Read baseline',
@@ -88,11 +92,14 @@ testIfDb('drizzle systems driver mutation path', async () => {
     { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
     { id: editorId, email: `${editorId}@example.test`, displayName: 'Editor', createdAt: now, updatedAt: now },
   ]);
+  const ownerSpace = await ensurePersonalSpaceForUser(ownerId);
 
   try {
     const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
       title: 'Drizzle Mutation',
       description: 'Mutation baseline',
+      creatorUserId: ownerId,
+      spaceId: ownerSpace.id,
     });
 
     assert.equal(created.role, 'owner');
@@ -152,11 +159,14 @@ testIfDb('drizzle systems driver can seed template profile on create', async () 
   await db.insert(users).values([
     { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
   ]);
+  const ownerSpace = await ensurePersonalSpaceForUser(ownerId);
 
   try {
     const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
       title: 'Precision Profile',
       templateId: 'precision',
+      creatorUserId: ownerId,
+      spaceId: ownerSpace.id,
     });
 
     assert.equal(created.revision, 1);
@@ -171,6 +181,96 @@ testIfDb('drizzle systems driver can seed template profile on create', async () 
   }
 });
 
+testIfDb('drizzle systems driver publish is owner-only', async () => {
+  const ownerId = createEntityId('usr');
+  const editorId = createEntityId('usr');
+  const now = new Date();
+
+  await db.insert(users).values([
+    { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
+    { id: editorId, email: `${editorId}@example.test`, displayName: 'Editor', createdAt: now, updatedAt: now },
+  ]);
+  const ownerSpace = await ensurePersonalSpaceForUser(ownerId);
+
+  try {
+    const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
+      title: 'Owner publish only',
+      description: 'Publish guard baseline',
+      creatorUserId: ownerId,
+      spaceId: ownerSpace.id,
+    });
+
+    await drizzleSystemsDriver.upsertSystemShare(created.id, ownerId, {
+      role: 'editor',
+      userId: editorId,
+    });
+
+    await assert.rejects(
+      () =>
+        drizzleSystemsDriver.publishSystemVersion(created.id, editorId, {
+          label: 'attempt-by-editor',
+        }),
+      (error: unknown) => error instanceof AccessDeniedError,
+    );
+  } finally {
+    await cleanupUsers([ownerId, editorId]);
+  }
+});
+
+testIfDb('drizzle systems driver can move system to another space', async () => {
+  const ownerId = createEntityId('usr');
+  const now = new Date();
+
+  await db.insert(users).values([
+    { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
+  ]);
+  const ownerSpace = await ensurePersonalSpaceForUser(ownerId);
+  const targetSpaceId = createEntityId('space');
+
+  try {
+    await db.insert(spaces).values({
+      id: targetSpaceId,
+      slug: null,
+      name: 'Owner Team Space',
+      description: null,
+      type: 'team',
+      visibility: 'hidden',
+      joinPolicy: 'invite_only',
+      reviewPolicy: 'none',
+      ownerUserId: ownerId,
+      createdById: ownerId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(spaceMembers).values({
+      id: createEntityId('space_member'),
+      spaceId: targetSpaceId,
+      userId: ownerId,
+      role: 'owner',
+      invitedById: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
+      title: 'Move baseline',
+      creatorUserId: ownerId,
+      spaceId: ownerSpace.id,
+    });
+
+    const moved = await drizzleSystemsDriver.moveSystemToSpace(created.id, ownerId, targetSpaceId);
+    assert.equal(moved.id, created.id);
+    assert.equal(moved.previousSpaceId, ownerSpace.id);
+    assert.equal(moved.spaceId, targetSpaceId);
+
+    const system = await drizzleSystemsDriver.getSystemForUser(created.id, ownerId);
+    assert.equal(system.spaceId, targetSpaceId);
+  } finally {
+    await cleanupUsers([ownerId]);
+  }
+});
+
 testIfDb('drizzle systems driver lifecycle and tournament bindings path', async () => {
   const ownerId = createEntityId('usr');
   const now = new Date();
@@ -178,11 +278,14 @@ testIfDb('drizzle systems driver lifecycle and tournament bindings path', async 
   await db.insert(users).values([
     { id: ownerId, email: `${ownerId}@example.test`, displayName: 'Owner', createdAt: now, updatedAt: now },
   ]);
+  const ownerSpace = await ensurePersonalSpaceForUser(ownerId);
 
   try {
     const created = await drizzleSystemsDriver.createSystemForUser(ownerId, {
       title: 'Lifecycle baseline',
       description: 'Lifecycle',
+      creatorUserId: ownerId,
+      spaceId: ownerSpace.id,
     });
 
     await drizzleSystemsDriver.upsertSystemNodes(created.id, ownerId, {

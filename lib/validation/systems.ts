@@ -90,3 +90,30 @@ export const removeTournamentBindingSchema = z.object({
 export const freezeTournamentBindingsSchema = z.object({
   tournamentId: z.string().trim().min(1),
 });
+
+export const moveSystemToSpaceSchema = z.object({
+  targetSpaceId: z.string().trim().min(1),
+});
+
+export const timelineCategorySchema = z.enum([
+  'node',
+  'lifecycle',
+  'binding',
+  'sharing',
+  'discussion',
+  'link',
+  'system',
+  'other',
+]);
+
+export const timelineCursorSchema = z.object({
+  createdAt: z.string().datetime(),
+  id: z.string().trim().min(1).max(191),
+});
+
+export const listSystemTimelineSchema = z.object({
+  limit: z.number().int().min(1).max(100).optional(),
+  windowDays: z.number().int().min(1).max(365).optional(),
+  categories: z.array(timelineCategorySchema).max(8).optional(),
+  cursor: timelineCursorSchema.optional(),
+});

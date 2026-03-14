@@ -9,6 +9,7 @@ import {
   bridgesportPlayerTournaments,
   bridgesportPlayers,
   bridgesportRatingSnapshots,
+  bridgesportTournamentResults,
   bridgesportTournaments,
 } from '../lib/db/drizzle/schema';
 
@@ -85,7 +86,7 @@ type RawPlayerTournamentHistoryRow = {
 };
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
-const CHUNK_SIZE = 500;
+const CHUNK_SIZE = 100;
 
 loadEnvConfig(process.cwd());
 
@@ -126,6 +127,23 @@ function cleanText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const cleaned = value.trim();
   return cleaned.length > 0 ? cleaned : null;
+}
+
+function asText(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
+}
+
+function pickResultField(
+  row: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = cleanText(asText(row[key]));
+    if (value) return value;
+  }
+  return null;
 }
 
 function parseIsoDate(value: unknown): Date | null {
@@ -315,6 +333,40 @@ async function ingest() {
     })
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
+  const tournamentResultValues = tournamentRows.flatMap((row) => {
+    const sourceTournamentId = parseInteger(row.id);
+    if (!sourceTournamentId || !Array.isArray(row.results)) return [];
+
+    return row.results.map((resultRow, index) => {
+      const normalizedRaw = (resultRow && typeof resultRow === 'object' && !Array.isArray(resultRow)
+        ? resultRow
+        : { value: resultRow }) as Record<string, unknown>;
+
+      const playerNames = [
+        pickResultField(normalizedRaw, ['Игрок1', 'name1', 'player1']),
+        pickResultField(normalizedRaw, ['Игрок2', 'name2', 'player2']),
+      ].filter((value): value is string => Boolean(value));
+
+      return {
+        id: `bs_tournament_result_${sourceTournamentId}_${index + 1}`,
+        sourceTournamentId,
+        rowOrder: index + 1,
+        placeLabel: pickResultField(normalizedRaw, ['#', 'rk', 'rank', 'место']),
+        teamName: pickResultField(normalizedRaw, ['Команда', 'team', 'pair', 'name']),
+        players: pickResultField(normalizedRaw, ['Игроки', 'player']) ?? (
+          playerNames.length > 0 ? playerNames.join(', ') : null
+        ),
+        resultLabel: pickResultField(normalizedRaw, ['Результат', 'Results', 'result', 'Final', 'Total']),
+        prizePoints: pickResultField(normalizedRaw, ['ПБ', 'pb']),
+        ratingPoints: pickResultField(normalizedRaw, ['РО', 'ro']),
+        masterPoints: pickResultField(normalizedRaw, ['МБ', 'mb']),
+        raw: normalizedRaw,
+        createdAt: now,
+        updatedAt: now,
+      };
+    });
+  });
+
   const calendarValues = calendarRows
     .map((row) => {
       const sourceTournamentId = parseInteger(row.id);
@@ -426,6 +478,11 @@ async function ingest() {
     await db.insert(bridgesportTournaments).values(chunk);
   });
 
+  await db.delete(bridgesportTournamentResults);
+  await upsertInChunks(tournamentResultValues, async (chunk) => {
+    await db.insert(bridgesportTournamentResults).values(chunk);
+  });
+
   await db.delete(bridgesportCalendarTournaments);
   await upsertInChunks(calendarValues, async (chunk) => {
     await db.insert(bridgesportCalendarTournaments).values(chunk);
@@ -448,6 +505,7 @@ async function ingest() {
 
   console.log(`BridgeSport ingest complete:
   tournaments: ${tournamentValues.length}
+  tournament results: ${tournamentResultValues.length}
   calendar tournaments: ${calendarValues.length}
   players: ${playerValues.length}
   player tournaments: ${playerTournamentValues.length}

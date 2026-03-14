@@ -17,6 +17,7 @@ export interface SystemsDriver {
   resolveSystemAccess(systemId: string, userId: string): Promise<ResolvedAccess>;
   listSystemsForUser(userId: string): Promise<Array<{
     id: string;
+    spaceId: string;
     title: string;
     description: string | null;
     schemaVersion: number;
@@ -26,9 +27,17 @@ export interface SystemsDriver {
   }>>;
   createSystemForUser(
     userId: string,
-    input: { title: string; description?: string | null; templateId?: SystemTemplateId },
+    input: {
+      title: string;
+      description?: string | null;
+      templateId?: SystemTemplateId;
+      spaceId: string;
+      creatorUserId: string;
+    },
   ): Promise<{
     id: string;
+    spaceId: string;
+    creatorUserId: string;
     title: string;
     description: string | null;
     schemaVersion: number;
@@ -39,6 +48,8 @@ export interface SystemsDriver {
   }>;
   getSystemForUser(systemId: string, userId: string): Promise<{
     id: string;
+    spaceId: string;
+    creatorUserId: string;
     title: string;
     description: string | null;
     schemaVersion: number;
@@ -57,11 +68,22 @@ export interface SystemsDriver {
     input: { title?: string; description?: string | null; schemaVersion?: number },
   ): Promise<{
     id: string;
+    spaceId: string;
     title: string;
     description: string | null;
     schemaVersion: number;
     revision: number;
     updatedAt: string;
+  }>;
+  moveSystemToSpace(
+    systemId: string,
+    userId: string,
+    targetSpaceId: string,
+  ): Promise<{
+    id: string;
+    previousSpaceId: string;
+    spaceId: string;
+    movedAt: string;
   }>;
   upsertSystemNodes(
     systemId: string,

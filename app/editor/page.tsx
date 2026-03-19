@@ -70,7 +70,7 @@ export default function Page() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-white text-slate-900 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-white text-[#1f2734] overflow-hidden font-sans">
       <TopBar />
       <div className="flex flex-1 overflow-hidden relative">
         {isMobile ? (
@@ -99,7 +99,7 @@ export default function Page() {
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <LeftPanel />
                 </Panel>
-                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#f0f0f0] hover:bg-[#e5e7eb] transition-colors cursor-col-resize" />
               </>
             )}
             
@@ -109,7 +109,7 @@ export default function Page() {
             
             {isRightPanelOpen && (
               <>
-                <Separator className="w-1 bg-[#DBEAFE] hover:bg-[#BFDBFE] transition-colors cursor-col-resize" />
+                <Separator className="w-1 bg-[#f0f0f0] hover:bg-[#e5e7eb] transition-colors cursor-col-resize" />
                 <Panel defaultSize={20} minSize={10} collapsible={true}>
                   <RightPanel />
                 </Panel>

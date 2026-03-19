@@ -1,36 +1,43 @@
-
 "use client"
 
 import Link from "next/link"
 import { useSession } from "next-auth/react"
-import { useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import {
-  BellRingIcon,
-  CheckCheckIcon,
-  CircleHelpIcon,
-  CompassIcon,
+  CheckIcon,
   CopyIcon,
+  GlobeIcon,
   LockIcon,
   MailPlusIcon,
+  MoreHorizontalIcon,
   PlusIcon,
   SearchIcon,
+  SettingsIcon,
   ShieldCheckIcon,
   UsersIcon,
   XIcon,
 } from "lucide-react"
 
 import { PortalPageShell } from "@/components/portal-page-shell"
-import { Button } from "@/components/ui/button"
 import { normalizePortalRoles, type PortalRole } from "@/lib/portal-access"
 import { trpc } from "@/lib/trpc/react"
-import { cn } from "@/lib/utils"
 
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+type TabId = "my" | "discover" | "manage"
 type RequestStatus = "pending" | "approved" | "rejected" | "cancelled"
 type InviteStatus = "pending" | "accepted" | "revoked" | "expired"
 type SpaceMemberRole = "owner" | "admin" | "editor" | "member"
+type ToastMessage = { id: number; text: string; type: "success" | "error" } | null
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
 
 function statusLabel(status: RequestStatus) {
-  if (status === "pending") return "Request pending"
+  if (status === "pending") return "Pending"
   if (status === "approved") return "Approved"
   if (status === "rejected") return "Rejected"
   return "Cancelled"
@@ -47,18 +54,235 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return "-"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "-"
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "2-digit",
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
     month: "short",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(date)
 }
 
 function isValidSlug(value: string) {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
 }
+
+const ROLE_COLORS: Record<string, string> = {
+  owner: "bg-violet-50 text-violet-700",
+  admin: "bg-blue-50 text-blue-700",
+  editor: "bg-emerald-50 text-emerald-700",
+  member: "bg-gray-100 text-gray-600",
+}
+
+const STATUS_DOT: Record<string, string> = {
+  pending: "bg-amber-400",
+  approved: "bg-emerald-400",
+  rejected: "bg-red-400",
+  cancelled: "bg-gray-400",
+  accepted: "bg-emerald-400",
+  revoked: "bg-red-400",
+  expired: "bg-gray-400",
+}
+
+/* ------------------------------------------------------------------ */
+/*  Toast                                                              */
+/* ------------------------------------------------------------------ */
+
+function Toast({ message, onClose }: { message: NonNullable<ToastMessage>; onClose: () => void }) {
+  return (
+    <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+      <div className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${message.type === "success" ? "bg-[#1f2734] text-white" : "bg-red-600 text-white"}`}>
+        <span>{message.text}</span>
+        <button type="button" onClick={onClose} className="ml-1 rounded p-0.5 transition hover:bg-white/20">
+          <XIcon className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Role badge                                                         */
+/* ------------------------------------------------------------------ */
+
+function RoleBadge({ role }: { role: string }) {
+  const colors = ROLE_COLORS[role] ?? "bg-gray-100 text-gray-600"
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${colors}`}>
+      <ShieldCheckIcon className="size-3" />
+      {role}
+    </span>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Create Space Dialog                                                */
+/* ------------------------------------------------------------------ */
+
+function CreateSpaceDialog({
+  isPending,
+  onSubmit,
+  onCancel,
+}: {
+  isPending: boolean
+  onSubmit: (data: {
+    name: string
+    slug?: string
+    description?: string | null
+    visibility: "public" | "hidden"
+    joinPolicy: "request" | "invite_only"
+    reviewPolicy: "none" | "required"
+  }) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState("")
+  const [slug, setSlug] = useState("")
+  const [description, setDescription] = useState("")
+  const [visibility, setVisibility] = useState<"public" | "hidden">("hidden")
+  const [joinPolicy, setJoinPolicy] = useState<"request" | "invite_only">("invite_only")
+  const [reviewPolicy, setReviewPolicy] = useState<"none" | "required">("none")
+
+  const invalidSlug = slug.trim().length > 0 && !isValidSlug(slug.trim())
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim() || isPending) return
+    onSubmit({
+      name: name.trim(),
+      slug: slug.trim() || undefined,
+      description: description.trim() || null,
+      visibility,
+      joinPolicy,
+      reviewPolicy,
+    })
+  }
+
+  const inputCls = "h-9 w-full rounded-lg border border-[#e5e7eb] bg-white px-3 text-sm text-[#1f2734] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+  const selectCls = "h-9 rounded-lg border border-[#e5e7eb] bg-white px-2.5 text-sm text-[#374151] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onCancel} />
+      <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-50">
+            <UsersIcon className="size-5 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-[#1f2734]">Create team space</h3>
+            <p className="text-[13px] text-[#9ca3af]">A shared workspace for bridge content</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[#6b7280]">Name *</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="My team space" className={inputCls} autoFocus />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[#6b7280]">Slug <span className="text-[#9ca3af]">(optional)</span></label>
+            <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="my-team-space" className={`${inputCls} ${invalidSlug ? "!border-red-300 !ring-red-200" : ""}`} />
+            {invalidSlug ? <p className="mt-1 text-xs text-red-500">Use lowercase letters, numbers, and hyphens</p> : null}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[#6b7280]">Description <span className="text-[#9ca3af]">(optional)</span></label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this space about?" rows={2} className="w-full rounded-lg border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#1f2734] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[#6b7280]">Visibility</label>
+              <select value={visibility} onChange={(e) => setVisibility(e.target.value as "public" | "hidden")} className={`w-full ${selectCls}`}>
+                <option value="hidden">Hidden</option>
+                <option value="public">Public</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[#6b7280]">Join policy</label>
+              <select value={joinPolicy} onChange={(e) => setJoinPolicy(e.target.value as "request" | "invite_only")} className={`w-full ${selectCls}`}>
+                <option value="invite_only">Invite only</option>
+                <option value="request">Request</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[#6b7280]">Review</label>
+              <select value={reviewPolicy} onChange={(e) => setReviewPolicy(e.target.value as "none" | "required")} className={`w-full ${selectCls}`}>
+                <option value="none">None</option>
+                <option value="required">Required</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button type="button" onClick={onCancel} disabled={isPending} className="h-9 rounded-lg border border-[#e5e7eb] px-3.5 text-sm font-medium text-[#374151] transition hover:bg-[#f3f4f6] disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={isPending || !name.trim() || invalidSlug} className="h-9 rounded-lg bg-[#1f2734] px-3.5 text-sm font-medium text-white transition hover:bg-[#374151] disabled:opacity-60">
+              {isPending ? "Creating..." : "Create space"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Discover row action menu                                           */
+/* ------------------------------------------------------------------ */
+
+function DiscoverRowMenu({
+  space,
+  isGuest,
+  requestStatus,
+  onRequestJoin,
+  onManage,
+}: {
+  space: { id: string; actorRole: string; joinPolicy: string }
+  isGuest: boolean
+  requestStatus: RequestStatus | null
+  onRequestJoin: (spaceId: string) => void
+  onManage: (spaceId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const handleBlur = useCallback((e: React.FocusEvent) => {
+    if (ref.current && !ref.current.contains(e.relatedTarget as Node)) setOpen(false)
+  }, [])
+
+  const isMember = space.actorRole !== "guest"
+  const canRequest = !isMember && space.joinPolicy === "request" && !isGuest && requestStatus !== "pending"
+
+  return (
+    <div className="relative" ref={ref} onBlur={handleBlur}>
+      <button type="button" onClick={() => setOpen((p) => !p)} className="inline-flex size-7 items-center justify-center rounded-md text-[#9ca3af] transition hover:bg-[#f3f4f6] hover:text-[#6b7280]" aria-label="Actions">
+        <MoreHorizontalIcon className="size-4" />
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-[#e5e7eb] bg-white py-1 shadow-lg animate-in fade-in zoom-in-95 duration-150">
+          {isMember ? (
+            <button type="button" onClick={() => { setOpen(false); onManage(space.id) }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-[#374151] hover:bg-[#f3f4f6]">
+              <SettingsIcon className="size-3.5 text-[#9ca3af]" />
+              Manage space
+            </button>
+          ) : null}
+          {canRequest ? (
+            <button type="button" onClick={() => { setOpen(false); onRequestJoin(space.id) }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-[#374151] hover:bg-[#f3f4f6]">
+              <UsersIcon className="size-3.5 text-[#9ca3af]" />
+              Request join
+            </button>
+          ) : null}
+          {!isMember && space.joinPolicy === "invite_only" ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-[#9ca3af]">
+              <LockIcon className="size-3.5" />
+              Invite only
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main page                                                          */
+/* ------------------------------------------------------------------ */
 
 export default function SpacesDirectoryPage() {
   const incomingSpaceId = useMemo(() => {
@@ -76,53 +300,42 @@ export default function SpacesDirectoryPage() {
     image: session?.user?.image ?? null,
   }
 
+  /* ---- State ---- */
+  const [activeTab, setActiveTab] = useState<TabId>("my")
   const [query, setQuery] = useState("")
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null)
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
-  const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null)
-  const [showCreateSpaceForm, setShowCreateSpaceForm] = useState(false)
-  const controlsPanelRef = useRef<HTMLElement | null>(null)
-
-  const [createName, setCreateName] = useState("")
-  const [createSlug, setCreateSlug] = useState("")
-  const [createDescription, setCreateDescription] = useState("")
-  const [createVisibility, setCreateVisibility] = useState<"public" | "hidden">("hidden")
-  const [createJoinPolicy, setCreateJoinPolicy] = useState<"request" | "invite_only">("invite_only")
-  const [createReviewPolicy, setCreateReviewPolicy] = useState<"none" | "required">("none")
+  const [toast, setToast] = useState<ToastMessage>(null)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
 
   const [inviteRole, setInviteRole] = useState<Extract<SpaceMemberRole, "admin" | "editor" | "member">>("member")
   const [inviteTargetEmail, setInviteTargetEmail] = useState("")
   const [inviteExpiresHours, setInviteExpiresHours] = useState("72")
 
+  const utils = trpc.useUtils()
+
+  /* ---- Queries ---- */
   const spacesQuery = trpc.spaces.list.useQuery(query.trim() ? { query: query.trim() } : undefined, { staleTime: 20_000 })
   const myRequestsQuery = trpc.spaces.joinRequests.mine.useQuery(undefined, { enabled: !isGuest, staleTime: 20_000 })
 
   const spaces = useMemo(() => spacesQuery.data?.spaces ?? [], [spacesQuery.data?.spaces])
-  const memberSpaces = useMemo(() => spaces.filter((space) => space.actorRole !== "guest"), [spaces])
+  const memberSpaces = useMemo(() => spaces.filter((s) => s.actorRole !== "guest"), [spaces])
+
   const activeSelectedSpaceId = useMemo(() => {
-    if (incomingSpaceId && memberSpaces.some((space) => space.id === incomingSpaceId)) {
-      return incomingSpaceId
-    }
-    if (selectedSpaceId && memberSpaces.some((space) => space.id === selectedSpaceId)) {
-      return selectedSpaceId
-    }
+    if (incomingSpaceId && memberSpaces.some((s) => s.id === incomingSpaceId)) return incomingSpaceId
+    if (selectedSpaceId && memberSpaces.some((s) => s.id === selectedSpaceId)) return selectedSpaceId
     return memberSpaces[0]?.id ?? null
   }, [incomingSpaceId, memberSpaces, selectedSpaceId])
 
-  const selectedSpace = useMemo(
-    () => memberSpaces.find((space) => space.id === activeSelectedSpaceId) ?? null,
-    [activeSelectedSpaceId, memberSpaces],
-  )
+  const selectedSpace = useMemo(() => memberSpaces.find((s) => s.id === activeSelectedSpaceId) ?? null, [activeSelectedSpaceId, memberSpaces])
   const canManageSpace = !!selectedSpace?.capabilities.includes("space.manage")
   const canManageMembers = !!selectedSpace?.capabilities.includes("space.members.manage")
   const canManageInvites = !!selectedSpace?.capabilities.includes("space.invites.manage")
 
   const requestBySpace = useMemo(() => {
     const map = new Map<string, { id: string; status: RequestStatus }>()
-    for (const request of myRequestsQuery.data?.requests ?? []) {
-      if (!map.has(request.spaceId)) {
-        map.set(request.spaceId, { id: request.id, status: request.status })
-      }
+    for (const r of myRequestsQuery.data?.requests ?? []) {
+      if (!map.has(r.spaceId)) map.set(r.spaceId, { id: r.id, status: r.status })
     }
     return map
   }, [myRequestsQuery.data?.requests])
@@ -135,110 +348,96 @@ export default function SpacesDirectoryPage() {
     { spaceId: selectedSpace?.id ?? "__disabled__" },
     { enabled: !!selectedSpace?.id && canManageInvites, staleTime: 5_000 },
   )
+
+  const pendingJoinRequests = (joinRequestsQuery.data?.requests ?? []).filter((r) => r.status === "pending")
+  const recentInvites = invitesQuery.data?.invites ?? []
+
+  /* ---- Toast ---- */
+  const showToast = useCallback((text: string, type: "success" | "error") => {
+    const id = Date.now()
+    setToast({ id, text, type })
+    setTimeout(() => setToast((prev) => (prev?.id === id ? null : prev)), 3500)
+  }, [])
+
+  /* ---- Mutations ---- */
   const requestMutation = trpc.spaces.joinRequests.create.useMutation({
     onSuccess: async () => {
-      setNotice({ type: "success", message: "Join request sent." })
+      showToast("Join request sent", "success")
       await Promise.all([spacesQuery.refetch(), myRequestsQuery.refetch()])
     },
-    onError: (error) => setNotice({ type: "error", message: error.message || "Failed to create join request." }),
+    onError: (err) => showToast(err.message || "Failed to send request", "error"),
   })
 
   const createSpaceMutation = trpc.spaces.create.useMutation({
     onSuccess: async (result) => {
-      setNotice({ type: "success", message: "Space created." })
-      setCreateName("")
-      setCreateSlug("")
-      setCreateDescription("")
-      setCreateVisibility("hidden")
-      setCreateJoinPolicy("invite_only")
-      setCreateReviewPolicy("none")
-      setShowCreateSpaceForm(false)
+      showToast("Space created", "success")
+      setShowCreateDialog(false)
       setSelectedSpaceId(result.space.id)
+      setActiveTab("manage")
       await spacesQuery.refetch()
     },
-    onError: (error) => setNotice({ type: "error", message: error.message || "Failed to create space." }),
+    onError: (err) => showToast(err.message || "Failed to create space", "error"),
   })
 
   const updateSpaceMutation = trpc.spaces.update.useMutation({
     onSuccess: async () => {
-      setNotice({ type: "success", message: "Space settings updated." })
+      showToast("Settings saved", "success")
       await spacesQuery.refetch()
     },
-    onError: (error) => setNotice({ type: "error", message: error.message || "Failed to update space." }),
+    onError: (err) => showToast(err.message || "Failed to update", "error"),
   })
 
   const reviewJoinRequestMutation = trpc.spaces.joinRequests.review.useMutation({
     onSuccess: async () => {
-      setNotice({ type: "success", message: "Join request updated." })
+      showToast("Request updated", "success")
       await Promise.all([joinRequestsQuery.refetch(), spacesQuery.refetch(), myRequestsQuery.refetch()])
     },
-    onError: (error) => setNotice({ type: "error", message: error.message || "Failed to review join request." }),
+    onError: (err) => showToast(err.message || "Failed to review", "error"),
   })
 
   const createInviteMutation = trpc.spaces.invites.create.useMutation({
     onSuccess: async () => {
-      setNotice({ type: "success", message: "Invite created." })
+      showToast("Invite created", "success")
       setInviteTargetEmail("")
       setInviteRole("member")
       setInviteExpiresHours("72")
       await invitesQuery.refetch()
     },
-    onError: (error) => setNotice({ type: "error", message: error.message || "Failed to create invite." }),
+    onError: (err) => showToast(err.message || "Failed to create invite", "error"),
   })
 
   const revokeInviteMutation = trpc.spaces.invites.revoke.useMutation({
     onSuccess: async () => {
-      setNotice({ type: "success", message: "Invite revoked." })
+      showToast("Invite revoked", "success")
       await invitesQuery.refetch()
     },
-    onError: (error) => setNotice({ type: "error", message: error.message || "Failed to revoke invite." }),
+    onError: (err) => showToast(err.message || "Failed to revoke", "error"),
   })
 
-  const pendingJoinRequests = (joinRequestsQuery.data?.requests ?? []).filter((request) => request.status === "pending")
-  const recentInvites = invitesQuery.data?.invites ?? []
-
-  const invalidCreateSlug = createSlug.trim().length > 0 && !isValidSlug(createSlug.trim())
-
+  /* ---- Handlers ---- */
   async function handleCopyInvite(inviteId: string, inviteUrl: string) {
     try {
       await navigator.clipboard.writeText(inviteUrl)
       setCopiedInviteId(inviteId)
-      setNotice({ type: "success", message: "Invite link copied." })
-      setTimeout(() => setCopiedInviteId((current) => (current === inviteId ? null : current)), 1500)
+      showToast("Invite link copied", "success")
+      setTimeout(() => setCopiedInviteId((cur) => (cur === inviteId ? null : cur)), 1500)
     } catch {
-      setNotice({ type: "error", message: "Failed to copy link." })
+      showToast("Failed to copy link", "error")
     }
-  }
-
-  function handleCreateSpaceSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (isGuest || createSpaceMutation.isPending) return
-    if (!createName.trim()) return setNotice({ type: "error", message: "Space name is required." })
-    if (invalidCreateSlug) return setNotice({ type: "error", message: "Slug format is invalid." })
-
-    createSpaceMutation.mutate({
-      name: createName.trim(),
-      description: createDescription.trim() ? createDescription.trim() : null,
-      slug: createSlug.trim() ? createSlug.trim() : undefined,
-      type: "team",
-      visibility: createVisibility,
-      joinPolicy: createJoinPolicy,
-      reviewPolicy: createReviewPolicy,
-    })
   }
 
   function handleUpdateSpaceSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedSpace || !canManageSpace || updateSpaceMutation.isPending) return
-    const formData = new FormData(event.currentTarget)
-    const name = String(formData.get("name") ?? "").trim()
-    const slug = String(formData.get("slug") ?? "").trim()
-    const description = String(formData.get("description") ?? "").trim()
-    const visibility = String(formData.get("visibility") ?? selectedSpace.visibility) as "public" | "hidden"
-    const joinPolicy = String(formData.get("joinPolicy") ?? selectedSpace.joinPolicy) as "request" | "invite_only"
-    const reviewPolicy = String(formData.get("reviewPolicy") ?? selectedSpace.reviewPolicy) as "none" | "required"
-    if (!name) return setNotice({ type: "error", message: "Space name is required." })
-    if (slug && !isValidSlug(slug)) return setNotice({ type: "error", message: "Slug format is invalid." })
+    const fd = new FormData(event.currentTarget)
+    const name = String(fd.get("name") ?? "").trim()
+    const slug = String(fd.get("slug") ?? "").trim()
+    const description = String(fd.get("description") ?? "").trim()
+    const visibility = String(fd.get("visibility") ?? selectedSpace.visibility) as "public" | "hidden"
+    const joinPolicy = String(fd.get("joinPolicy") ?? selectedSpace.joinPolicy) as "request" | "invite_only"
+    const reviewPolicy = String(fd.get("reviewPolicy") ?? selectedSpace.reviewPolicy) as "none" | "required"
+    if (!name) return showToast("Space name is required", "error")
+    if (slug && !isValidSlug(slug)) return showToast("Invalid slug format", "error")
 
     updateSpaceMutation.mutate({
       spaceId: selectedSpace.id,
@@ -256,7 +455,7 @@ export default function SpacesDirectoryPage() {
   function handleInviteSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedSpace || !canManageInvites || createInviteMutation.isPending) return
-    if (!inviteTargetEmail.trim()) return setNotice({ type: "error", message: "Invite email is required." })
+    if (!inviteTargetEmail.trim()) return showToast("Email is required", "error")
 
     createInviteMutation.mutate({
       spaceId: selectedSpace.id,
@@ -268,11 +467,17 @@ export default function SpacesDirectoryPage() {
     })
   }
 
-  function handleOpenControls(spaceId: string) {
+  function handleManageSpace(spaceId: string) {
     setSelectedSpaceId(spaceId)
-    requestAnimationFrame(() => {
-      controlsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    })
+    setActiveTab("manage")
+  }
+
+  /* ---- Tab helpers ---- */
+  const inputCls = "h-9 w-full rounded-lg border border-[#e5e7eb] bg-white px-3 text-sm text-[#1f2734] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+  const selectCls = "h-9 rounded-lg border border-[#e5e7eb] bg-white px-2.5 text-sm text-[#374151] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+
+  function tabCls(id: TabId) {
+    return `px-1 pb-2.5 text-sm font-medium transition ${activeTab === id ? "border-b-2 border-[#1f2734] text-[#1f2734]" : "text-[#9ca3af] hover:text-[#6b7280]"}`
   }
 
   return (
@@ -285,205 +490,454 @@ export default function SpacesDirectoryPage() {
         { label: "Spaces" },
       ]}
     >
-      <div className="mx-auto max-w-7xl space-y-4">
-        <section className="rounded-xl border border-[#d8dbe1] bg-white/82 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold text-[#1f2734]">Spaces workspace</h1>
-              <p className="mt-1 text-sm text-[#6e7788]">Discover communities, manage policies, moderate join requests, and operate invites.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full border border-[#d8dbe1] bg-[#f8f9fc] px-2.5 py-1 text-xs font-medium text-[#5f6a7b]"><CompassIcon className="size-3.5" />Visible: {spaces.length}</span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-[#d8dbe1] bg-[#f8f9fc] px-2.5 py-1 text-xs font-medium text-[#5f6a7b]"><UsersIcon className="size-3.5" />Mine: {memberSpaces.length}</span>
+      <div className="w-full space-y-5 [[data-sidebar-state=collapsed]_&]:mx-auto [[data-sidebar-state=collapsed]_&]:max-w-5xl">
+        {/* Header */}
+        <div className="flex flex-wrap items-end justify-between gap-3 pb-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700">
+                <UsersIcon className="size-4.5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-[#1f2734]">Spaces</h1>
+                <p className="text-[13px] text-[#9ca3af]">Communities and workspaces for bridge content</p>
+              </div>
             </div>
           </div>
-          <div className="mt-3 relative w-full max-w-md">
-            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-[#6e7788]" />
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search spaces..." className="h-10 w-full rounded-xl border border-[#d8dbe1] bg-[#f8f9fc] pl-8 pr-3 text-sm text-[#1f2734] outline-none transition focus:border-[#9bb0d7] focus:bg-white" />
-          </div>
-        </section>
-
-        {notice ? (
-          <section className={cn("rounded-xl border px-3 py-2 text-sm", notice.type === "success" ? "border-[#bbdcc8] bg-[#effaf3] text-[#2f634a]" : "border-[#e5cad0] bg-[#fff2f4] text-[#8b3240]")}>
-            <span className="inline-flex items-center gap-1.5">{notice.type === "success" ? <CheckCheckIcon className="size-4" /> : <BellRingIcon className="size-4" />}{notice.message}</span>
-          </section>
-        ) : null}
-
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-          <section className="space-y-4">
-            <section className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-[#1f2734]">Directory</h2>
-                {!isGuest ? (
-                  <Button variant="secondary" size="sm" onClick={() => setShowCreateSpaceForm((current) => !current)}>
-                    <PlusIcon data-icon="inline-start" />{showCreateSpaceForm ? "Hide create form" : "Create team space"}
-                  </Button>
-                ) : (
-                  <Link href="/auth/signin?callbackUrl=/dashboard/spaces" className="text-sm font-medium text-[#2f466d] hover:underline">Sign in to create</Link>
-                )}
-              </div>
-              {showCreateSpaceForm && !isGuest ? (
-                <form onSubmit={handleCreateSpaceSubmit} className="mt-3 grid gap-2 rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] p-3">
-                  <input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="Space name" className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]" />
-                  <input value={createSlug} onChange={(event) => setCreateSlug(event.target.value)} placeholder="Slug (optional)" className={cn("h-9 rounded-lg border bg-white px-2.5 text-sm text-[#1f2734]", invalidCreateSlug ? "border-[#d99aa6]" : "border-[#cfd5df]")} />
-                  <textarea value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Description (optional)" className="min-h-[72px] rounded-lg border border-[#cfd5df] bg-white px-2.5 py-2 text-sm text-[#1f2734]" />
-                  <div className="grid gap-2 md:grid-cols-3">
-                    <select value={createVisibility} onChange={(event) => setCreateVisibility(event.target.value as "public" | "hidden")} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]"><option value="hidden">Hidden space</option><option value="public">Public space</option></select>
-                    <select value={createJoinPolicy} onChange={(event) => setCreateJoinPolicy(event.target.value as "request" | "invite_only")} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]"><option value="invite_only">Join: invite only</option><option value="request">Join: request</option></select>
-                    <select value={createReviewPolicy} onChange={(event) => setCreateReviewPolicy(event.target.value as "none" | "required")} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]"><option value="none">Review: none</option><option value="required">Review: required</option></select>
-                  </div>
-                  <div className="flex justify-end"><Button type="submit" variant="secondary" size="sm" disabled={createSpaceMutation.isPending}>{createSpaceMutation.isPending ? "Creating..." : "Create space"}</Button></div>
-                </form>
-              ) : null}
-
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                {spaces.map((space) => {
-                  const request = requestBySpace.get(space.id)
-                  const canRequest = space.actorRole === "guest" && space.joinPolicy === "request" && !isGuest
-                  return (
-                    <article key={space.id} className={cn("rounded-xl border bg-white/90 p-3 shadow-sm transition", selectedSpace?.id === space.id ? "border-[#9bb0d7]" : "border-[#d8dbe1]")}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-base font-semibold text-[#1f2734]">{space.name}</h3>
-                          <p className="mt-0.5 text-xs uppercase tracking-[0.08em] text-[#7a8394]">{space.visibility} / {space.joinPolicy}</p>
-                        </div>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[#d8dbe1] bg-[#f8f9fc] px-2 py-0.5 text-xs text-[#5f6a7b]"><UsersIcon className="size-3.5" />{space.actorRole}</span>
-                      </div>
-                      <p className="mt-2 text-sm text-[#5f6a7b]">{space.description || "No description yet."}</p>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                        {space.actorRole !== "guest" ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenControls(space.id)}
-                            disabled={selectedSpace?.id === space.id}
-                            className="inline-flex h-8 items-center rounded-lg border border-[#cfd5df] bg-[#eef3fb] px-2.5 text-xs font-medium text-[#2f466d] hover:bg-[#e2ebfa] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-[#eef3fb]"
-                          >
-                            {selectedSpace?.id === space.id ? "Controls open" : "Open controls"}
-                          </button>
-                        ) : request ? (
-                          <span className="text-xs font-medium text-[#6e7788]">{statusLabel(request.status)}</span>
-                        ) : space.joinPolicy === "invite_only" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-[#6e7788]"><LockIcon className="size-3.5" />Invite required</span>
-                        ) : isGuest ? (
-                          <span className="text-xs text-[#6e7788]">Sign in to request access</span>
-                        ) : (
-                          <span className="text-xs text-[#6e7788]">No request yet</span>
-                        )}
-                        {canRequest ? (
-                          <button type="button" onClick={() => requestMutation.mutate({ spaceId: space.id, data: {} })} disabled={requestMutation.isPending || request?.status === "pending"} className="h-8 rounded-lg border border-[#cfd5df] bg-[#eef3fb] px-3 text-xs font-medium text-[#2f466d] transition hover:bg-[#e2ebfa] disabled:cursor-not-allowed disabled:opacity-60">{request?.status === "pending" ? "Pending" : "Request join"}</button>
-                        ) : null}
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            </section>
-
-            {!isGuest ? (
-              <section className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
-                <h2 className="text-lg font-semibold text-[#1f2734]">My join requests</h2>
-                <div className="mt-3 space-y-2">
-                  {(myRequestsQuery.data?.requests ?? []).slice(0, 6).map((request) => (
-                    <article key={request.id} className="rounded-lg border border-[#d8dbe1] bg-white px-3 py-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium text-[#1f2734]">{request.spaceName}</p><span className="text-xs text-[#6e7788]">{statusLabel(request.status)}</span></div>
-                      <p className="mt-1 text-xs text-[#6e7788]">Created: {formatDateTime(request.createdAt)}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-          </section>
-
-          <section ref={controlsPanelRef} className="space-y-4">
-            <section className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold text-[#1f2734]">My spaces</h2>
-                {selectedSpace ? <span className="inline-flex items-center gap-1 rounded-full border border-[#d8dbe1] bg-[#f8f9fc] px-2 py-0.5 text-xs text-[#5f6a7b]"><ShieldCheckIcon className="size-3.5" />{selectedSpace.actorRole}</span> : null}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">{memberSpaces.map((space) => (<button key={space.id} type="button" onClick={() => handleOpenControls(space.id)} className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition", selectedSpace?.id === space.id ? "border-[#9bb0d7] bg-[#eef3fb] text-[#2f466d]" : "border-[#d8dbe1] bg-[#f8f9fc] text-[#5f6a7b] hover:bg-white")}><UsersIcon className="size-3.5" />{space.name}</button>))}</div>
-            </section>
-
-            {selectedSpace ? (
-              <>
-                <section className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
-                  <h3 className="text-base font-semibold text-[#1f2734]">Space settings</h3>
-                  {canManageSpace ? (
-                    <form key={`space-settings-${selectedSpace.id}`} onSubmit={handleUpdateSpaceSubmit} className="mt-3 grid gap-2">
-                      <input name="name" defaultValue={selectedSpace.name} placeholder="Space name" className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]" />
-                      <input name="slug" defaultValue={selectedSpace.slug ?? ""} placeholder="Slug (optional)" className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]" />
-                      <textarea name="description" defaultValue={selectedSpace.description ?? ""} placeholder="Description" className="min-h-[72px] rounded-lg border border-[#cfd5df] bg-white px-2.5 py-2 text-sm text-[#1f2734]" />
-                      <div className="grid gap-2 md:grid-cols-3">
-                        <select name="visibility" defaultValue={selectedSpace.visibility} disabled={selectedSpace.type === "personal"} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734] disabled:opacity-60"><option value="hidden">Hidden space</option><option value="public">Public space</option></select>
-                        <select name="joinPolicy" defaultValue={selectedSpace.joinPolicy} disabled={selectedSpace.type === "personal"} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734] disabled:opacity-60"><option value="invite_only">Join: invite only</option><option value="request">Join: request</option></select>
-                        <select name="reviewPolicy" defaultValue={selectedSpace.reviewPolicy} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]"><option value="none">Review: none</option><option value="required">Review: required</option></select>
-                      </div>
-                      <div className="flex justify-end"><Button type="submit" variant="secondary" size="sm" disabled={updateSpaceMutation.isPending}>{updateSpaceMutation.isPending ? "Saving..." : "Save settings"}</Button></div>
-                    </form>
-                  ) : <p className="mt-2 text-sm text-[#6e7788]">No settings management privileges.</p>}
-                </section>
-
-                <section className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
-                  <h3 className="text-base font-semibold text-[#1f2734]">Join requests moderation</h3>
-                  {canManageMembers ? (
-                    <div className="mt-3 space-y-2">
-                      {pendingJoinRequests.slice(0, 8).map((request) => (
-                        <article key={request.id} className="rounded-lg border border-[#d8dbe1] bg-white px-3 py-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div><p className="text-sm font-medium text-[#1f2734]">{request.user.displayName || request.user.email || request.user.id}</p><p className="text-xs text-[#6e7788]">Requested: {formatDateTime(request.createdAt)}</p></div>
-                            <div className="flex items-center gap-1.5">
-                              <Button variant="secondary" size="xs" disabled={reviewJoinRequestMutation.isPending} onClick={() => reviewJoinRequestMutation.mutate({ spaceId: selectedSpace.id, data: { requestId: request.id, decision: "approve" } })}>Approve</Button>
-                              <Button variant="outline" size="xs" disabled={reviewJoinRequestMutation.isPending} onClick={() => reviewJoinRequestMutation.mutate({ spaceId: selectedSpace.id, data: { requestId: request.id, decision: "reject" } })}>Reject</Button>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                      {pendingJoinRequests.length === 0 ? <p className="text-sm text-[#6e7788]">No pending requests.</p> : null}
-                    </div>
-                  ) : <p className="mt-2 text-sm text-[#6e7788]">No moderation privileges.</p>}
-                </section>
-
-                <section className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
-                  <h3 className="text-base font-semibold text-[#1f2734]">Invites</h3>
-                  {canManageInvites ? (
-                    <>
-                      <form onSubmit={handleInviteSubmit} className="mt-3 grid gap-2 rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] p-3">
-                        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_130px_130px_auto]">
-                          <input type="email" value={inviteTargetEmail} onChange={(event) => setInviteTargetEmail(event.target.value)} placeholder="member@example.com" className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]" />
-                          <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as Extract<SpaceMemberRole, "admin" | "editor" | "member">)} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]"><option value="member">member</option><option value="editor">editor</option><option value="admin">admin</option></select>
-                          <select value={inviteExpiresHours} onChange={(event) => setInviteExpiresHours(event.target.value)} className="h-9 rounded-lg border border-[#cfd5df] bg-white px-2.5 text-sm text-[#1f2734]"><option value="24">24h</option><option value="72">72h</option><option value="168">7d</option><option value="720">30d</option></select>
-                          <Button type="submit" variant="secondary" size="sm" disabled={createInviteMutation.isPending}><MailPlusIcon data-icon="inline-start" />Invite</Button>
-                        </div>
-                      </form>
-                      <div className="mt-3 space-y-2">
-                        {recentInvites.slice(0, 10).map((invite) => (
-                          <article key={invite.id} className="rounded-lg border border-[#d8dbe1] bg-white px-3 py-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div><p className="text-sm font-medium text-[#1f2734]">{invite.targetEmail || invite.targetUserId || "direct invite"}</p><p className="text-xs text-[#6e7788]">{invite.role} / expires {formatDateTime(invite.expiresAt)} / {inviteStatusLabel(invite.status)}</p></div>
-                              <div className="flex items-center gap-1.5">
-                                <Button variant="outline" size="xs" onClick={() => handleCopyInvite(invite.id, invite.webInviteUrl)}><CopyIcon data-icon="inline-start" />{copiedInviteId === invite.id ? "Copied" : "Copy link"}</Button>
-                                {invite.status === "pending" ? <Button variant="outline" size="xs" disabled={revokeInviteMutation.isPending} onClick={() => revokeInviteMutation.mutate({ spaceId: selectedSpace.id, data: { inviteId: invite.id } })}><XIcon data-icon="inline-start" />Revoke</Button> : null}
-                              </div>
-                            </div>
-                          </article>
-                        ))}
-                        {recentInvites.length === 0 ? <p className="text-sm text-[#6e7788]">No invites created yet.</p> : null}
-                      </div>
-                    </>
-                  ) : <p className="mt-2 text-sm text-[#6e7788]">No invite management privileges.</p>}
-                </section>
-              </>
-            ) : (
-              <section className="rounded-xl border border-dashed border-[#cfd5df] bg-white/70 p-6 text-center">
-                <p className="text-base font-medium text-[#2b3446]">Select a member space</p>
-                <p className="mt-1 text-sm text-[#6e7788]">Controls for policy, join requests, and invites will appear here.</p>
-                {!isGuest ? <p className="mt-2 text-xs text-[#7a8394]">If you only see public spaces, request access or create a team space.</p> : <Link href="/auth/signin?callbackUrl=/dashboard/spaces" className="mt-3 inline-flex text-sm font-medium text-[#2f466d] hover:underline">Sign in to manage spaces</Link>}
-              </section>
-            )}
-          </section>
+          {!isGuest ? (
+            <button
+              type="button"
+              onClick={() => setShowCreateDialog(true)}
+              className="group inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1f2734] px-3.5 text-sm font-medium text-white transition hover:bg-[#374151] hover:shadow-md"
+            >
+              <PlusIcon className="size-4 transition-transform group-hover:rotate-90" />
+              Create space
+            </button>
+          ) : (
+            <a href="/auth/signin?callbackUrl=/dashboard/spaces" className="text-sm font-medium text-[#2f466d] hover:underline">
+              Sign in to create
+            </a>
+          )}
         </div>
 
-        <section className="rounded-xl border border-[#d8dbe1] bg-white/75 px-3 py-2 text-xs text-[#6e7788]"><span className="inline-flex items-center gap-1.5"><CircleHelpIcon className="size-3.5" />Invite links can be accepted at <code className="rounded bg-[#eef1f6] px-1">/space-invite/[token]</code>.</span></section>
+        {/* Tabs */}
+        <div className="flex items-center gap-6 border-b border-[#e5e7eb]">
+          <button type="button" onClick={() => setActiveTab("my")} className={tabCls("my")}>
+            My Spaces
+            {memberSpaces.length > 0 ? <span className="ml-1.5 text-[11px] text-[#9ca3af]">{memberSpaces.length}</span> : null}
+          </button>
+          <button type="button" onClick={() => setActiveTab("discover")} className={tabCls("discover")}>
+            Discover
+            {spaces.length > 0 ? <span className="ml-1.5 text-[11px] text-[#9ca3af]">{spaces.length}</span> : null}
+          </button>
+          {!isGuest && memberSpaces.length > 0 ? (
+            <button type="button" onClick={() => setActiveTab("manage")} className={tabCls("manage")}>
+              <SettingsIcon className="mr-1 inline size-3.5" />
+              Manage
+              {selectedSpace ? <span className="ml-1 text-[11px] text-[#9ca3af]">· {selectedSpace.name}</span> : null}
+            </button>
+          ) : null}
+        </div>
+
+        {/* ============ TAB: My Spaces ============ */}
+        {activeTab === "my" ? (
+          <div>
+            {memberSpaces.length > 0 ? (
+              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {memberSpaces.map((space) => (
+                  <div key={space.id} className="group relative rounded-xl border border-[#e5e7eb] bg-white transition-all hover:border-[#d1d5db] hover:shadow-md">
+                    {/* Accent bar */}
+                    <div className={`h-1 rounded-t-xl ${space.type === "personal" ? "bg-gradient-to-r from-gray-300 to-gray-400" : "bg-gradient-to-r from-blue-400 to-blue-600"}`} />
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-semibold text-[#1f2734]">{space.name}</h3>
+                          <p className="mt-0.5 text-[11px] uppercase tracking-wide text-[#9ca3af]">{space.type}</p>
+                        </div>
+                        <RoleBadge role={space.actorRole} />
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-xs text-[#6b7280]">{space.description || "No description"}</p>
+                      <div className="mt-3 flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 rounded bg-[#f3f4f6] px-1.5 py-0.5 text-[11px] text-[#9ca3af]">
+                          {space.visibility === "public" ? <GlobeIcon className="size-3" /> : <LockIcon className="size-3" />}
+                          {space.visibility}
+                        </span>
+                        <span className="rounded bg-[#f3f4f6] px-1.5 py-0.5 text-[11px] text-[#9ca3af]">
+                          {space.joinPolicy === "invite_only" ? "invite only" : "request"}
+                        </span>
+                      </div>
+                      <div className="mt-3 border-t border-[#f3f4f6] pt-3">
+                        <button
+                          type="button"
+                          onClick={() => handleManageSpace(space.id)}
+                          className="inline-flex h-7 items-center gap-1 rounded-md bg-[#f3f4f6] px-2.5 text-xs font-medium text-[#374151] transition hover:bg-[#e5e7eb]"
+                        >
+                          <SettingsIcon className="size-3" />
+                          Manage
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </section>
+            ) : (
+              <div className="py-16 text-center">
+                <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f3f4f6] to-[#e5e7eb]">
+                  <UsersIcon className="size-7 text-[#9ca3af]" />
+                </div>
+                <p className="mt-4 text-base font-medium text-[#374151]">No spaces yet</p>
+                <p className="mt-1 text-sm text-[#9ca3af]">
+                  {isGuest ? "Sign in to join or create spaces." : "Create a space or discover existing ones."}
+                </p>
+                {!isGuest ? (
+                  <button type="button" onClick={() => setShowCreateDialog(true)} className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#1f2734] px-4 text-sm font-medium text-white transition hover:bg-[#374151]">
+                    <PlusIcon className="size-4" />
+                    Create first space
+                  </button>
+                ) : null}
+              </div>
+            )}
+
+            {/* My join requests */}
+            {!isGuest && (myRequestsQuery.data?.requests ?? []).length > 0 ? (
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.05em] text-[#6b7280]">My join requests</h3>
+                <div className="mt-3 border-t border-[#e5e7eb]">
+                  {(myRequestsQuery.data?.requests ?? []).slice(0, 6).map((req) => (
+                    <div key={req.id} className="flex items-center justify-between border-b border-[#f0f0f0] py-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-[#1f2734]">{req.spaceName}</p>
+                        <p className="text-xs text-[#9ca3af]">{formatDateTime(req.createdAt)}</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#6b7280]">
+                        <span className={`size-1.5 rounded-full ${STATUS_DOT[req.status] ?? "bg-gray-400"}`} />
+                        {statusLabel(req.status)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* ============ TAB: Discover ============ */}
+        {activeTab === "discover" ? (
+          <div>
+            {/* Search */}
+            <label className="relative block max-w-sm">
+              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-[#9ca3af]" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search spaces..."
+                className="h-9 w-full rounded-lg border border-[#e5e7eb] bg-white pl-8 pr-3 text-sm text-[#1f2734] placeholder:text-[#9ca3af] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+              />
+            </label>
+
+            {/* Table */}
+            <div className="mt-4 border-t border-[#e5e7eb]">
+              <div className="hidden border-b border-[#e5e7eb] px-1 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#9ca3af] md:grid md:grid-cols-[minmax(0,3fr)_80px_90px_100px_80px_44px]">
+                <span>Name</span>
+                <span>Type</span>
+                <span>Visibility</span>
+                <span>Join policy</span>
+                <span>Your role</span>
+                <span />
+              </div>
+              {spaces.map((space) => {
+                const req = requestBySpace.get(space.id)
+                return (
+                  <div key={space.id} className="group border-b border-[#f0f0f0] px-1 py-3 transition-colors hover:bg-[#fafbfc] md:grid md:grid-cols-[minmax(0,3fr)_80px_90px_100px_80px_44px] md:items-center">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[#1f2734]">{space.name}</p>
+                      {space.description ? <p className="mt-0.5 truncate text-xs text-[#9ca3af]">{space.description}</p> : null}
+                    </div>
+                    <div className="hidden text-xs text-[#9ca3af] md:block">{space.type}</div>
+                    <div className="hidden md:block">
+                      <span className="inline-flex items-center gap-1 text-xs text-[#9ca3af]">
+                        {space.visibility === "public" ? <GlobeIcon className="size-3" /> : <LockIcon className="size-3" />}
+                        {space.visibility}
+                      </span>
+                    </div>
+                    <div className="hidden text-xs text-[#9ca3af] md:block">
+                      {space.joinPolicy === "invite_only" ? "invite only" : "request"}
+                    </div>
+                    <div className="mt-1 md:mt-0">
+                      {space.actorRole !== "guest" ? (
+                        <RoleBadge role={space.actorRole} />
+                      ) : req ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#6b7280]">
+                          <span className={`size-1.5 rounded-full ${STATUS_DOT[req.status] ?? "bg-gray-400"}`} />
+                          {statusLabel(req.status)}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-[#b0b7c3]">guest</span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-end md:mt-0">
+                      <DiscoverRowMenu
+                        space={space}
+                        isGuest={isGuest}
+                        requestStatus={req?.status ?? null}
+                        onRequestJoin={(id) => requestMutation.mutate({ spaceId: id, data: {} })}
+                        onManage={handleManageSpace}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+              {spaces.length === 0 && !spacesQuery.isLoading ? (
+                <div className="py-12 text-center">
+                  <p className="text-sm text-[#9ca3af]">No spaces found</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ============ TAB: Manage ============ */}
+        {activeTab === "manage" ? (
+          <div>
+            {/* Space switcher */}
+            {memberSpaces.length > 1 ? (
+              <div className="mb-5 flex flex-wrap gap-1.5">
+                {memberSpaces.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedSpaceId(s.id)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${activeSelectedSpaceId === s.id ? "border-[#1f2734] bg-[#1f2734] text-white" : "border-[#e5e7eb] text-[#6b7280] hover:bg-[#f3f4f6]"}`}
+                  >
+                    <UsersIcon className="size-3" />
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {selectedSpace ? (
+              <div className="space-y-8">
+                {/* ---- Settings ---- */}
+                <section>
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.05em] text-[#6b7280]">Settings</h3>
+                  {canManageSpace ? (
+                    <form key={`settings-${selectedSpace.id}`} onSubmit={handleUpdateSpaceSubmit} className="mt-4 space-y-3 max-w-xl">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-[#6b7280]">Name</label>
+                        <input name="name" defaultValue={selectedSpace.name} className={inputCls} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-[#6b7280]">Slug</label>
+                        <input name="slug" defaultValue={selectedSpace.slug ?? ""} placeholder="optional" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-[#6b7280]">Description</label>
+                        <textarea name="description" defaultValue={selectedSpace.description ?? ""} rows={2} className="w-full rounded-lg border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#1f2734] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20" />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-[#6b7280]">Visibility</label>
+                          <select name="visibility" defaultValue={selectedSpace.visibility} disabled={selectedSpace.type === "personal"} className={`w-full ${selectCls} disabled:opacity-50`}>
+                            <option value="hidden">Hidden</option>
+                            <option value="public">Public</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-[#6b7280]">Join policy</label>
+                          <select name="joinPolicy" defaultValue={selectedSpace.joinPolicy} disabled={selectedSpace.type === "personal"} className={`w-full ${selectCls} disabled:opacity-50`}>
+                            <option value="invite_only">Invite only</option>
+                            <option value="request">Request</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-[#6b7280]">Review</label>
+                          <select name="reviewPolicy" defaultValue={selectedSpace.reviewPolicy} className={`w-full ${selectCls}`}>
+                            <option value="none">None</option>
+                            <option value="required">Required</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button type="submit" disabled={updateSpaceMutation.isPending} className="h-9 rounded-lg bg-[#1f2734] px-3.5 text-sm font-medium text-white transition hover:bg-[#374151] disabled:opacity-60">
+                          {updateSpaceMutation.isPending ? "Saving..." : "Save settings"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#9ca3af]">You don&apos;t have permission to manage settings.</p>
+                  )}
+                </section>
+
+                {/* ---- Join Requests ---- */}
+                <section className="border-t border-[#e5e7eb] pt-6">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.05em] text-[#6b7280]">Join requests</h3>
+                    {pendingJoinRequests.length > 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        {pendingJoinRequests.length} pending
+                      </span>
+                    ) : null}
+                  </div>
+                  {canManageMembers ? (
+                    <div className="mt-3">
+                      {pendingJoinRequests.length > 0 ? (
+                        <div className="border-t border-[#e5e7eb]">
+                          {pendingJoinRequests.slice(0, 8).map((req) => (
+                            <div key={req.id} className="flex items-center justify-between border-b border-[#f0f0f0] py-3">
+                              <div>
+                                <p className="text-sm font-medium text-[#1f2734]">{req.user.displayName || req.user.email || req.user.id}</p>
+                                <p className="text-xs text-[#9ca3af]">Requested {formatDateTime(req.createdAt)}</p>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={reviewJoinRequestMutation.isPending}
+                                  onClick={() => reviewJoinRequestMutation.mutate({ spaceId: selectedSpace.id, data: { requestId: req.id, decision: "approve" } })}
+                                  className="inline-flex size-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50"
+                                  title="Approve"
+                                >
+                                  <CheckIcon className="size-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={reviewJoinRequestMutation.isPending}
+                                  onClick={() => reviewJoinRequestMutation.mutate({ spaceId: selectedSpace.id, data: { requestId: req.id, decision: "reject" } })}
+                                  className="inline-flex size-8 items-center justify-center rounded-lg border border-red-200 text-red-500 transition hover:bg-red-50 disabled:opacity-50"
+                                  title="Reject"
+                                >
+                                  <XIcon className="size-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[#9ca3af]">No pending requests</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#9ca3af]">You don&apos;t have moderation permissions.</p>
+                  )}
+                </section>
+
+                {/* ---- Invites ---- */}
+                <section className="border-t border-[#e5e7eb] pt-6">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.05em] text-[#6b7280]">Invites</h3>
+                  {canManageInvites ? (
+                    <div className="mt-3 space-y-4">
+                      <form onSubmit={handleInviteSubmit} className="flex flex-wrap items-end gap-2">
+                        <div className="min-w-[200px] flex-1">
+                          <label className="mb-1 block text-xs font-medium text-[#6b7280]">Email</label>
+                          <input type="email" value={inviteTargetEmail} onChange={(e) => setInviteTargetEmail(e.target.value)} placeholder="member@example.com" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-[#6b7280]">Role</label>
+                          <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Extract<SpaceMemberRole, "admin" | "editor" | "member">)} className={selectCls}>
+                            <option value="member">member</option>
+                            <option value="editor">editor</option>
+                            <option value="admin">admin</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-[#6b7280]">Expires</label>
+                          <select value={inviteExpiresHours} onChange={(e) => setInviteExpiresHours(e.target.value)} className={selectCls}>
+                            <option value="24">24h</option>
+                            <option value="72">72h</option>
+                            <option value="168">7 days</option>
+                            <option value="720">30 days</option>
+                          </select>
+                        </div>
+                        <button type="submit" disabled={createInviteMutation.isPending} className="h-9 rounded-lg bg-[#1f2734] px-3.5 text-sm font-medium text-white transition hover:bg-[#374151] disabled:opacity-60">
+                          <MailPlusIcon className="mr-1.5 inline size-3.5" />
+                          {createInviteMutation.isPending ? "Sending..." : "Invite"}
+                        </button>
+                      </form>
+
+                      {recentInvites.length > 0 ? (
+                        <div className="border-t border-[#e5e7eb]">
+                          {recentInvites.slice(0, 10).map((invite) => (
+                            <div key={invite.id} className="flex items-center justify-between border-b border-[#f0f0f0] py-2.5">
+                              <div>
+                                <p className="text-sm font-medium text-[#1f2734]">{invite.targetEmail || invite.targetUserId || "Direct invite"}</p>
+                                <p className="flex items-center gap-2 text-xs text-[#9ca3af]">
+                                  <span>{invite.role}</span>
+                                  <span>·</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <span className={`size-1.5 rounded-full ${STATUS_DOT[invite.status] ?? "bg-gray-400"}`} />
+                                    {inviteStatusLabel(invite.status)}
+                                  </span>
+                                  <span>·</span>
+                                  <span>expires {formatDateTime(invite.expiresAt)}</span>
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyInvite(invite.id, invite.webInviteUrl)}
+                                  className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e5e7eb] px-2 text-xs text-[#374151] transition hover:bg-[#f3f4f6]"
+                                >
+                                  <CopyIcon className="size-3" />
+                                  {copiedInviteId === invite.id ? "Copied!" : "Copy"}
+                                </button>
+                                {invite.status === "pending" ? (
+                                  <button
+                                    type="button"
+                                    disabled={revokeInviteMutation.isPending}
+                                    onClick={() => revokeInviteMutation.mutate({ spaceId: selectedSpace.id, data: { inviteId: invite.id } })}
+                                    className="inline-flex h-7 items-center gap-1 rounded-md border border-red-200 px-2 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                                  >
+                                    <XIcon className="size-3" />
+                                    Revoke
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[#9ca3af]">No invites created yet</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#9ca3af]">You don&apos;t have invite permissions.</p>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f3f4f6] to-[#e5e7eb]">
+                  <SettingsIcon className="size-7 text-[#9ca3af]" />
+                </div>
+                <p className="mt-4 text-base font-medium text-[#374151]">Select a space to manage</p>
+                <p className="mt-1 text-sm text-[#9ca3af]">Choose from your spaces above, or switch to My Spaces tab.</p>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
+
+      {/* Create space dialog */}
+      {showCreateDialog ? (
+        <CreateSpaceDialog
+          isPending={createSpaceMutation.isPending}
+          onSubmit={(data) => {
+            createSpaceMutation.mutate({
+              name: data.name,
+              description: data.description ?? null,
+              slug: data.slug,
+              type: "team",
+              visibility: data.visibility,
+              joinPolicy: data.joinPolicy,
+              reviewPolicy: data.reviewPolicy,
+            })
+          }}
+          onCancel={() => setShowCreateDialog(false)}
+        />
+      ) : null}
+
+      {/* Toast */}
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </PortalPageShell>
   )
 }

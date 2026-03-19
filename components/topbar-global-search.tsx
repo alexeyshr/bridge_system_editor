@@ -117,8 +117,7 @@ export function TopbarGlobalSearch({
       >
         <button
           type="button"
-          aria-label="Open global search"
-          title="Global search"
+          data-tooltip="Global search"
           className="inline-flex size-7 items-center justify-center rounded-lg text-[#4b566a] transition-colors hover:bg-[#edf2fa]"
           onClick={() => setIsOpen(true)}
         >
@@ -143,8 +142,7 @@ export function TopbarGlobalSearch({
         {isOpen ? (
           <button
             type="button"
-            aria-label="Close global search"
-            title="Close search"
+            data-tooltip="Close search"
             className="inline-flex size-7 items-center justify-center rounded-lg text-[#6f7a8d] transition-colors hover:bg-[#edf2fa]"
             onClick={() => {
               setIsOpen(false)

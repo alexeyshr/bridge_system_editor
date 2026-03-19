@@ -1065,6 +1065,15 @@ export const drizzleSystemsDriver: SystemsDriver = {
     };
   },
 
+  async deleteSystem(systemId, userId) {
+    const access = await this.resolveSystemAccess(systemId, userId);
+    if (!access.systemExists) throw new NotFoundError('System not found');
+    if (access.role !== 'owner') throw new AccessDeniedError();
+
+    await db.delete(biddingSystems).where(eq(biddingSystems.id, systemId));
+    return { id: systemId, deleted: true as const };
+  },
+
   async freezeTournamentBindings(systemId, userId, tournamentId) {
     const access = await this.resolveSystemAccess(systemId, userId);
     if (!access.systemExists) throw new NotFoundError('System not found');

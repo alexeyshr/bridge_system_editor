@@ -55,7 +55,9 @@ const dealBlockSchema = z.object({
 const auctionBlockSchema = z.object({
   type: z.literal('auction'),
   startingSeat: z.enum(['W', 'N', 'E', 'S']).optional(),
+  vulnerability: z.enum(['none', 'ns', 'ew', 'all']).optional(),
   sequence: z.array(z.string().trim().min(1).max(12)).min(1).max(200),
+  annotations: z.record(z.coerce.string(), z.string().trim().max(500)).optional(),
   notes: z.string().trim().max(2_000).optional(),
 });
 
@@ -70,6 +72,13 @@ const answerBlockSchema = z.object({
   text: z.string().trim().min(1).max(4_000),
 });
 
+const imageBlockSchema = z.object({
+  type: z.literal('image'),
+  url: z.string().trim().min(1).max(2048),
+  alt: z.string().trim().max(200).optional(),
+  caption: z.string().trim().max(500).optional(),
+});
+
 export const contentBlockSchema = z.discriminatedUnion('type', [
   textBlockSchema,
   calloutBlockSchema,
@@ -77,6 +86,7 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
   auctionBlockSchema,
   questionBlockSchema,
   answerBlockSchema,
+  imageBlockSchema,
 ]);
 
 export const contentBlocksSchema = z.array(contentBlockSchema).min(1).max(2_000);
@@ -115,6 +125,7 @@ export const createContentItemSchema = z.object({
   spaceId: z.string().trim().min(1),
   title: z.string().trim().min(1).max(160),
   summary: z.string().trim().max(4_000).optional().nullable(),
+  coverImageUrl: z.string().trim().max(2048).optional().nullable(),
   format: z.enum(contentFormatEnum.enumValues).default('article'),
   visibility: z.enum(contentVisibilityEnum.enumValues).default('members_only'),
   blocks: contentBlocksSchema,
@@ -126,6 +137,7 @@ export const updateContentDraftSchema = z
   .object({
     title: z.string().trim().min(1).max(160).optional(),
     summary: z.string().trim().max(4_000).optional().nullable(),
+    coverImageUrl: z.string().trim().max(2048).optional().nullable(),
     format: z.enum(contentFormatEnum.enumValues).optional(),
     visibility: z.enum(contentVisibilityEnum.enumValues).optional(),
     blocks: contentBlocksSchema.optional(),
@@ -144,13 +156,21 @@ export const archiveContentItemSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+export const unarchiveContentItemSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+
+export const hardDeleteContentItemSchema = z.object({
+  confirm: z.literal(true),
+});
+
 export const listContentItemsSchema = z.object({
   spaceId: z.string().trim().min(1).optional(),
   query: z.string().trim().max(160).optional(),
   format: z.enum(contentFormatEnum.enumValues).optional(),
   visibility: z.enum(contentVisibilityEnum.enumValues).optional(),
   status: z.enum(contentStatusEnum.enumValues).optional(),
-  limit: z.number().int().min(1).max(100).default(20).optional(),
+  limit: z.number().int().min(1).max(500).default(20).optional(),
 });
 
 export const listContentFeedSchema = z.object({

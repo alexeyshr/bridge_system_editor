@@ -1,14 +1,32 @@
-import { Search, Command, Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, LogIn, LogOut } from 'lucide-react';
+import { Search, Command, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, LogIn, LogOut } from 'lucide-react';
 import { useBiddingStore } from '@/store/useBiddingStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
+import { trpc } from '@/lib/trpc/react';
 import { SystemsHubMenu } from '@/components/SystemsHubMenu';
 import { SystemLifecycleMenu } from '@/components/SystemLifecycleMenu';
 
+/* ── Tooltip (CSS-only, styled) ── */
+function Tooltip({ label, children, side = 'top' }: { label: string; children: React.ReactNode; side?: 'top' | 'bottom' }) {
+  return (
+    <span className="group/ttip relative inline-flex">
+      {children}
+      <span
+        className={`pointer-events-none invisible absolute left-1/2 z-[100] -translate-x-1/2 whitespace-nowrap rounded-md bg-[#1f2734] px-2 py-1 text-[10px] font-medium text-white shadow-lg transition-all group-hover/ttip:visible group-hover/ttip:opacity-100 ${
+          side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+        }`}
+        style={{ opacity: 0 }}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 export function TopBar() {
   const { data: session, status } = useSession();
+  const isAuthenticated = status === 'authenticated';
   const {
     searchQuery,
     setSearchQuery,
@@ -43,7 +61,18 @@ export function TopBar() {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
 
-  const handleExport = () => {
+  /* ── Active system title from cached list ── */
+  const systemsListQuery = trpc.bidding.systems.list.useQuery({}, {
+    enabled: isAuthenticated,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const activeSystemTitle = useMemo(
+    () => systemsListQuery.data?.systems?.find((s) => s.id === activeSystemId)?.title ?? null,
+    [systemsListQuery.data?.systems, activeSystemId],
+  );
+
+  const handleExport = useMemo(() => () => {
     const yamlStr = exportYaml();
     const blob = new Blob([yamlStr], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
@@ -52,7 +81,7 @@ export function TopBar() {
     a.download = 'system.yaml';
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [exportYaml]);
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -144,11 +173,26 @@ export function TopBar() {
       },
       disabled: false,
     },
+    {
+      id: 'export-yaml',
+      label: 'Export system to YAML',
+      keywords: 'save export yaml download file',
+      onRun: () => handleExport(),
+      disabled: false,
+    },
+    {
+      id: 'import-yaml',
+      label: 'Import system from YAML',
+      keywords: 'import upload yaml file',
+      onRun: () => { /* handled in runPaletteAction */ },
+      disabled: false,
+    },
   ], [
     canRedo,
     canUndo,
     collapseAll,
     expandAll,
+    handleExport,
     isLeftPanelOpen,
     isRightPanelOpen,
     redo,
@@ -191,188 +235,164 @@ export function TopBar() {
 
   const runPaletteAction = (action: (typeof paletteActions)[number]) => {
     if (action.disabled) return;
-    action.onRun();
+    if (action.id === 'import-yaml') {
+      fileInputRef.current?.click();
+    } else {
+      action.onRun();
+    }
     setIsPaletteOpen(false);
     setPaletteQuery('');
   };
 
+  /* ── sync status helpers ── */
+  const syncDotColor = (() => {
+    if (serverSyncError) return 'bg-red-400';
+    if (isServerSyncing || isDraftSaving || hasUnsavedChanges) return 'bg-amber-400 animate-pulse';
+    return 'bg-emerald-400';
+  })();
+
+  const syncLabel = (() => {
+    if (isAuthenticated) {
+      if (isServerSyncing) return 'Syncing…';
+      if (hasUnsavedChanges) return 'Unsynced';
+      return 'Synced';
+    }
+    if (hasUnsavedChanges) return 'Unsaved';
+    return 'Saved';
+  })();
+
+  const syncDetail = (() => {
+    if (isAuthenticated) {
+      if (serverSyncError) return serverSyncError;
+      if (isServerSyncing) return 'Syncing to server…';
+      if (lastServerSavedAt) return formatTime(lastServerSavedAt);
+      if (activeSystemId) return 'No sync yet';
+      return 'Preparing…';
+    }
+    if (isDraftSaving) return 'Saving…';
+    if (lastDraftSavedAt) return formatTime(lastDraftSavedAt);
+    return 'Not saved';
+  })();
+
+  const btnClass = "flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-[#6b7280] transition hover:bg-[#f3f4f6] hover:text-[#1f2734]";
+
   return (
     <>
-      <header className="h-12 border-b border-slate-200 bg-slate-50 flex items-center px-4 justify-between shrink-0 gap-2">
-      <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
-        <button 
-          onClick={toggleLeftPanel}
-          className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded-md transition-colors shrink-0"
-          title={isLeftPanelOpen ? "Close Left Panel" : "Open Left Panel"}
-        >
-          {isLeftPanelOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-        </button>
-        <div className="hidden sm:block shrink-0">
-          <Image
-            src="/logo_header.png"
-            alt="Bridge"
-            width={300}
-            height={65}
-            quality={100}
-            unoptimized
-            className="h-10 w-auto object-contain"
-            priority
-          />
-        </div>
-        <div className="h-4 w-px bg-slate-300 hidden sm:block shrink-0" />
-        <SystemsHubMenu />
-        <SystemLifecycleMenu />
-        <div className="relative flex-1 max-w-xs min-w-0">
-          <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-9 pr-4 text-sm bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
-          />
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-1 md:gap-2 shrink-0">
-        {status === 'authenticated' ? (
-          <>
-            <div className="hidden lg:block text-[11px] text-slate-500 max-w-[180px] truncate">
-              {session.user.name || session.user.email}
-            </div>
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[#e5e7eb] bg-[#fafbfc] px-4">
+        {/* ── Left: navigation + context ── */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
+          <Tooltip label={isLeftPanelOpen ? 'Close left panel' : 'Open left panel'} side="bottom">
             <button
-              onClick={() => signOut({ callbackUrl: '/' })}
-              className="h-8 px-2 md:px-3 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-md flex items-center gap-1 md:gap-2 transition-colors"
-              title="Sign out"
+              onClick={toggleLeftPanel}
+              className="shrink-0 rounded-md p-1.5 text-[#9ca3af] transition hover:bg-[#f3f4f6] hover:text-[#6b7280]"
             >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden md:inline">Sign out</span>
+              {isLeftPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
             </button>
-            <div className="h-4 w-px bg-slate-300 mx-1" />
-          </>
-        ) : (
-          <>
-            <Link
-              href="/auth/signin"
-              className="h-8 px-2 md:px-3 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-md flex items-center gap-1 md:gap-2 transition-colors"
-              title="Sign in"
-            >
-              <LogIn className="w-4 h-4" />
-              <span className="hidden md:inline">Sign in</span>
-            </Link>
-            <div className="h-4 w-px bg-slate-300 mx-1" />
-          </>
-        )}
-        <div className="hidden lg:flex flex-col items-end leading-tight mr-1">
-          <div
-            className={`text-[11px] font-medium ${
-              status === 'authenticated'
-                ? isServerSyncing || hasUnsavedChanges
-                  ? 'text-amber-600'
-                  : 'text-emerald-600'
-                : hasUnsavedChanges
-                  ? 'text-amber-600'
-                  : 'text-emerald-600'
-            }`}
+          </Tooltip>
+
+          {/* Logo: ♣ in circle + "Bridge" */}
+          <Link
+            href="/dashboard"
+            className="hidden shrink-0 items-center gap-1.5 sm:inline-flex"
+            aria-label="Bridge OneClub"
           >
-            {status === 'authenticated'
-              ? isServerSyncing
-                ? 'Syncing...'
-                : hasUnsavedChanges
-                  ? 'Unsynced changes'
-                  : 'All changes synced'
-              : hasUnsavedChanges
-                ? 'Unsaved changes'
-                : 'All changes saved'}
-          </div>
-          <div className="text-[10px] text-slate-500">
-            {status === 'authenticated'
-              ? serverSyncError
-                ? serverSyncError
-                : isServerSyncing
-                  ? 'Syncing to server...'
-                  : lastServerSavedAt
-                    ? `Server synced ${formatTime(lastServerSavedAt)}`
-                    : activeSystemId
-                      ? 'No server sync yet'
-                      : 'Preparing workspace...'
-              : isDraftSaving
-                ? 'Saving draft...'
-                : lastDraftSavedAt
-                  ? `Draft saved ${formatTime(lastDraftSavedAt)}`
-                  : 'Draft not saved yet'}
-            {lastExportedAt ? ` | File saved ${formatTime(lastExportedAt)}` : ''}
+            <svg viewBox="0 0 24 24" width="28" height="28" className="h-7 w-7 shrink-0" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" fill="none" stroke="#2c354d" strokeWidth="1.8" />
+              <text x="12" y="15.5" textAnchor="middle" fontSize="12" fill="#2c354d" fontFamily="Georgia, serif">
+                {'\u2663'}
+              </text>
+            </svg>
+            <span className="text-sm font-bold tracking-tight text-[#2c354d]">Bridge</span>
+          </Link>
+
+          <div className="hidden h-5 w-px bg-[#e5e7eb] sm:block" />
+
+          <SystemsHubMenu />
+          <SystemLifecycleMenu />
+
+          {/* Active system name */}
+          {activeSystemTitle && (
+            <>
+              <div className="hidden h-5 w-px bg-[#e5e7eb] md:block" />
+              <span className="hidden max-w-[220px] truncate text-sm font-medium text-[#1f2734] md:block">
+                {activeSystemTitle}
+              </span>
+            </>
+          )}
+
+          {/* Search */}
+          <div className="relative min-w-0 max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
+            <input
+              type="text"
+              placeholder="Search…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8 w-full rounded-lg border border-[#e5e7eb] bg-white pl-9 pr-4 text-sm text-[#1f2734] placeholder:text-[#9ca3af] transition focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+            />
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsPaletteOpen(true)}
-          className="hidden md:flex h-8 px-3 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-md items-center gap-2 transition-colors"
-          title="Command palette (Ctrl/Cmd+K)"
-        >
-          <Command className="w-4 h-4" />
-          <span>Palette</span>
-        </button>
-        <div className="hidden md:block h-4 w-px bg-slate-300 mx-1" />
-        <button 
-          onClick={() => fileInputRef.current?.click()}
-          className="h-8 px-2 md:px-3 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-md flex items-center gap-1 md:gap-2 transition-colors"
-          title="Import"
-        >
-          <Upload className="w-4 h-4" />
-          <span className="hidden md:inline">Import</span>
-        </button>
-        <button 
-          onClick={handleExport}
-          className="h-8 px-2 md:px-3 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-md flex items-center gap-1 md:gap-2 transition-colors"
-          title="Save file"
-        >
-          <Download className="w-4 h-4" />
-          <span className="hidden md:inline">Save</span>
-        </button>
-        <input 
-          type="file" 
-          accept=".yaml,.yml" 
-          className="hidden" 
-          ref={fileInputRef}
-          onChange={handleImport}
-        />
-        <div className="h-4 w-px bg-slate-300 mx-1" />
-        <button 
-          onClick={toggleRightPanel}
-          className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded-md transition-colors"
-          title={isRightPanelOpen ? "Close Right Panel" : "Open Right Panel"}
-        >
-          {isRightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-        </button>
-      </div>
-    </header>
 
+        {/* ── Right: status + utilities + auth ── */}
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Sync status pill */}
+          <Tooltip label={syncDetail || syncLabel} side="bottom">
+            <div className="hidden items-center gap-1.5 rounded-full border border-[#e5e7eb] px-2.5 py-1 lg:inline-flex">
+              <span className={`size-1.5 shrink-0 rounded-full ${syncDotColor}`} />
+              <span className="text-[11px] font-medium text-[#6b7280]">{syncLabel}</span>
+              {syncDetail && <span className="text-[10px] text-[#9ca3af]">{syncDetail}</span>}
+              {lastExportedAt && <span className="text-[10px] text-[#9ca3af]">| File {formatTime(lastExportedAt)}</span>}
+            </div>
+          </Tooltip>
+
+          <div className="mx-1 h-5 w-px bg-[#e5e7eb]" />
+
+          <Tooltip label={isRightPanelOpen ? 'Close right panel' : 'Open right panel'} side="bottom">
+            <button
+              onClick={toggleRightPanel}
+              className="shrink-0 rounded-md p-1.5 text-[#9ca3af] transition hover:bg-[#f3f4f6] hover:text-[#6b7280]"
+            >
+              {isRightPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </button>
+          </Tooltip>
+        </div>
+      </header>
+
+      {/* Hidden file input for YAML import (triggered from Command Palette) */}
+      <input
+        type="file"
+        accept=".yaml,.yml"
+        className="hidden"
+        ref={fileInputRef}
+        onChange={handleImport}
+      />
+
+      {/* Command Palette */}
       {isPaletteOpen && (
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/20 backdrop-blur-[1px] flex items-start justify-center pt-20 px-4"
+          className="fixed inset-0 z-[70] flex items-start justify-center bg-[#1f2734]/15 px-4 pt-20 backdrop-blur-[1px]"
           onClick={() => {
             setIsPaletteOpen(false);
             setPaletteQuery('');
           }}
         >
           <div
-            className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden"
+            className="w-full max-w-xl overflow-hidden rounded-xl border border-[#e5e7eb] bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="px-3 py-2 border-b border-slate-100">
+            <div className="border-b border-[#f0f0f0] px-3 py-2">
               <input
                 autoFocus
                 type="text"
                 value={paletteQuery}
                 onChange={(event) => setPaletteQuery(event.target.value)}
                 placeholder="Command palette (type to filter)"
-                className="h-9 w-full rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="h-9 w-full rounded-lg border border-[#e5e7eb] bg-white px-3 text-sm text-[#1f2734] placeholder:text-[#9ca3af] focus:border-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
               />
             </div>
             <div className="max-h-[360px] overflow-auto py-1">
               {filteredPaletteActions.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-slate-500">No commands found.</div>
+                <div className="px-3 py-2 text-sm text-[#9ca3af]">No commands found.</div>
               ) : (
                 filteredPaletteActions.map((action) => (
                   <button
@@ -380,15 +400,15 @@ export function TopBar() {
                     type="button"
                     disabled={action.disabled}
                     onClick={() => runPaletteAction(action)}
-                    className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between ${
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
                       action.disabled
-                        ? 'text-slate-300 cursor-not-allowed'
-                        : 'text-slate-700 hover:bg-slate-50'
+                        ? 'cursor-not-allowed text-[#d1d5db]'
+                        : 'text-[#374151] hover:bg-[#fafbfc]'
                     }`}
                   >
                     <span>{action.label}</span>
                     {action.disabled && (
-                      <span className="text-[10px] text-slate-400">unavailable</span>
+                      <span className="text-[10px] text-[#9ca3af]">unavailable</span>
                     )}
                   </button>
                 ))

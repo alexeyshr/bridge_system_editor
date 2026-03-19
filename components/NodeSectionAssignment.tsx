@@ -129,8 +129,8 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
 
   if (sectionOptions.length === 0) {
     return (
-      <div className={`rounded-md border border-slate-200 bg-slate-50 ${compact ? 'p-2' : 'p-3'}`}>
-        <div className={`${compact ? 'text-[10px]' : 'text-xs'} text-slate-500`}>
+      <div className={`rounded-md border border-[#e5e7eb] bg-[#fafbfc] ${compact ? 'p-2' : 'p-3'}`}>
+        <div className={`${compact ? 'text-[10px]' : 'text-xs'} text-[#6b7280]`}>
           No sections created yet. Create one in the left panel first.
         </div>
       </div>
@@ -140,7 +140,7 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
   return (
     <div className={`space-y-2 ${compact ? 'text-[10px]' : 'text-xs'}`}>
       <div>
-        <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500 mb-1">
+        <div className="text-[10px] font-medium uppercase tracking-wider text-[#6b7280] mb-1">
           Apply To Node
         </div>
         <div className="max-h-36 overflow-y-auto pr-1 space-y-1">
@@ -150,20 +150,20 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
             return (
               <label
                 key={section.id}
-                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100 text-slate-700"
-                title={section.pathLabel}
+                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-[#f3f4f6] text-[#374151]"
+                data-tooltip={section.pathLabel}
               >
                 <input
                   type="checkbox"
                   checked={isDirect}
                   onChange={(event) => handleToggleDirect(section.id, event.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  className="w-3.5 h-3.5 rounded border-[#d1d5db] text-[#1f2734] focus:ring-[#6b7280]/20"
                 />
                 <span className="truncate" style={{ paddingLeft: `${section.depth * 10}px` }}>
                   {section.label}
                 </span>
                 {!isDirect && isEffective && (
-                  <span className="ml-auto shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[9px] text-blue-700">
+                  <span className="ml-auto shrink-0 rounded bg-[#1f2734]/5 px-1.5 py-0.5 text-[9px] text-[#1f2734]">
                     via subtree
                   </span>
                 )}
@@ -173,17 +173,17 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
         </div>
       </div>
 
-      <div className="pt-2 border-t border-slate-200">
-        <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500 mb-1">
+      <div className="pt-2 border-t border-[#e5e7eb]">
+        <div className="text-[10px] font-medium uppercase tracking-wider text-[#6b7280] mb-1">
           Apply To Subtree
         </div>
         <div className="flex items-center gap-1.5">
           <select
             value={selectedForSubtree}
             onChange={(event) => setSelectedForSubtree(event.target.value)}
-            className={`flex-1 rounded-md border border-slate-200 bg-white px-2 ${
+            className={`flex-1 rounded-md border border-[#e5e7eb] bg-white px-2 ${
               compact ? 'h-7 text-[10px]' : 'h-8 text-[11px]'
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            } focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20`}
           >
             <option value="">Select section...</option>
             {sectionOptions.map((section) => (
@@ -199,7 +199,7 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
           <button
             type="button"
             onClick={handleAddSubtreeRule}
-            className={`rounded-md bg-blue-600 px-3 text-white hover:bg-blue-700 ${
+            className={`rounded-md bg-[#1f2734] px-3 text-white hover:bg-[#374151] ${
               compact ? 'h-7 text-[10px]' : 'h-8 text-[11px]'
             }`}
           >
@@ -209,11 +209,11 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
       </div>
 
       <div>
-        <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500 mb-1">
+        <div className="text-[10px] font-medium uppercase tracking-wider text-[#6b7280] mb-1">
           Active Subtree Rules
         </div>
         {subtreeRules.length === 0 ? (
-          <div className="text-slate-400 italic">No subtree rules</div>
+          <div className="text-[#9ca3af] italic">No subtree rules</div>
         ) : (
           <div className="space-y-1">
             {subtreeRules.map((rule) => {
@@ -222,20 +222,20 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
               return (
                 <div
                   key={rule.id}
-                  className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-slate-700"
-                  title={`${section.name} (future descendants included)`}
+                  className="flex items-center gap-2 rounded-md border border-[#e5e7eb] bg-white px-2 py-1.5 text-[#374151]"
+                  data-tooltip={`${section.name} (future descendants included)`}
                 >
                   <span className="truncate">{section.name}</span>
                   {rule.includeFutureDescendants && (
-                    <span className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">
+                    <span className="ml-auto rounded bg-[#f3f4f6] px-1.5 py-0.5 text-[9px] text-[#6b7280]">
                       future on
                     </span>
                   )}
                   <button
                     type="button"
                     onClick={() => handleRemoveSubtreeRule(rule.id)}
-                    className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"
-                    title="Remove subtree rule"
+                    className="shrink-0 rounded p-0.5 text-[#9ca3af] hover:bg-[#f3f4f6] hover:text-rose-600"
+                    data-tooltip="Remove subtree rule"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -250,33 +250,33 @@ export function NodeSectionAssignment({ nodeId, compact = false }: NodeSectionAs
 
       {removeDialog && (
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-[#1f2734]/20 backdrop-blur-[1px] flex items-center justify-center p-4"
           onClick={closeRemoveDialog}
         >
           <div
-            className="w-full max-w-sm rounded-lg border border-slate-200 bg-white shadow-xl"
+            className="w-full max-w-sm rounded-lg border border-[#e5e7eb] bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="px-4 py-3 border-b border-slate-100">
-              <div className="text-sm font-semibold text-slate-900">
+            <div className="px-4 py-3 border-b border-[#f0f0f0]">
+              <div className="text-sm font-semibold text-[#1f2734]">
                 {getMutationIntentUiMeta(removeDialog.intent).title}
               </div>
-              <div className="mt-0.5 text-xs text-slate-700">
+              <div className="mt-0.5 text-xs text-[#374151]">
                 {removeDialog.label}
               </div>
             </div>
 
-            <div className="px-4 py-3 text-sm text-slate-600">
+            <div className="px-4 py-3 text-sm text-[#6b7280]">
               {removeDialog.intent === 'remove-node-section'
                 ? 'This will only remove node assignment from this section. The bidding tree remains unchanged.'
                 : 'This will only remove subtree assignment rule. Nodes and sequences remain unchanged.'}
             </div>
 
-            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <div className="px-4 py-3 border-t border-[#f0f0f0] flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={closeRemoveDialog}
-                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+                className="h-8 px-3 rounded-md border border-[#e5e7eb] text-sm text-[#6b7280] hover:bg-[#f3f4f6]"
               >
                 Cancel
               </button>

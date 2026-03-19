@@ -256,6 +256,13 @@ export interface SystemsDriver {
     frozenCount: number;
     alreadyFrozenCount: number;
   }>;
+  deleteSystem(
+    systemId: string,
+    userId: string,
+  ): Promise<{
+    id: string;
+    deleted: true;
+  }>;
 }
 
 export interface InvitesDriver {

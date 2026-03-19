@@ -24,8 +24,7 @@ export function TopbarSuitIcons({
     <div className={cn("inline-flex items-center gap-1.5", className)} role="group" aria-label="Portal suit actions">
       <button
         type="button"
-        aria-label="Spade action"
-        title="Spade action"
+        data-tooltip="Spade action"
         className={cn(baseButtonClass, "text-[#2d3750]")}
         onClick={onSpadeClick}
       >
@@ -33,8 +32,7 @@ export function TopbarSuitIcons({
       </button>
       <button
         type="button"
-        aria-label="Heart action"
-        title="Heart action"
+        data-tooltip="Heart action"
         className={cn(baseButtonClass, "text-[#b32d32]")}
         onClick={onHeartClick}
       >
@@ -42,8 +40,7 @@ export function TopbarSuitIcons({
       </button>
       <button
         type="button"
-        aria-label="Diamond action"
-        title="Diamond action"
+        data-tooltip="Diamond action"
         className={cn(baseButtonClass, "text-[#cc5b28]")}
         onClick={onDiamondClick}
       >
@@ -51,8 +48,7 @@ export function TopbarSuitIcons({
       </button>
       <button
         type="button"
-        aria-label="Club action"
-        title="Club action"
+        data-tooltip="Club action"
         className={cn(baseButtonClass, "text-[#4b4f57]")}
         onClick={onClubClick}
       >

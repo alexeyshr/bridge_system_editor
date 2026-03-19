@@ -6,3 +6,19 @@ coverage/
 *.tsbuildinfo
 .env*
 !.env.example
+
+# Temporary files
+.tmp-*
+tmp-pdf-pages/
+tmp-lawrence-deals.json
+dupont-solutions-4-30.json
+dupont_solutions.json
+lawrence_articles.json
+lawrence_ch3_ch4.json
+lawrence_ch5_ch6_ch7.json
+merge_lawrence.mjs
+
+# Large binary files
+public/uploads/books/*.pdf
+public/uploads/*.jpg
+public/uploads/*.png

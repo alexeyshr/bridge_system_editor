@@ -2,6 +2,7 @@ import { useBiddingStore, BiddingNode } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SequenceRow } from './SequenceRow';
+import { DefenseCenterPanel } from './DefenseCenterPanel';
 import {
   ChevronsUpDown,
   ChevronsDownUp,
@@ -23,6 +24,68 @@ type TreeViewMode = 'classic' | 'compact';
 interface FlatSectionOption {
   id: string;
   pathLabel: string;
+}
+
+function BatchSectionSelect({ value, onChange, options }: {
+  value: string;
+  onChange: (val: string) => void;
+  options: FlatSectionOption[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.id === value);
+
+  return (
+    <div ref={ref} className="relative min-w-[180px]">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="h-7 w-full flex items-center justify-between gap-1 rounded-lg border border-[#e5e7eb] bg-white px-2 text-xs text-[#374151] transition hover:border-[#d1d5db] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
+      >
+        <span className="truncate">{selected?.pathLabel ?? 'Assign section...'}</span>
+        <ChevronDown className={`w-3 h-3 text-[#6b7280] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-[#e5e7eb] bg-white shadow-lg py-1 max-h-48 overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false); }}
+            className={`w-full px-2 py-1.5 text-left text-xs flex items-center gap-1.5 transition-colors ${
+              !value ? 'bg-[#f3f4f6] text-[#1f2734] font-medium' : 'text-[#6b7280] hover:bg-[#f3f4f6]'
+            }`}
+          >
+            {!value && <Check className="w-3 h-3 shrink-0" />}
+            {value && <span className="w-3 shrink-0" />}
+            Assign section...
+          </button>
+          {options.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => { onChange(opt.id); setOpen(false); }}
+              className={`w-full px-2 py-1.5 text-left text-xs flex items-center gap-1.5 transition-colors ${
+                opt.id === value ? 'bg-[#f3f4f6] text-[#1f2734] font-medium' : 'text-[#374151] hover:bg-[#f3f4f6]'
+              }`}
+            >
+              {opt.id === value && <Check className="w-3 h-3 shrink-0" />}
+              {opt.id !== value && <span className="w-3 shrink-0" />}
+              {opt.pathLabel}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function CenterPanel() {
@@ -59,6 +122,7 @@ export function CenterPanel() {
     getSectionPath,
     treeViewMode,
     setTreeViewMode,
+    activeDefenseContextId,
   } = useBiddingStore();
   const allNodeIds = Object.keys(nodes);
   const viewMode: TreeViewMode = treeViewMode;
@@ -146,7 +210,7 @@ export function CenterPanel() {
       return acc;
     };
     return flatten(getSectionTree());
-  }, [getSectionPath, getSectionTree]);
+  }, [getSectionPath, getSectionTree, sectionsById]);
   const isBatchMenuVisible = isBatchMenuOpen && selectedNodeIdsResolved.length > 0 && !isBatchPanelCollapsed;
 
   const effectiveSelectedNode =
@@ -287,61 +351,61 @@ export function CenterPanel() {
     }
   };
 
+  if (activeDefenseContextId) {
+    return <DefenseCenterPanel contextId={activeDefenseContextId} />;
+  }
+
   return (
     <div className="h-full w-full flex flex-col bg-white overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-white shrink-0 gap-2">
+      <div className="flex items-center px-4 py-2 border-b border-[#e5e7eb] bg-white shrink-0 gap-2">
         <button
           onClick={undo}
           disabled={!canUndo}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
-          title="Undo (Ctrl/Cmd+Z)"
+          className="p-1.5 text-[#6b7280] hover:text-[#1f2734] hover:bg-[#f3f4f6] rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          data-tooltip="Undo · Ctrl+Z"
         >
-          <Undo2 className="w-3.5 h-3.5" />
-          <span>Undo</span>
+          <Undo2 className="w-4 h-4" />
         </button>
         <button
           onClick={redo}
           disabled={!canRedo}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
-          title="Redo (Shift+Ctrl/Cmd+Z)"
+          className="p-1.5 text-[#6b7280] hover:text-[#1f2734] hover:bg-[#f3f4f6] rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          data-tooltip="Redo · Ctrl+Shift+Z"
         >
-          <Redo2 className="w-3.5 h-3.5" />
-          <span>Redo</span>
+          <Redo2 className="w-4 h-4" />
         </button>
-        <div className="h-4 w-px bg-slate-200 mx-0.5" />
-        <button 
+        <div className="h-4 w-px bg-[#e5e7eb] mx-0.5" />
+        <button
           onClick={expandAll}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
-          title="Expand All"
+          className="p-1.5 text-[#6b7280] hover:text-[#1f2734] hover:bg-[#f3f4f6] rounded transition-colors"
+          data-tooltip="Expand All"
         >
-          <ChevronsUpDown className="w-3.5 h-3.5" />
-          <span>Expand All</span>
+          <ChevronsUpDown className="w-4 h-4" />
         </button>
-        <button 
+        <button
           onClick={collapseAll}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
-          title="Collapse All"
+          className="p-1.5 text-[#6b7280] hover:text-[#1f2734] hover:bg-[#f3f4f6] rounded transition-colors"
+          data-tooltip="Collapse All"
         >
-          <ChevronsDownUp className="w-3.5 h-3.5" />
-          <span>Collapse All</span>
+          <ChevronsDownUp className="w-4 h-4" />
         </button>
         <button
           type="button"
           onClick={toggleBatchMode}
           className={`flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded transition-colors border ${
             isBatchModeEnabled
-              ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
-              : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              ? 'border-[#1f2734]/20 bg-[#1f2734]/5 text-[#1f2734] hover:bg-[#1f2734]/10'
+              : 'border-[#e5e7eb] text-[#6b7280] hover:text-[#1f2734] hover:bg-[#f3f4f6]'
           }`}
-          title={isBatchModeEnabled ? 'Disable batch mode' : 'Enable batch mode'}
+          data-tooltip={isBatchModeEnabled ? 'Disable batch mode' : 'Enable batch mode'}
         >
           <span>Batch</span>
-          <span className="text-[10px] uppercase tracking-wide">{isBatchModeEnabled ? 'On' : 'Off'}</span>
+          <span className={`text-[10px] uppercase tracking-wide font-semibold ${isBatchModeEnabled ? 'text-emerald-600' : 'text-red-400'}`}>{isBatchModeEnabled ? 'On' : 'Off'}</span>
         </button>
         {(activeSection || activeSmartView || activeRootNode) && (
-          <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
-            <span className="text-xs font-medium text-blue-800">
+          <div className="flex items-center gap-2 rounded-md border border-[#1f2734]/20 bg-[#1f2734]/5 px-2 py-1">
+            <span className="text-xs font-medium text-[#1f2734]">
               {activeSection
                 ? `Section: ${activeSection.name}`
                 : activeSmartView
@@ -356,20 +420,20 @@ export function CenterPanel() {
                 setActiveSectionId(null);
                 setActiveSmartViewId(null);
               }}
-              className="text-[11px] text-blue-700 hover:text-blue-900"
+              className="text-[11px] text-[#374151] hover:text-[#1f2734]"
             >
               Clear
             </button>
           </div>
         )}
-        <div className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-0.5">
+        <div className="ml-auto inline-flex items-center rounded-md border border-[#e5e7eb] bg-[#fafbfc] p-0.5">
           <button
             type="button"
             onClick={() => setTreeViewMode('classic')}
             className={`h-7 px-2.5 text-xs font-medium rounded transition-colors ${
               viewMode === 'classic'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-[#1f2734] shadow-sm'
+                : 'text-[#6b7280] hover:text-[#374151]'
             }`}
           >
             Classic
@@ -379,8 +443,8 @@ export function CenterPanel() {
             onClick={() => setTreeViewMode('compact')}
             className={`h-7 px-2.5 text-xs font-medium rounded transition-colors ${
               viewMode === 'compact'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-[#1f2734] shadow-sm'
+                : 'text-[#6b7280] hover:text-[#374151]'
             }`}
           >
             Compact
@@ -388,23 +452,23 @@ export function CenterPanel() {
         </div>
       </div>
       {viewMode === 'compact' && (
-        <div className="px-4 py-1.5 border-b border-slate-100 text-[11px] text-slate-500">
-          <span className="font-medium text-slate-600">Compact legend:</span> left lane = opener, right lane = responder, `(call)` = opponent action.
+        <div className="px-4 py-1.5 border-b border-[#f0f0f0] text-[11px] text-[#6b7280]">
+          <span className="font-medium text-[#6b7280]">Compact legend:</span> left lane = opener, right lane = responder, `(call)` = opponent action.
         </div>
       )}
 
       {isBatchModeEnabled && selectedNodeIdsResolved.length > 0 && (
-        <div className="px-4 py-2 border-b border-slate-200 bg-blue-50/50">
+        <div className="px-4 py-2 border-b border-[#e5e7eb] bg-[#1f2734]/[0.03]">
           <div className="flex items-center gap-2">
-            <div className="text-xs font-medium text-blue-900">Selected: {selectedNodeIdsResolved.length}</div>
+            <div className="text-xs font-medium text-[#1f2734]">Selected: {selectedNodeIdsResolved.length}</div>
             <button
               type="button"
               onClick={() => {
                 setIsBatchMenuOpen(false);
                 setIsBatchPanelCollapsed((prev) => !prev);
               }}
-              className="h-6 px-2 rounded border border-blue-200 bg-white text-[11px] text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1"
-              title={isBatchPanelCollapsed ? 'Expand batch actions' : 'Collapse batch actions'}
+              className="h-6 px-2 rounded border border-[#e5e7eb] bg-white text-[11px] text-[#374151] hover:bg-[#1f2734]/5 inline-flex items-center gap-1"
+              data-tooltip={isBatchPanelCollapsed ? 'Expand batch actions' : 'Collapse batch actions'}
             >
               {isBatchPanelCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               {isBatchPanelCollapsed ? 'Expand' : 'Collapse'}
@@ -412,23 +476,16 @@ export function CenterPanel() {
           </div>
           {!isBatchPanelCollapsed && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select
+              <BatchSectionSelect
                 value={batchSectionId}
-                onChange={(event) => setBatchSectionId(event.target.value)}
-                className="h-7 min-w-[180px] rounded-md border border-blue-200 bg-white px-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Assign section...</option>
-                {sectionOptions.map((section) => (
-                  <option key={section.id} value={section.id}>
-                    {section.pathLabel}
-                  </option>
-                ))}
-              </select>
+                onChange={setBatchSectionId}
+                options={sectionOptions}
+              />
               <button
                 type="button"
                 onClick={applyBatchAssignSection}
                 disabled={!batchSectionId}
-                className="h-7 px-2.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                className="h-7 px-2.5 rounded-md bg-[#1f2734] text-white text-xs font-medium hover:bg-[#374151] disabled:bg-[#9ca3af] disabled:cursor-not-allowed"
               >
                 Assign
               </button>
@@ -436,22 +493,22 @@ export function CenterPanel() {
                 <button
                   type="button"
                   onClick={() => setIsBatchMenuOpen((prev) => !prev)}
-                  className="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-1.5"
+                  className="h-7 px-2.5 rounded-md border border-[#e5e7eb] bg-white text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-1.5"
                 >
                   <span>More actions</span>
                   <MoreHorizontal className="w-3.5 h-3.5" />
                 </button>
                 {isBatchMenuVisible && (
-                  <div className="absolute left-0 mt-1 z-20 min-w-[170px] rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  <div className="absolute left-0 mt-1 z-20 min-w-[170px] rounded-md border border-[#e5e7eb] bg-white p-1 shadow-lg">
                     <button
                       type="button"
                       onClick={() => {
                         applyBatchBookmark(true);
                         setIsBatchMenuOpen(false);
                       }}
-                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                      className="w-full text-left h-7 px-2 rounded text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
                     >
-                      <Bookmark className="w-3.5 h-3.5 text-slate-500" />
+                      <Bookmark className="w-3.5 h-3.5 text-[#6b7280]" />
                       Bookmark
                     </button>
                     <button
@@ -460,21 +517,21 @@ export function CenterPanel() {
                         applyBatchBookmark(false);
                         setIsBatchMenuOpen(false);
                       }}
-                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                      className="w-full text-left h-7 px-2 rounded text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
                     >
-                      <X className="w-3.5 h-3.5 text-slate-500" />
+                      <X className="w-3.5 h-3.5 text-[#6b7280]" />
                       Unbookmark
                     </button>
-                    <div className="my-1 border-t border-slate-100" />
+                    <div className="my-1 border-t border-[#f0f0f0]" />
                     <button
                       type="button"
                       onClick={() => {
                         applyBatchRootState(true);
                         setIsBatchMenuOpen(false);
                       }}
-                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                      className="w-full text-left h-7 px-2 rounded text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
                     >
-                      <Pin className="w-3.5 h-3.5 text-slate-500" />
+                      <Pin className="w-3.5 h-3.5 text-[#6b7280]" />
                       Pin to roots
                     </button>
                     <button
@@ -483,21 +540,21 @@ export function CenterPanel() {
                         applyBatchRootState(false);
                         setIsBatchMenuOpen(false);
                       }}
-                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                      className="w-full text-left h-7 px-2 rounded text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
                     >
-                      <PinOff className="w-3.5 h-3.5 text-slate-500" />
+                      <PinOff className="w-3.5 h-3.5 text-[#6b7280]" />
                       Unpin from roots
                     </button>
-                    <div className="my-1 border-t border-slate-100" />
+                    <div className="my-1 border-t border-[#f0f0f0]" />
                     <button
                       type="button"
                       onClick={() => {
                         applyBatchAccepted(true);
                         setIsBatchMenuOpen(false);
                       }}
-                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                      className="w-full text-left h-7 px-2 rounded text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
                     >
-                      <Check className="w-3.5 h-3.5 text-slate-500" />
+                      <Check className="w-3.5 h-3.5 text-[#6b7280]" />
                       Accept
                     </button>
                     <button
@@ -506,9 +563,9 @@ export function CenterPanel() {
                         applyBatchAccepted(false);
                         setIsBatchMenuOpen(false);
                       }}
-                      className="w-full text-left h-7 px-2 rounded text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                      className="w-full text-left h-7 px-2 rounded text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
                     >
-                      <X className="w-3.5 h-3.5 text-slate-500" />
+                      <X className="w-3.5 h-3.5 text-[#6b7280]" />
                       Unaccept
                     </button>
                   </div>
@@ -522,8 +579,8 @@ export function CenterPanel() {
         </div>
       )}
 
-      <div className="px-4 py-2 border-b border-slate-200 bg-slate-50/70 shrink-0">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Current Sequence</div>
+      <div className="px-4 py-2 border-b border-[#e5e7eb] bg-[#fafbfc]/70 shrink-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6b7280] mb-1">Current Sequence</div>
         {selectedSequence.length > 0 ? (
           <div className="font-mono text-sm whitespace-nowrap overflow-x-auto pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {selectedSequence.map((step, index) => {
@@ -532,7 +589,7 @@ export function CenterPanel() {
               const isExistingNode = !!nodes[nodeId];
               const isOpponent = step.actor === 'opp';
               const callLabel = isOpponent ? `(${formatCall(step.call)})` : formatCall(step.call);
-              const callColorClass = isOpponent ? 'text-slate-500' : getSuitColor(step.call);
+              const callColorClass = isOpponent ? 'text-[#6b7280]' : getSuitColor(step.call);
 
               return (
                 <span key={`${nodeId}-${index}`} className="inline-flex items-center">
@@ -547,20 +604,20 @@ export function CenterPanel() {
                         ? `${callColorClass} font-semibold underline decoration-dotted underline-offset-2`
                         : `${callColorClass} hover:opacity-70`
                     } ${isExistingNode ? 'cursor-pointer' : 'cursor-default opacity-50'}`}
-                    title={isExistingNode ? `Go to ${selectedSequence.slice(0, index + 1).map((item) => (
+                    data-tooltip={isExistingNode ? `Go to ${selectedSequence.slice(0, index + 1).map((item) => (
                       item.actor === 'opp' ? `(${formatCall(item.call)})` : formatCall(item.call)
                     )).join(' - ')}` : 'Sequence not found'}
                   >
                     {callLabel}
                   </button>
-                <span className="text-slate-400 mx-1">-</span>
+                <span className="text-[#9ca3af] mx-1">-</span>
               </span>
               );
             })}
-            <span className="text-slate-400">...</span>
+            <span className="text-[#9ca3af]">...</span>
           </div>
         ) : (
-          <div className="text-xs text-slate-400">Select a sequence to see full path</div>
+          <div className="text-xs text-[#9ca3af]">Select a sequence to see full path</div>
         )}
       </div>
 
@@ -568,7 +625,7 @@ export function CenterPanel() {
       <div className="flex-1 overflow-auto">
         <div className="md:min-w-max pb-10">
           {/* Header */}
-          <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
+          <div className="flex items-center px-4 py-2 border-b border-[#e5e7eb] bg-[#fafbfc] text-xs font-semibold text-[#6b7280] uppercase tracking-wider sticky top-0 z-10">
             <div className="flex-1 min-w-[200px] md:min-w-[300px]">{viewMode === 'compact' ? 'Sequence (O/R)' : 'Sequence'}</div>
             <div className="hidden md:block w-24 text-center shrink-0">HCP</div>
             <div className="hidden md:block w-24 text-center shrink-0">Type</div>
@@ -579,7 +636,7 @@ export function CenterPanel() {
           {/* List */}
           <div className="flex flex-col">
             {visibleNodes.length === 0 ? (
-              <div className="px-4 py-8 text-sm text-slate-400">
+              <div className="px-4 py-8 text-sm text-[#9ca3af]">
                 {isSectionFilterMode
                   ? 'No sequences in this section yet.'
                   : isSmartFilterMode

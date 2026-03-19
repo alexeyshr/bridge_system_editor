@@ -228,6 +228,19 @@ export async function moveSystemToSpace(
   return moved;
 }
 
+export async function deleteSystem(systemId: string, userId: string) {
+  const result = await drizzleSystemsDriver.deleteSystem(systemId, userId);
+  await recordAuditEvent({
+    systemId,
+    actorUserId: userId,
+    action: 'system.delete',
+    targetType: 'system',
+    targetId: systemId,
+    payload: { deleted: true },
+  });
+  return result;
+}
+
 export async function createDraftFromVersion(systemId: string, userId: string, versionId: string) {
   const draft = await drizzleSystemsDriver.createDraftFromVersion(systemId, userId, versionId);
   await recordAuditEvent({

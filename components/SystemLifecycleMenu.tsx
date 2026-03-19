@@ -127,14 +127,14 @@ function getTimelineActionLabel(action: string): string {
 }
 
 function getTimelineCategoryTone(category: Exclude<TimelineCategoryFilter, 'all'>): string {
-  if (category === 'node') return 'bg-blue-500';
+  if (category === 'node') return 'bg-[#1f2734]/50';
   if (category === 'lifecycle') return 'bg-emerald-500';
   if (category === 'binding') return 'bg-amber-500';
   if (category === 'sharing') return 'bg-violet-500';
   if (category === 'discussion') return 'bg-cyan-500';
   if (category === 'link') return 'bg-indigo-500';
-  if (category === 'system') return 'bg-slate-600';
-  return 'bg-slate-400';
+  if (category === 'system') return 'bg-[#6b7280]';
+  return 'bg-[#9ca3af]';
 }
 
 function summarizeTimelinePayload(event: TimelineEvent): string | null {
@@ -489,24 +489,24 @@ export function SystemLifecycleMenu() {
         className={`h-8 px-3 text-sm font-medium rounded-md border flex items-center gap-2 transition-colors ${
           isOpen
             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+            : 'bg-white text-[#374151] border-[#e5e7eb] hover:bg-[#f3f4f6]'
         } disabled:opacity-50 disabled:cursor-not-allowed`}
-        title={activeSystemId ? 'Lifecycle controls' : 'No active system'}
+        data-tooltip={activeSystemId ? 'Lifecycle controls' : 'No active system'}
       >
         <History className="w-4 h-4" />
         <span className="hidden xl:inline">{lifecycleCaption}</span>
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 mt-2 z-[66] w-[460px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-          <div className="px-3 py-3 border-b border-slate-100 space-y-2">
+        <div className="absolute left-0 mt-2 z-[66] w-[460px] max-w-[90vw] rounded-xl border border-[#e5e7eb] bg-white shadow-xl overflow-hidden">
+          <div className="px-3 py-3 border-b border-[#f0f0f0] space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Lifecycle</div>
-                <div className="text-xs text-slate-500">{lifecycleCaption}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">Lifecycle</div>
+                <div className="text-xs text-[#6b7280]">{lifecycleCaption}</div>
               </div>
               {latestVersion && (
-                <span className="text-[11px] px-2 py-1 rounded-md bg-slate-100 text-slate-600">
+                <span className="text-[11px] px-2 py-1 rounded-md bg-[#f3f4f6] text-[#6b7280]">
                   Last publish v{latestVersion.versionNumber}
                 </span>
               )}
@@ -519,14 +519,14 @@ export function SystemLifecycleMenu() {
                   value={publishLabel}
                   onChange={(event) => setPublishLabel(event.target.value)}
                   placeholder="Version label (optional)"
-                  className="h-8 w-full rounded-md border border-slate-200 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-8 w-full rounded-md border border-[#e5e7eb] px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                 />
                 <textarea
                   value={publishNotes}
                   onChange={(event) => setPublishNotes(event.target.value)}
                   rows={2}
                   placeholder="Publish notes (optional)"
-                  className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-md border border-[#e5e7eb] px-2.5 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                 />
               </div>
               <button
@@ -534,13 +534,13 @@ export function SystemLifecycleMenu() {
                 onClick={runPublish}
                 disabled={publishBlocked}
                 className="h-8 px-3 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
-                title={publishBlocked ? switchBlockMessage || 'Cannot publish right now' : 'Publish immutable version'}
+                data-tooltip={publishBlocked ? switchBlockMessage || 'Cannot publish right now' : 'Publish immutable version'}
               >
                 <Rocket className="w-4 h-4" />
                 Publish
               </button>
             </div>
-            <div className="text-[11px] text-slate-500">
+            <div className="text-[11px] text-[#6b7280]">
               Tournament binding is optional. You can publish first and attach tournament scope later.
             </div>
 
@@ -553,34 +553,34 @@ export function SystemLifecycleMenu() {
           </div>
 
           <div className="grid grid-cols-[1fr_1fr] min-h-[220px]">
-            <div className="border-r border-slate-100">
-              <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 border-b border-slate-100">
+            <div className="border-r border-[#f0f0f0]">
+              <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6b7280] border-b border-[#f0f0f0]">
                 Published versions
               </div>
               <div className="max-h-[280px] overflow-y-auto">
                 {versionsQuery.isLoading ? (
-                  <div className="px-3 py-3 text-sm text-slate-500">Loading versions...</div>
+                  <div className="px-3 py-3 text-sm text-[#6b7280]">Loading versions...</div>
                 ) : versions.length === 0 ? (
-                  <div className="px-3 py-3 text-sm text-slate-500">No published versions yet.</div>
+                  <div className="px-3 py-3 text-sm text-[#6b7280]">No published versions yet.</div>
                 ) : (
                   versions.map((version) => {
                     const selected = selectedOrDefaultVersionId === version.id;
                     return (
                       <div
                         key={version.id}
-                        className={`px-3 py-2 border-b border-slate-100 ${selected ? 'bg-blue-50' : ''}`}
+                        className={`px-3 py-2 border-b border-[#f0f0f0] ${selected ? 'bg-[#1f2734]/5' : ''}`}
                       >
-                        <div className="text-sm font-medium text-slate-800">
+                        <div className="text-sm font-medium text-[#1f2734]">
                           v{version.versionNumber}{version.label ? ` · ${version.label}` : ''}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate">
+                        <div className="text-[11px] text-[#6b7280] truncate">
                           r{version.sourceRevision} · {formatPublishedAt(version.publishedAt)}
                         </div>
                         <div className="mt-1.5 flex gap-1.5">
                           <button
                             type="button"
                             onClick={() => setSelectedVersionId(version.id)}
-                            className="h-6 px-2 text-[11px] rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 inline-flex items-center gap-1"
+                            className="h-6 px-2 text-[11px] rounded border border-[#e5e7eb] bg-white text-[#6b7280] hover:bg-[#f3f4f6] inline-flex items-center gap-1"
                           >
                             <GitCompareArrows className="w-3 h-3" />
                             Compare
@@ -589,8 +589,8 @@ export function SystemLifecycleMenu() {
                             type="button"
                             onClick={() => runCreateDraft(version.id)}
                             disabled={restoreBlocked}
-                            className="h-6 px-2 text-[11px] rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={restoreBlocked ? switchBlockMessage || 'Cannot restore right now' : 'Create draft from this version'}
+                            className="h-6 px-2 text-[11px] rounded border border-[#1f2734]/20 bg-[#1f2734]/5 text-[#1f2734] hover:bg-[#1f2734]/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            data-tooltip={restoreBlocked ? switchBlockMessage || 'Cannot restore right now' : 'Create draft from this version'}
                           >
                             Create draft
                           </button>
@@ -603,26 +603,26 @@ export function SystemLifecycleMenu() {
             </div>
 
             <div>
-              <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 border-b border-slate-100">
+              <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6b7280] border-b border-[#f0f0f0]">
                 Draft compare
               </div>
               <div className="px-3 py-3 text-sm">
                 {!selectedOrDefaultVersionId ? (
-                  <div className="text-slate-500">Select version to compare.</div>
+                  <div className="text-[#6b7280]">Select version to compare.</div>
                 ) : compareQuery.isLoading ? (
-                  <div className="text-slate-500">Comparing draft...</div>
+                  <div className="text-[#6b7280]">Comparing draft...</div>
                 ) : compareQuery.data?.comparison ? (
                   <>
-                    <div className="text-slate-700 font-medium">
+                    <div className="text-[#374151] font-medium">
                       Draft r{compareQuery.data.comparison.draftRevision} vs v{compareQuery.data.comparison.versionNumber}
                     </div>
-                    <div className="mt-2 text-[12px] text-slate-600 space-y-1">
+                    <div className="mt-2 text-[12px] text-[#6b7280] space-y-1">
                       <div>Added: {compareQuery.data.comparison.summary.added}</div>
                       <div>Removed: {compareQuery.data.comparison.summary.removed}</div>
                       <div>Changed: {compareQuery.data.comparison.summary.changed}</div>
                       <div>Unchanged: {compareQuery.data.comparison.summary.unchanged}</div>
                     </div>
-                    <div className="mt-2 text-[11px] text-slate-500">
+                    <div className="mt-2 text-[11px] text-[#6b7280]">
                       {compareQuery.data.comparison.changedSequenceIds.length > 0 ? (
                         <div className="space-y-1">
                           <div>Changed sequences (jump to node):</div>
@@ -635,8 +635,8 @@ export function SystemLifecycleMenu() {
                                   type="button"
                                   onClick={() => jumpToNode(sequenceId)}
                                   disabled={!jumpable}
-                                  className="inline-flex h-5 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                  title={jumpable ? 'Jump to node in editor' : 'Node not present in current draft'}
+                                  className="inline-flex h-5 items-center gap-1 rounded-full border border-[#1f2734]/20 bg-[#1f2734]/5 px-2 text-[10px] text-[#1f2734] hover:bg-[#1f2734]/10 disabled:cursor-not-allowed disabled:border-[#e5e7eb] disabled:bg-[#f3f4f6] disabled:text-[#9ca3af]"
+                                  data-tooltip={jumpable ? 'Jump to node in editor' : 'Node not present in current draft'}
                                 >
                                   <MousePointer2 className="h-2.5 w-2.5" />
                                   {sequenceId}
@@ -644,7 +644,7 @@ export function SystemLifecycleMenu() {
                               );
                             })}
                             {compareQuery.data.comparison.changedSequenceIds.length > 6 && (
-                              <span className="text-[10px] text-slate-400">
+                              <span className="text-[10px] text-[#9ca3af]">
                                 +{compareQuery.data.comparison.changedSequenceIds.length - 6} more
                               </span>
                             )}
@@ -654,22 +654,22 @@ export function SystemLifecycleMenu() {
                     </div>
                   </>
                 ) : (
-                  <div className="text-slate-500">Comparison unavailable.</div>
+                  <div className="text-[#6b7280]">Comparison unavailable.</div>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="border-t border-slate-100">
+          <div className="border-t border-[#f0f0f0]">
             <div className="px-3 py-2 flex items-center justify-between gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">
                 Recent activity
               </div>
               <div className="flex items-center gap-1.5">
                 <select
                   value={timelineCategory}
                   onChange={(event) => setTimelineCategory(event.target.value as TimelineCategoryFilter)}
-                  className="h-7 min-w-[140px] rounded-full border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-7 min-w-[140px] rounded-full border border-[#e5e7eb] bg-[#fafbfc] px-2.5 text-xs text-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                 >
                   <option value="all">All categories</option>
                   <option value="node">Node changes</option>
@@ -684,7 +684,7 @@ export function SystemLifecycleMenu() {
                 <select
                   value={timelineWindowDays}
                   onChange={(event) => setTimelineWindowDays(Number(event.target.value))}
-                  className="h-7 min-w-[104px] rounded-full border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-7 min-w-[104px] rounded-full border border-[#e5e7eb] bg-[#fafbfc] px-2.5 text-xs text-[#6b7280] focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                 >
                   {TIMELINE_WINDOW_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -695,13 +695,13 @@ export function SystemLifecycleMenu() {
               </div>
             </div>
 
-            <div className="mx-3 mb-3 max-h-[210px] overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/70">
+            <div className="mx-3 mb-3 max-h-[210px] overflow-y-auto rounded-lg border border-[#f0f0f0] bg-[#fafbfc]/70">
               {timelineQuery.isLoading && timelineEvents.length === 0 ? (
-                <div className="px-3 py-3 text-xs text-slate-500">Loading activity timeline...</div>
+                <div className="px-3 py-3 text-xs text-[#6b7280]">Loading activity timeline...</div>
               ) : timelineQuery.error && timelineEvents.length === 0 ? (
                 <div className="px-3 py-3 text-xs text-rose-600">Failed to load activity timeline.</div>
               ) : timelineEvents.length === 0 ? (
-                <div className="px-3 py-3 text-xs text-slate-500">No events in selected category yet.</div>
+                <div className="px-3 py-3 text-xs text-[#6b7280]">No events in selected category yet.</div>
               ) : (
                 timelineEvents.map((event) => {
                   const payloadSummary = summarizeTimelinePayload(event);
@@ -712,28 +712,28 @@ export function SystemLifecycleMenu() {
                   return (
                     <div
                       key={event.id}
-                      className="px-3 py-2 border-b border-slate-100 last:border-b-0 hover:bg-slate-100/80 transition-colors"
+                      className="px-3 py-2 border-b border-[#f0f0f0] last:border-b-0 hover:bg-[#f3f4f6]/80 transition-colors"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 flex items-center gap-2">
                           <span className={`h-2 w-2 shrink-0 rounded-full ${getTimelineCategoryTone(event.category)}`} />
-                          <span className="text-xs font-medium text-slate-700 truncate">
+                          <span className="text-xs font-medium text-[#374151] truncate">
                             {getTimelineActionLabel(event.action)}
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-500 shrink-0">
+                        <span className="text-[10px] text-[#6b7280] shrink-0">
                           {formatTimelineTime(event.createdAt)}
                         </span>
                       </div>
-                      <div className="mt-1 text-[11px] text-slate-500 truncate">
+                      <div className="mt-1 text-[11px] text-[#6b7280] truncate">
                         <span>by {actorLabel}</span>
                         {actorProfileHref && (
                           <a
                             href={actorProfileHref}
                             target={actorProfileIsExternal ? '_blank' : undefined}
                             rel={actorProfileIsExternal ? 'noreferrer noopener' : undefined}
-                            className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-100"
-                            title="Open actor profile"
+                            className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-[#e5e7eb] bg-white px-1.5 py-0.5 text-[10px] text-[#6b7280] hover:bg-[#f3f4f6]"
+                            data-tooltip="Open actor profile"
                           >
                             profile
                             <ArrowUpRight className="h-2.5 w-2.5" />
@@ -756,8 +756,8 @@ export function SystemLifecycleMenu() {
                                     type="button"
                                     onClick={() => jumpToNode(sequenceId)}
                                     disabled={!jumpable}
-                                    className="inline-flex h-5 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-[10px] text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                    title={jumpable ? 'Jump to node in editor' : 'Node not present in current draft'}
+                                    className="inline-flex h-5 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-[10px] text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-[#e5e7eb] disabled:bg-[#f3f4f6] disabled:text-[#9ca3af]"
+                                    data-tooltip={jumpable ? 'Jump to node in editor' : 'Node not present in current draft'}
                                   >
                                     <MousePointer2 className="h-2.5 w-2.5" />
                                     {sequenceId}
@@ -765,7 +765,7 @@ export function SystemLifecycleMenu() {
                                 );
                               })}
                               {nodeSyncHints.upsertedMore > 0 && (
-                                <span className="text-[10px] text-slate-400">
+                                <span className="text-[10px] text-[#9ca3af]">
                                   +{nodeSyncHints.upsertedMore} more
                                 </span>
                               )}
@@ -785,7 +785,7 @@ export function SystemLifecycleMenu() {
                                 </span>
                               ))}
                               {nodeSyncHints.removedMore > 0 && (
-                                <span className="text-[10px] text-slate-400">
+                                <span className="text-[10px] text-[#9ca3af]">
                                   +{nodeSyncHints.removedMore} more
                                 </span>
                               )}
@@ -799,7 +799,7 @@ export function SystemLifecycleMenu() {
               )}
             </div>
             <div className="mx-3 -mt-1 mb-3 flex items-center justify-between">
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-[#6b7280]">
                 Window: last {timelinePageInfo?.windowDays ?? timelineWindowDays} days
               </span>
               {timelinePageInfo?.hasMore ? (
@@ -807,18 +807,18 @@ export function SystemLifecycleMenu() {
                   type="button"
                   onClick={loadMoreTimeline}
                   disabled={timelineQuery.isFetchingNextPage}
-                  className="h-6 rounded-full border border-slate-200 bg-white px-2.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-6 rounded-full border border-[#e5e7eb] bg-white px-2.5 text-[10px] font-medium text-[#6b7280] hover:bg-[#f3f4f6] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {timelineQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
                 </button>
               ) : timelineEvents.length > 0 ? (
-                <span className="text-[10px] text-slate-400">End of selected window</span>
+                <span className="text-[10px] text-[#9ca3af]">End of selected window</span>
               ) : null}
             </div>
           </div>
 
-          <div className="border-t border-slate-100">
-            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+          <div className="border-t border-[#f0f0f0]">
+            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">
               Tournament bindings (optional)
             </div>
             <div className="px-3 pb-3 space-y-2">
@@ -828,13 +828,13 @@ export function SystemLifecycleMenu() {
                   value={bindingTournamentId}
                   onChange={(event) => setBindingTournamentId(event.target.value)}
                   placeholder="Tournament ID"
-                  className="h-8 rounded-md border border-slate-200 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-8 rounded-md border border-[#e5e7eb] px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                 />
                 <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
                   <select
                     value={bindingScopeType}
                     onChange={(event) => setBindingScopeType(event.target.value as 'global' | 'pair' | 'team')}
-                    className="h-8 rounded-md border border-slate-200 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="h-8 rounded-md border border-[#e5e7eb] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                   >
                     <option value="global">Global</option>
                     <option value="pair">Pair</option>
@@ -846,7 +846,7 @@ export function SystemLifecycleMenu() {
                     onChange={(event) => setBindingScopeId(event.target.value)}
                     disabled={bindingScopeType === 'global'}
                     placeholder={bindingScopeType === 'global' ? 'N/A' : 'Scope ID'}
-                    className="h-8 rounded-md border border-slate-200 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
+                    className="h-8 rounded-md border border-[#e5e7eb] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20 disabled:bg-[#f3f4f6] disabled:text-[#9ca3af]"
                   />
                 </div>
               </div>
@@ -855,7 +855,7 @@ export function SystemLifecycleMenu() {
                 <select
                   value={selectedBindingVersionId}
                   onChange={(event) => setBindingVersionId(event.target.value)}
-                  className="h-8 rounded-md border border-slate-200 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-8 rounded-md border border-[#e5e7eb] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                 >
                   {versions.map((version) => (
                     <option key={version.id} value={version.id}>
@@ -867,8 +867,8 @@ export function SystemLifecycleMenu() {
                   type="button"
                   onClick={runBind}
                   disabled={bindBlocked}
-                  className="h-8 px-3 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={bindBlocked ? 'Fill tournament/scope/version and wait for sync to finish' : 'Bind selected version'}
+                  className="h-8 px-3 text-xs font-medium rounded-md bg-[#1f2734] text-white hover:bg-[#374151] disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-tooltip={bindBlocked ? 'Fill tournament/scope/version and wait for sync to finish' : 'Bind selected version'}
                 >
                   Bind
                 </button>
@@ -877,23 +877,23 @@ export function SystemLifecycleMenu() {
                   onClick={runFreezeTournament}
                   disabled={freezeTournamentBlocked}
                   className="h-8 px-3 text-xs font-medium rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                  title={freezeTournamentBlocked ? 'Enter tournament ID to freeze all active bindings' : 'Freeze all bindings for tournament'}
+                  data-tooltip={freezeTournamentBlocked ? 'Enter tournament ID to freeze all active bindings' : 'Freeze all bindings for tournament'}
                 >
                   <Snowflake className="w-3.5 h-3.5" />
                   Freeze all
                 </button>
               </div>
 
-              <div className="max-h-[180px] overflow-y-auto rounded-md border border-slate-100">
+              <div className="max-h-[180px] overflow-y-auto rounded-md border border-[#f0f0f0]">
                 {bindingsQuery.isLoading ? (
-                  <div className="px-2.5 py-2 text-xs text-slate-500">Loading bindings...</div>
+                  <div className="px-2.5 py-2 text-xs text-[#6b7280]">Loading bindings...</div>
                 ) : (bindingsQuery.data?.bindings.length ?? 0) === 0 ? (
-                  <div className="px-2.5 py-2 text-xs text-slate-500">No bindings for current filter.</div>
+                  <div className="px-2.5 py-2 text-xs text-[#6b7280]">No bindings for current filter.</div>
                 ) : (
                   bindingsQuery.data?.bindings.map((binding) => (
-                    <div key={binding.id} className="px-2.5 py-2 border-b last:border-b-0 border-slate-100">
+                    <div key={binding.id} className="px-2.5 py-2 border-b last:border-b-0 border-[#f0f0f0]">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs text-slate-700">
+                        <div className="text-xs text-[#374151]">
                           <span className="font-medium">{binding.tournamentId}</span>
                           {' · '}
                           <span>{formatScope(binding.scopeType, binding.scopeId)}</span>

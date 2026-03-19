@@ -1,6 +1,6 @@
 "use client"
 
-import { LogInIcon, LogOutIcon, SettingsIcon, UserIcon } from "lucide-react"
+import { BookOpenIcon, LogInIcon, LogOutIcon, SettingsIcon, UserIcon } from "lucide-react"
 import { signOut } from "next-auth/react"
 
 import {
@@ -104,7 +104,10 @@ export function TopbarUserMenu({ user, isGuest = false, className }: TopbarUserM
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="mx-0.5 my-1 bg-[#d8dbe1]" />
         <DropdownMenuGroup>
-          <DropdownMenuItem className="rounded-lg px-2.5 py-2 text-sm font-medium text-[#1f2734] focus:bg-[#e6edf9] focus:text-[#12213c]">
+          <DropdownMenuItem
+            className="rounded-lg px-2.5 py-2 text-sm font-medium text-[#1f2734] focus:bg-[#e6edf9] focus:text-[#12213c]"
+            onClick={() => { window.location.href = "/dashboard/profile" }}
+          >
             <UserIcon className="size-4 text-[#50607a]" />
             Profile
           </DropdownMenuItem>
@@ -116,6 +119,15 @@ export function TopbarUserMenu({ user, isGuest = false, className }: TopbarUserM
           >
             <SettingsIcon className="size-4 text-[#50607a]" />
             Settings
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="rounded-lg px-2.5 py-2 text-sm font-medium text-[#1f2734] focus:bg-[#e6edf9] focus:text-[#12213c]"
+            onClick={() => {
+              window.location.href = "/editor"
+            }}
+          >
+            <BookOpenIcon className="size-4 text-[#50607a]" />
+            Bidding System
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="mx-0.5 my-1 bg-[#d8dbe1]" />

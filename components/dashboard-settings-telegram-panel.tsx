@@ -264,8 +264,7 @@ export function DashboardSettingsTelegramPanel({ isGuest, isAuthLoading = false 
             type="button"
             variant="ghost"
             className={backIconButtonClassName}
-            aria-label="Close settings and go to dashboard"
-            title="Back to dashboard"
+            data-tooltip="Back to dashboard"
             onClick={() => {
               router.push("/dashboard")
             }}
@@ -290,8 +289,7 @@ export function DashboardSettingsTelegramPanel({ isGuest, isAuthLoading = false 
           type="button"
           variant="ghost"
           className={backIconButtonClassName}
-          aria-label="Close settings and go to dashboard"
-          title="Back to dashboard"
+          data-tooltip="Back to dashboard"
           onClick={() => {
             router.push("/dashboard")
           }}

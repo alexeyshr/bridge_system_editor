@@ -6,6 +6,7 @@ import {
   type SectionMutationResult,
   type SmartViewMutationResult,
   type SectionTreeNode,
+  type DefenseCategory,
 } from '@/store/useBiddingStore';
 import { compareSequences, formatCall, getSuitColor } from '@/lib/utils';
 import {
@@ -27,6 +28,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  Shield,
   Sparkles,
   Trash2,
 } from 'lucide-react';
@@ -189,6 +191,12 @@ export function LeftPanel() {
     getSmartViews,
     getSmartViewCount,
     customSmartViewsById,
+    defenseContextsById,
+    defenseContextOrder,
+    activeDefenseContextId,
+    createDefenseContext,
+    deleteDefenseContext,
+    setActiveDefenseContextId,
   } = useBiddingStore();
   const initialUiPrefs = useMemo(() => loadLeftPanelUiPrefs(), []);
 
@@ -208,6 +216,9 @@ export function LeftPanel() {
   const [isSectionsOpen, setIsSectionsOpen] = useState(initialUiPrefs.isSectionsOpen ?? true);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(initialUiPrefs.isBookmarksOpen ?? true);
   const [isSmartViewsOpen, setIsSmartViewsOpen] = useState(initialUiPrefs.isSmartViewsOpen ?? true);
+  const [isDefenseOpen, setIsDefenseOpen] = useState(true);
+  const [isDefenseCreateOpen, setIsDefenseCreateOpen] = useState(false);
+  const [defenseDeleteId, setDefenseDeleteId] = useState<string | null>(null);
   const [isRootPickerOpen, setIsRootPickerOpen] = useState(false);
   const [rootPickerMode, setRootPickerMode] = useState<RootPickerMode>('single');
   const [rootEditEntryNodeId, setRootEditEntryNodeId] = useState<string | null>(null);
@@ -795,7 +806,7 @@ export function LeftPanel() {
       return (
         <li key={section.id} className="relative">
           {activeDropPlacement === 'before' && (
-            <div className="pointer-events-none absolute left-2 right-2 -top-0.5 h-0.5 rounded-full bg-blue-500" />
+            <div className="pointer-events-none absolute left-2 right-2 -top-0.5 h-0.5 rounded-full bg-[#1f2734]/50" />
           )}
           <div className="group flex items-center gap-1">
             <button
@@ -810,13 +821,14 @@ export function LeftPanel() {
                 setLeftPrimaryMode('sections');
                 setActiveSectionId(section.id);
                 setActiveSmartViewId(null);
+                setActiveDefenseContextId(null);
               }}
               className={`flex-1 min-w-0 text-left rounded-md transition-colors cursor-grab active:cursor-grabbing ${
                 activeDropPlacement === 'inside'
-                  ? 'bg-blue-50 text-blue-900 ring-1 ring-blue-300'
+                  ? 'bg-[#1f2734]/5 text-[#1f2734] ring-1 ring-[#1f2734]/20'
                   : isActive
-                    ? 'bg-blue-100 text-blue-900'
-                    : 'hover:bg-slate-200 text-slate-700'
+                    ? 'bg-[#1f2734]/10 text-[#1f2734]'
+                    : 'hover:bg-[#e5e7eb] text-[#374151]'
               } ${
                 isDragging ? 'opacity-60' : ''
               }`}
@@ -829,7 +841,7 @@ export function LeftPanel() {
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 {hasChildren ? (
                   <span
-                    className="shrink-0 p-0.5 rounded hover:bg-slate-300"
+                    className="shrink-0 p-0.5 rounded hover:bg-[#d1d5db]"
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -843,9 +855,9 @@ export function LeftPanel() {
                 ) : (
                   <span className="w-4 shrink-0" />
                 )}
-                <span className="shrink-0 text-slate-400 tabular-nums">{sectionIndexLabel}</span>
+                <span className="shrink-0 text-[#9ca3af] tabular-nums">{sectionIndexLabel}</span>
                 <span className="truncate">{section.name}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-slate-500 bg-slate-200 rounded-full px-1.5 py-0.5">
+                <span className="ml-auto shrink-0 text-[10px] text-[#6b7280] bg-[#e5e7eb] rounded-full px-1.5 py-0.5">
                   {nodeCount}
                 </span>
               </span>
@@ -857,7 +869,7 @@ export function LeftPanel() {
                 setActionMenuSectionId((prev) => (prev === section.id ? null : section.id))
               }
               data-leftpanel-menu-trigger
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151]"
               aria-label="Section actions"
             >
               <MoreHorizontal className="w-3.5 h-3.5" />
@@ -865,19 +877,19 @@ export function LeftPanel() {
           </div>
 
           {activeDropPlacement === 'after' && (
-            <div className="pointer-events-none absolute left-2 right-2 -bottom-0.5 h-0.5 rounded-full bg-blue-500" />
+            <div className="pointer-events-none absolute left-2 right-2 -bottom-0.5 h-0.5 rounded-full bg-[#1f2734]/50" />
           )}
 
           {actionMenuSectionId === section.id && (
-            <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
+            <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-[#e5e7eb] bg-white shadow-lg py-1">
               <button
                 type="button"
                 disabled={!canMoveUp}
                 onClick={() => reorderSectionFromMenu(section.id, index - 1)}
                 className={`w-full px-3 py-1.5 text-left text-xs inline-flex items-center gap-2 ${
                   canMoveUp
-                    ? 'text-slate-700 hover:bg-slate-100'
-                    : 'text-slate-300 cursor-not-allowed'
+                    ? 'text-[#374151] hover:bg-[#f3f4f6]'
+                    : 'text-[#d1d5db] cursor-not-allowed'
                 }`}
               >
                 <ArrowUp className="w-3 h-3" />
@@ -889,8 +901,8 @@ export function LeftPanel() {
                 onClick={() => reorderSectionFromMenu(section.id, index + 1)}
                 className={`w-full px-3 py-1.5 text-left text-xs inline-flex items-center gap-2 ${
                   canMoveDown
-                    ? 'text-slate-700 hover:bg-slate-100'
-                    : 'text-slate-300 cursor-not-allowed'
+                    ? 'text-[#374151] hover:bg-[#f3f4f6]'
+                    : 'text-[#d1d5db] cursor-not-allowed'
                 }`}
               >
                 <ArrowDown className="w-3 h-3" />
@@ -899,7 +911,7 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={() => openRenameModal(section.id, section.name)}
-                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
               >
                 <Pencil className="w-3 h-3" />
                 Rename
@@ -907,7 +919,7 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={() => openCreateModal(section.id)}
-                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-xs text-[#374151] hover:bg-[#f3f4f6] inline-flex items-center gap-2"
               >
                 <Plus className="w-3 h-3" />
                 New subsection
@@ -938,21 +950,22 @@ export function LeftPanel() {
 
       return (
         <li key={smartView.id} className="relative">
-          <div className="group flex items-center gap-1">
+          <div className="group/sv flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => {
                 setLeftPrimaryMode('smartViews');
                 setActiveSmartViewId(smartView.id);
                 setActiveSectionId(null);
+                setActiveDefenseContextId(null);
               }}
               className={`flex-1 min-w-0 text-left rounded-md text-sm transition-colors px-2 py-1.5 ${
-                isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                isActive ? 'bg-[#1f2734]/10 text-[#1f2734]' : 'hover:bg-[#e5e7eb] text-[#374151]'
               }`}
             >
               <span className="inline-flex items-center gap-1.5 min-w-0 w-full">
                 <span className="truncate">{smartView.name}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-slate-500 bg-slate-200 rounded-full px-1.5 py-0.5">
+                <span className="ml-auto shrink-0 text-[10px] text-[#6b7280] bg-[#e5e7eb] rounded-full px-1.5 py-0.5">
                   {count}
                 </span>
               </span>
@@ -960,64 +973,49 @@ export function LeftPanel() {
 
             <button
               type="button"
-              onClick={() => {
-                toggleSmartViewPinned(smartView.id);
-              }}
-              className={`opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200 ${
-                smartView.isPinned ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'
+              onClick={() => toggleSmartViewPinned(smartView.id)}
+              className={`shrink-0 opacity-0 group-hover/sv:opacity-100 transition-opacity p-1 rounded hover:bg-[#e5e7eb] ${
+                smartView.isPinned ? '!opacity-100 text-[#1f2734]' : 'text-[#6b7280] hover:text-[#374151]'
               }`}
-              aria-label={smartView.isPinned ? 'Unpin smart view' : 'Pin smart view'}
-              title={smartView.isPinned ? 'Unpin' : 'Pin'}
+              data-tooltip={smartView.isPinned ? 'Unpin' : 'Pin'}
             >
-              {smartView.isPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+              {smartView.isPinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
             </button>
 
             {!smartView.isBuiltIn && (
-              <button
-                type="button"
-                onClick={() => setActionMenuSmartViewId((prev) => (prev === smartView.id ? null : smartView.id))}
-                data-leftpanel-menu-trigger
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700"
-                aria-label="Smart view actions"
-              >
-                <MoreHorizontal className="w-3.5 h-3.5" />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => openEditSmartViewModal(smartView.id)}
+                  className="shrink-0 opacity-0 group-hover/sv:opacity-100 transition-opacity p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151]"
+                  data-tooltip="Edit"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openDeleteSmartViewModal(smartView.id)}
+                  className="shrink-0 opacity-0 group-hover/sv:opacity-100 transition-opacity p-1 rounded text-[#6b7280] hover:bg-rose-50 hover:text-rose-600"
+                  data-tooltip="Delete"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </>
             )}
           </div>
-
-          {actionMenuSmartViewId === smartView.id && !smartView.isBuiltIn && (
-            <div data-leftpanel-menu className="absolute right-1 top-8 z-30 w-44 rounded-md border border-slate-200 bg-white shadow-lg py-1">
-              <button
-                type="button"
-                onClick={() => openEditSmartViewModal(smartView.id)}
-                className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 inline-flex items-center gap-2"
-              >
-                <Pencil className="w-3 h-3" />
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => openDeleteSmartViewModal(smartView.id)}
-                className="w-full px-3 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-50 inline-flex items-center gap-2"
-              >
-                <Trash2 className="w-3 h-3" />
-                Delete
-              </button>
-            </div>
-          )}
         </li>
       );
     });
   };
 
   return (
-    <div className="h-full w-full border-r border-[#DBEAFE] bg-slate-50 flex flex-col overflow-y-auto relative">
+    <div className="h-full w-full border-r border-[#e5e7eb] bg-[#fafbfc] flex flex-col overflow-y-auto overflow-x-hidden relative">
       <div className="p-4">
         <div className="flex items-center mb-3">
           <button
             type="button"
             onClick={() => setIsRootsOpen((prev) => !prev)}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-[#6b7280] uppercase tracking-wider hover:text-[#374151]"
           >
             <FolderTree className="w-3.5 h-3.5" />
             Roots
@@ -1025,22 +1023,21 @@ export function LeftPanel() {
           <button
             type="button"
             onClick={openRootPicker}
-            className="ml-1 p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-            title="Add root calls"
-            aria-label="Add root calls"
+            className="ml-1 p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151] transition-colors"
+            data-tooltip="Add root calls"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
-          <div className="ml-2 inline-flex items-center rounded-md border border-slate-200 bg-slate-100 p-0.5">
+          <div className="ml-2 inline-flex items-center rounded-md border border-[#e5e7eb] bg-[#f3f4f6] p-0.5">
             <button
               type="button"
               onClick={() => setRootViewMode('matrix')}
               className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                 rootViewMode === 'matrix'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white text-[#1f2734] shadow-sm'
+                  : 'text-[#6b7280] hover:text-[#374151]'
               }`}
-              title="Matrix view"
+              data-tooltip="Matrix view"
             >
               Matrix
             </button>
@@ -1049,10 +1046,10 @@ export function LeftPanel() {
               onClick={() => setRootViewMode('list')}
               className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                 rootViewMode === 'list'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white text-[#1f2734] shadow-sm'
+                  : 'text-[#6b7280] hover:text-[#374151]'
               }`}
-              title="List view"
+              data-tooltip="List view"
             >
               List
             </button>
@@ -1060,8 +1057,8 @@ export function LeftPanel() {
           <button
             type="button"
             onClick={() => setIsRootsOpen((prev) => !prev)}
-            className="ml-auto p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-            title={isRootsOpen ? 'Collapse roots' : 'Expand roots'}
+            className="ml-auto p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151] transition-colors"
+            data-tooltip={isRootsOpen ? 'Collapse roots' : 'Expand roots'}
           >
             {isRootsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
           </button>
@@ -1073,7 +1070,7 @@ export function LeftPanel() {
                 <button
                   type="button"
                   onClick={() => setIsOurRootsOpen((prev) => !prev)}
-                  className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                  className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-[#6b7280] hover:text-[#374151]"
                 >
                   <span>Our roots</span>
                   {isOurRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
@@ -1089,8 +1086,8 @@ export function LeftPanel() {
                         return (
                           <div
                             key={`root-empty-${call}`}
-                            className="h-7 rounded-md border border-slate-200 bg-slate-100/70 text-[11px] text-slate-300 flex items-center justify-center select-none"
-                            title={`${formatCall(call)} is not added to roots`}
+                            className="h-7 rounded-md border border-[#e5e7eb] bg-[#f3f4f6]/70 text-[11px] text-[#d1d5db] flex items-center justify-center select-none"
+                            data-tooltip={`${formatCall(call)} is not added to roots`}
                           >
                             {formatCall(call)}
                           </div>
@@ -1105,13 +1102,14 @@ export function LeftPanel() {
                               setLeftPrimaryMode('roots');
                               setActiveSectionId(null);
                               setActiveSmartViewId(null);
+                              setActiveDefenseContextId(null);
                               setActiveRootEntryNodeId(root.id);
                               selectNode(root.id);
                             }}
                             className={`h-7 w-full px-1 rounded-md border text-[12px] font-semibold transition-colors ${
                               isActive
-                                ? 'border-blue-200 bg-blue-100 text-blue-900'
-                                : `border-slate-200 bg-white hover:border-slate-300 ${getSuitColor(call)}`
+                                ? 'border-[#1f2734]/20 bg-[#1f2734]/10 text-[#1f2734]'
+                                : `border-[#e5e7eb] bg-white hover:border-[#d1d5db] ${getSuitColor(call)}`
                             }`}
                           >
                             {formatCall(call)}
@@ -1122,9 +1120,8 @@ export function LeftPanel() {
                               event.stopPropagation();
                               openRootDeleteDialog(root.id);
                             }}
-                            className="absolute -top-1 -right-1 opacity-0 group-hover/root:opacity-100 transition-opacity p-0.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-rose-700 hover:border-rose-200"
-                            title="Delete root"
-                            aria-label={`Delete root ${formatCall(call)}`}
+                            className="absolute -top-1 -right-1 opacity-0 group-hover/root:opacity-100 transition-opacity p-0.5 rounded bg-white border border-[#e5e7eb] text-[#9ca3af] hover:text-rose-700 hover:border-rose-200"
+                            data-tooltip="Delete root"
                           >
                             <Trash2 className="w-2.5 h-2.5" />
                           </button>
@@ -1137,7 +1134,7 @@ export function LeftPanel() {
                   <button
                     type="button"
                     onClick={() => setIsSequenceOppRootsOpen((prev) => !prev)}
-                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-[#6b7280] hover:text-[#374151]"
                   >
                     <span>Sequence / Opp roots</span>
                     {isSequenceOppRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
@@ -1164,9 +1161,9 @@ export function LeftPanel() {
                                   selectNode(root.id);
                                 }}
                                 className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-xs font-medium transition-colors truncate ${
-                                  isActive ? 'bg-blue-100 text-blue-900' : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-700'
+                                  isActive ? 'bg-[#1f2734]/10 text-[#1f2734]' : 'bg-white border border-[#e5e7eb] hover:bg-[#f3f4f6] text-[#374151]'
                                 }`}
-                                title={label}
+                                data-tooltip={label}
                               >
                                 {label}
                               </button>
@@ -1176,9 +1173,8 @@ export function LeftPanel() {
                                   event.stopPropagation();
                                   openEditRootEntry(root.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                                title="Edit root"
-                                aria-label={`Edit root ${label}`}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#9ca3af] hover:bg-[#e5e7eb] hover:text-[#374151]"
+                                data-tooltip="Edit root"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
@@ -1188,9 +1184,8 @@ export function LeftPanel() {
                                   event.stopPropagation();
                                   openRootDeleteDialog(root.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
-                                title="Delete root"
-                                aria-label={`Delete root ${label}`}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#9ca3af] hover:bg-rose-100 hover:text-rose-700"
+                                data-tooltip="Delete root"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1199,7 +1194,7 @@ export function LeftPanel() {
                         })}
                       </ul>
                     ) : (
-                      <div className="text-[11px] text-slate-400 italic px-1">No sequence/opp roots</div>
+                      <div className="text-[11px] text-[#9ca3af] italic px-1">No sequence/opp roots</div>
                     )
                   )}
                 </div>
@@ -1210,7 +1205,7 @@ export function LeftPanel() {
                   <button
                     type="button"
                     onClick={() => setIsOurRootsOpen((prev) => !prev)}
-                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-[#6b7280] hover:text-[#374151]"
                   >
                     <span>Our roots</span>
                     {isOurRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
@@ -1234,7 +1229,7 @@ export function LeftPanel() {
                                 selectNode(root.id);
                               }}
                               className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                                isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                                isActive ? 'bg-[#1f2734]/10 text-[#1f2734]' : 'hover:bg-[#e5e7eb] text-[#374151]'
                               }`}
                             >
                               <span className={getSuitColor(call)}>{callLabel}</span>
@@ -1245,9 +1240,8 @@ export function LeftPanel() {
                                 event.stopPropagation();
                                 openRootDeleteDialog(root.id);
                               }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
-                              title="Delete root"
-                              aria-label={`Delete root ${callLabel}`}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#9ca3af] hover:bg-rose-100 hover:text-rose-700"
+                              data-tooltip="Delete root"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1261,7 +1255,7 @@ export function LeftPanel() {
                   <button
                     type="button"
                     onClick={() => setIsSequenceOppRootsOpen((prev) => !prev)}
-                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                    className="w-full inline-flex items-center justify-between text-[10px] uppercase tracking-wider text-[#6b7280] hover:text-[#374151]"
                   >
                     <span>Sequence / Opp roots</span>
                     {isSequenceOppRootsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
@@ -1291,10 +1285,10 @@ export function LeftPanel() {
                                   selectNode(root.id);
                                 }}
                                 className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                                  isActive ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                                  isActive ? 'bg-[#1f2734]/10 text-[#1f2734]' : 'hover:bg-[#e5e7eb] text-[#374151]'
                                 }`}
                               >
-                                <span className={root.context.sequence.length === 1 && rootStep.actor !== 'opp' ? getSuitColor(call) : 'text-slate-700'}>
+                                <span className={root.context.sequence.length === 1 && rootStep.actor !== 'opp' ? getSuitColor(call) : 'text-[#374151]'}>
                                   {callLabel}
                                 </span>
                               </button>
@@ -1305,9 +1299,8 @@ export function LeftPanel() {
                                     event.stopPropagation();
                                     openEditRootEntry(root.id);
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                                  title="Edit root"
-                                  aria-label={`Edit root ${callLabel}`}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#9ca3af] hover:bg-[#e5e7eb] hover:text-[#374151]"
+                                  data-tooltip="Edit root"
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
@@ -1318,9 +1311,8 @@ export function LeftPanel() {
                                   event.stopPropagation();
                                   openRootDeleteDialog(root.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-700"
-                                title="Delete root"
-                                aria-label={`Delete root ${callLabel}`}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#9ca3af] hover:bg-rose-100 hover:text-rose-700"
+                                data-tooltip="Delete root"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1329,7 +1321,7 @@ export function LeftPanel() {
                         })}
                       </ul>
                     ) : (
-                      <div className="text-[11px] text-slate-400 italic px-1">No sequence/opp roots</div>
+                      <div className="text-[11px] text-[#9ca3af] italic px-1">No sequence/opp roots</div>
                     )
                   )}
                 </div>
@@ -1344,7 +1336,7 @@ export function LeftPanel() {
           <button
             type="button"
             onClick={() => setIsSectionsOpen((prev) => !prev)}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-[#6b7280] uppercase tracking-wider hover:text-[#374151]"
           >
             <span className="inline-flex items-center gap-2">
               <FolderPlus className="w-3.5 h-3.5" />
@@ -1354,16 +1346,16 @@ export function LeftPanel() {
           <button
             type="button"
             onClick={() => openCreateModal(null)}
-            className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-            title="Create section"
+            className="p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151] transition-colors"
+            data-tooltip="Create section"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
             onClick={() => setIsSectionsOpen((prev) => !prev)}
-            className="ml-auto p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-            title={isSectionsOpen ? 'Collapse sections' : 'Expand sections'}
+            className="ml-auto p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151] transition-colors"
+            data-tooltip={isSectionsOpen ? 'Collapse sections' : 'Expand sections'}
           >
             {isSectionsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
           </button>
@@ -1371,7 +1363,7 @@ export function LeftPanel() {
 
         {isSectionsOpen && (
           <>
-            <div className="mb-2 text-[10px] text-slate-400">
+            <div className="mb-2 text-[10px] text-[#9ca3af]">
               Drag sections to reorder or move into another section.
             </div>
             {sectionDragError && (
@@ -1380,12 +1372,12 @@ export function LeftPanel() {
               </div>
             )}
             {sectionTree.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-300 bg-white p-3">
-                <div className="text-xs text-slate-500">No sections yet</div>
+              <div className="rounded-md border border-dashed border-[#d1d5db] bg-white p-3">
+                <div className="text-xs text-[#6b7280]">No sections yet</div>
                 <button
                   type="button"
                   onClick={() => openCreateModal(null)}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:text-blue-800"
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#1f2734] hover:text-[#1f2734]"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Create first section
@@ -1402,7 +1394,7 @@ export function LeftPanel() {
         <button
           type="button"
           onClick={() => setIsBookmarksOpen((prev) => !prev)}
-          className="w-full mb-3 flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+          className="w-full mb-3 flex items-center justify-between text-xs font-semibold text-[#6b7280] uppercase tracking-wider hover:text-[#374151]"
         >
           <span className="inline-flex items-center gap-2">
             <Bookmark className="w-3.5 h-3.5" />
@@ -1413,7 +1405,7 @@ export function LeftPanel() {
         {isBookmarksOpen && (
           <>
             {bookmarks.length === 0 ? (
-              <div className="text-xs text-slate-400 italic px-2">No bookmarks</div>
+              <div className="text-xs text-[#9ca3af] italic px-2">No bookmarks</div>
             ) : (
               <ul className="space-y-1">
                 {bookmarks.map((bm) => (
@@ -1427,16 +1419,16 @@ export function LeftPanel() {
                         selectNode(bm.id);
                       }}
                       className={`w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors truncate ${
-                        selectedNodeId === bm.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-200 text-slate-700'
+                        selectedNodeId === bm.id ? 'bg-[#1f2734]/10 text-[#1f2734]' : 'hover:bg-[#e5e7eb] text-[#374151]'
                       }`}
                     >
                       {bm.context.sequence.map((step, i) => (
                         <span key={i} className="inline-flex items-center">
-                          <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                          <span className={step.actor === 'opp' ? 'text-[#6b7280]' : getSuitColor(step.call)}>
                             {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
                           </span>
                           {i < bm.context.sequence.length - 1 && (
-                            <span className="mx-1 text-slate-400">-</span>
+                            <span className="mx-1 text-[#9ca3af]">-</span>
                           )}
                         </span>
                       ))}
@@ -1454,7 +1446,7 @@ export function LeftPanel() {
           <button
             type="button"
             onClick={() => setIsSmartViewsOpen((prev) => !prev)}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-700"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-[#6b7280] uppercase tracking-wider hover:text-[#374151]"
           >
             <span className="inline-flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5" />
@@ -1464,16 +1456,16 @@ export function LeftPanel() {
           <button
             type="button"
             onClick={openCreateSmartViewModal}
-            className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-            title="Create custom smart view"
+            className="p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151] transition-colors"
+            data-tooltip="Create custom smart view"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
             onClick={() => setIsSmartViewsOpen((prev) => !prev)}
-            className="ml-auto p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-            title={isSmartViewsOpen ? 'Collapse smart views' : 'Expand smart views'}
+            className="ml-auto p-1 rounded text-[#6b7280] hover:bg-[#e5e7eb] hover:text-[#374151] transition-colors"
+            data-tooltip={isSmartViewsOpen ? 'Collapse smart views' : 'Expand smart views'}
           >
             {isSmartViewsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
           </button>
@@ -1485,30 +1477,143 @@ export function LeftPanel() {
         )}
       </div>
 
+      {/* ──── DEFENSE ──── */}
+      <div className="px-2 py-3 border-b border-[#e5e7eb]">
+        <div className="flex items-center justify-between mb-1">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#6b7280] hover:text-[#374151] transition-colors"
+            onClick={() => setIsDefenseOpen((prev) => !prev)}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Defense
+          </button>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setIsDefenseCreateOpen((prev) => !prev)}
+              className="p-0.5 text-[#6b7280] hover:text-[#374151] transition-colors rounded"
+              data-tooltip="Add defense context"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDefenseOpen((prev) => !prev)}
+              data-tooltip={isDefenseOpen ? 'Collapse' : 'Expand'}
+              className="p-0.5 text-[#6b7280] hover:text-[#374151] transition-colors rounded"
+            >
+              {isDefenseOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {isDefenseCreateOpen && (
+          <div className="mb-2 rounded-lg border border-[#e5e7eb] bg-[#f9fafb] p-2 space-y-1">
+            {([
+              { cat: 'leads_suit' as DefenseCategory, label: 'Атака vs масть' },
+              { cat: 'leads_nt' as DefenseCategory, label: 'Атака vs NT' },
+              { cat: 'signals' as DefenseCategory, label: 'Сигналы' },
+              { cat: 'discards' as DefenseCategory, label: 'Сбросы' },
+              { cat: 'vs_convention' as DefenseCategory, label: 'vs Конвенция' },
+              { cat: 'custom' as DefenseCategory, label: 'Пользовательский' },
+            ]).map((preset) => (
+              <button
+                key={preset.cat}
+                type="button"
+                onClick={() => {
+                  createDefenseContext(preset.cat, preset.label);
+                  setIsDefenseCreateOpen(false);
+                  setIsDefenseOpen(true);
+                }}
+                className="w-full text-left px-2 py-1 text-[11px] text-[#374151] hover:bg-white hover:shadow-sm rounded transition-colors"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isDefenseOpen && (
+          <ul className="space-y-0.5">
+            {defenseContextOrder.map((id) => {
+              const ctx = defenseContextsById[id];
+              if (!ctx) return null;
+              const isActive = activeDefenseContextId === id;
+              return (
+                <li key={id} className="group/defrow relative">
+                  <button
+                    type="button"
+                    onClick={() => setActiveDefenseContextId(isActive ? null : id)}
+                    className={`w-full text-left px-2 py-1.5 rounded-md text-[11px] transition-colors flex items-center justify-between ${
+                      isActive
+                        ? 'bg-[#1f2734] text-white'
+                        : 'text-[#374151] hover:bg-[#f3f4f6]'
+                    }`}
+                  >
+                    <span className="truncate">{ctx.title}</span>
+                  </button>
+                  {defenseDeleteId === id ? (
+                    <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-md bg-rose-50 border border-rose-200 px-2">
+                      <span className="text-[10px] text-rose-600 mr-auto">Delete?</span>
+                      <button
+                        type="button"
+                        onClick={() => { deleteDefenseContext(id); setDefenseDeleteId(null); }}
+                        className="text-[10px] font-medium text-rose-600 hover:text-rose-800 px-1.5 py-0.5 rounded bg-rose-100 hover:bg-rose-200 transition-colors"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDefenseDeleteId(null)}
+                        className="text-[10px] font-medium text-[#6b7280] hover:text-[#374151] px-1.5 py-0.5 rounded bg-[#f3f4f6] hover:bg-[#e5e7eb] transition-colors"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setDefenseDeleteId(id)}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-[#9ca3af] hover:text-rose-500 opacity-0 group-hover/defrow:opacity-100 transition-all rounded"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+            {defenseContextOrder.length === 0 && (
+              <li className="px-2 py-1 text-[11px] text-[#9ca3af] italic">No defense contexts yet</li>
+            )}
+          </ul>
+        )}
+      </div>
+
       {isRootPickerOpen && (
         <div
-          className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-3"
+          className="absolute inset-0 z-50 bg-[#1f2734]/20 backdrop-blur-[1px] flex items-center justify-center p-3"
           onClick={closeRootPicker}
         >
           <div
-            className="w-full max-w-[292px] rounded-xl border border-slate-200 bg-white shadow-xl p-3"
+            className="w-full max-w-[292px] rounded-xl border border-[#e5e7eb] bg-white shadow-xl p-3"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6b7280]">
               {rootEditEntryNodeId ? 'Edit root entry' : 'Add root entry'}
             </div>
-            <div className="mt-1 text-[11px] text-slate-600">
+            <div className="mt-1 text-[11px] text-[#6b7280]">
               {rootEditEntryNodeId
                 ? 'Update sequence and save changes.'
                 : 'Choose calls for a new root or pin current sequence as an additional root entry.'}
             </div>
             {rootEditEntryNodeId && (
-              <div className="mt-1 text-[10px] text-slate-500">
+              <div className="mt-1 text-[10px] text-[#6b7280]">
                 Editing: {editingRootLabel}
               </div>
             )}
 
-            <div className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+            <div className="mt-2 inline-flex rounded-md border border-[#e5e7eb] bg-[#f3f4f6] p-0.5">
               <button
                 type="button"
                 onClick={() => {
@@ -1519,8 +1624,8 @@ export function LeftPanel() {
                 disabled={!!rootEditEntryNodeId}
                 className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                   rootPickerMode === 'single'
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white text-[#1f2734] shadow-sm'
+                    : 'text-[#6b7280] hover:text-[#374151]'
                 } ${rootEditEntryNodeId ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 Single bids
@@ -1533,8 +1638,8 @@ export function LeftPanel() {
                 }}
                 className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                   rootPickerMode === 'sequence'
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white text-[#1f2734] shadow-sm'
+                    : 'text-[#6b7280] hover:text-[#374151]'
                 }`}
               >
                 Sequence
@@ -1550,10 +1655,10 @@ export function LeftPanel() {
                     disabled={!canAddSelectedNodeAsRoot}
                     className={`w-full h-8 px-2 rounded-md border text-left text-[11px] transition-colors ${
                       canAddSelectedNodeAsRoot
-                        ? 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                        ? 'border-[#e5e7eb] bg-white hover:border-[#d1d5db] text-[#374151]'
+                        : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#9ca3af] cursor-not-allowed'
                     }`}
-                    title={canAddSelectedNodeAsRoot ? 'Add selected sequence as root entry' : 'Select a sequence not already in roots'}
+                    data-tooltip={canAddSelectedNodeAsRoot ? 'Add selected sequence as root entry' : 'Select a sequence not already in roots'}
                   >
                     {canAddSelectedNodeAsRoot
                       ? `Use selected: ${selectedNodeLabel}`
@@ -1561,7 +1666,7 @@ export function LeftPanel() {
                   </button>
                 </div>
 
-                <div className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+                <div className="mt-2 inline-flex rounded-md border border-[#e5e7eb] bg-[#f3f4f6] p-0.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -1570,8 +1675,8 @@ export function LeftPanel() {
                     }}
                     className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                       rootPickerActor === 'our'
-                        ? 'bg-white text-slate-800 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
+                        ? 'bg-white text-[#1f2734] shadow-sm'
+                        : 'text-[#6b7280] hover:text-[#374151]'
                     }`}
                   >
                     Our roots
@@ -1584,8 +1689,8 @@ export function LeftPanel() {
                     }}
                     className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                       rootPickerActor === 'opp'
-                        ? 'bg-white text-slate-800 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
+                        ? 'bg-white text-[#1f2734] shadow-sm'
+                        : 'text-[#6b7280] hover:text-[#374151]'
                     }`}
                   >
                     Opp roots
@@ -1604,14 +1709,14 @@ export function LeftPanel() {
                         onClick={() => toggleRootCallSelection(call)}
                         className={`h-7 px-1 rounded-md text-[11px] border transition-colors ${
                           isSelected
-                            ? 'border-blue-300 bg-blue-100 text-blue-700'
+                            ? 'border-[#1f2734]/20 bg-[#1f2734]/10 text-[#1f2734]'
                             : isDisabled
-                              ? 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
-                              : `border-slate-200 bg-white hover:border-slate-300 ${
-                                rootPickerActor === 'opp' ? 'text-slate-500' : getSuitColor(call)
+                              ? 'border-[#e5e7eb] bg-[#f3f4f6] text-[#d1d5db] opacity-60 cursor-not-allowed'
+                              : `border-[#e5e7eb] bg-white hover:border-[#d1d5db] ${
+                                rootPickerActor === 'opp' ? 'text-[#6b7280]' : getSuitColor(call)
                               }`
                         }`}
-                        title={isDisabled ? `${formatCall(call)} already exists in roots` : `Add ${formatCall(call)}`}
+                        data-tooltip={isDisabled ? `${formatCall(call)} already exists in roots` : `Add ${formatCall(call)}`}
                       >
                         {rootPickerActor === 'opp' ? `(${formatCall(call)})` : formatCall(call)}
                       </button>
@@ -1619,20 +1724,20 @@ export function LeftPanel() {
                   })}
                 </div>
 
-                <div className="mt-2 text-[10px] text-slate-500">
+                <div className="mt-2 text-[10px] text-[#6b7280]">
                   Selected: {selectedRootCalls.length}
                 </div>
               </>
             ) : (
               <>
-                <div className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+                <div className="mt-2 inline-flex rounded-md border border-[#e5e7eb] bg-[#f3f4f6] p-0.5">
                   <button
                     type="button"
                     onClick={() => setSequenceNextActor('our')}
                     className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                       sequenceNextActor === 'our'
-                        ? 'bg-white text-slate-800 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
+                        ? 'bg-white text-[#1f2734] shadow-sm'
+                        : 'text-[#6b7280] hover:text-[#374151]'
                     }`}
                   >
                     Next: Our
@@ -1642,15 +1747,15 @@ export function LeftPanel() {
                     onClick={() => setSequenceNextActor('opp')}
                     className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                       sequenceNextActor === 'opp'
-                        ? 'bg-white text-slate-800 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
+                        ? 'bg-white text-[#1f2734] shadow-sm'
+                        : 'text-[#6b7280] hover:text-[#374151]'
                     }`}
                   >
                     Next: Opp
                   </button>
                 </div>
 
-                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 min-h-[34px] text-[11px] text-slate-700">
+                <div className="mt-2 rounded-md border border-[#e5e7eb] bg-[#fafbfc] px-2 py-1.5 min-h-[34px] text-[11px] text-[#374151]">
                   {sequenceRootSteps.length > 0 ? sequencePreviewLabel : 'Start sequence'}
                 </div>
 
@@ -1658,7 +1763,7 @@ export function LeftPanel() {
                   <button
                     type="button"
                     onClick={popSequenceStep}
-                    className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                    className="h-6 px-2 rounded-md border border-[#e5e7eb] text-[10px] text-[#6b7280] hover:bg-[#f3f4f6] disabled:opacity-50"
                     disabled={sequenceRootSteps.length === 0}
                   >
                     Undo
@@ -1666,7 +1771,7 @@ export function LeftPanel() {
                   <button
                     type="button"
                     onClick={clearSequenceSteps}
-                    className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                    className="h-6 px-2 rounded-md border border-[#e5e7eb] text-[10px] text-[#6b7280] hover:bg-[#f3f4f6] disabled:opacity-50"
                     disabled={sequenceRootSteps.length === 0}
                   >
                     Clear
@@ -1684,10 +1789,10 @@ export function LeftPanel() {
                         onClick={() => appendSequenceStep(call)}
                         className={`h-7 px-1 rounded-md text-[11px] border transition-colors ${
                           isAvailable
-                            ? `border-slate-200 bg-white hover:border-slate-300 ${
-                              sequenceNextActor === 'opp' ? 'text-slate-500' : getSuitColor(call)
+                            ? `border-[#e5e7eb] bg-white hover:border-[#d1d5db] ${
+                              sequenceNextActor === 'opp' ? 'text-[#6b7280]' : getSuitColor(call)
                             }`
-                            : 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
+                            : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#d1d5db] opacity-60 cursor-not-allowed'
                         }`}
                       >
                         {sequenceNextActor === 'opp' ? `(${formatCall(call)})` : formatCall(call)}
@@ -1707,10 +1812,10 @@ export function LeftPanel() {
                         onClick={() => appendSequenceStep(call)}
                         className={`h-7 px-2 rounded-md text-[11px] border transition-colors ${
                           isAvailable
-                            ? `border-slate-200 bg-white hover:border-slate-300 ${
-                              sequenceNextActor === 'opp' ? 'text-slate-500' : 'text-slate-700'
+                            ? `border-[#e5e7eb] bg-white hover:border-[#d1d5db] ${
+                              sequenceNextActor === 'opp' ? 'text-[#6b7280]' : 'text-[#374151]'
                             }`
-                            : 'border-slate-200 bg-slate-100 text-slate-300 opacity-60 cursor-not-allowed'
+                            : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#d1d5db] opacity-60 cursor-not-allowed'
                         }`}
                       >
                         {sequenceNextActor === 'opp' ? `(${formatCall(call)})` : formatCall(call)}
@@ -1720,7 +1825,7 @@ export function LeftPanel() {
                 </div>
 
                 {sequenceConflictsExistingRoot && (
-                  <div className="mt-1.5 text-[10px] text-slate-500">
+                  <div className="mt-1.5 text-[10px] text-[#6b7280]">
                     This sequence is already in roots.
                   </div>
                 )}
@@ -1735,14 +1840,14 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={closeRootPicker}
-                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+                className="h-8 px-3 rounded-md border border-[#e5e7eb] text-sm text-[#6b7280] hover:bg-[#f3f4f6]"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={rootPickerMode === 'single' ? submitSingleRootPicker : submitSequenceRootPicker}
-                className="h-8 px-3 rounded-md text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                className="h-8 px-3 rounded-md text-sm text-white bg-[#1f2734] hover:bg-[#374151] disabled:bg-[#9ca3af] disabled:cursor-not-allowed"
                 disabled={rootPickerMode === 'single' ? !canSubmitSingleMode : !canSubmitSequenceMode}
               >
                 {rootEditEntryNodeId ? 'Save' : 'Add'}
@@ -1754,31 +1859,31 @@ export function LeftPanel() {
 
       {rootDeleteDialog && (
         <div
-          className="absolute inset-0 z-[55] bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-3"
+          className="absolute inset-0 z-[55] bg-[#1f2734]/20 backdrop-blur-[1px] flex items-center justify-center p-3"
           onClick={closeRootDeleteDialog}
         >
           <div
-            className="w-full max-w-xs rounded-xl border border-slate-200 bg-white shadow-xl"
+            className="w-full max-w-xs rounded-xl border border-[#e5e7eb] bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="px-4 py-3 border-b border-slate-100">
-              <div className="text-sm font-semibold text-slate-900">
+            <div className="px-4 py-3 border-b border-[#f0f0f0]">
+              <div className="text-sm font-semibold text-[#1f2734]">
                 {removeRootIntentMeta.title}
               </div>
               <div className="mt-0.5 text-xs">
-                <span className="text-slate-700">{rootDeleteDialog.label}</span>
+                <span className="text-[#374151]">{rootDeleteDialog.label}</span>
               </div>
             </div>
 
-            <div className="px-4 py-3 text-sm text-slate-600">
+            <div className="px-4 py-3 text-sm text-[#6b7280]">
               This will only remove this sequence from the Roots list. The original sequence tree will remain unchanged.
             </div>
 
-            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <div className="px-4 py-3 border-t border-[#f0f0f0] flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={closeRootDeleteDialog}
-                className="h-8 px-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
+                className="h-8 px-3 text-sm font-medium text-[#374151] bg-white border border-[#e5e7eb] hover:bg-[#fafbfc] rounded-md transition-colors"
               >
                 Cancel
               </button>
@@ -1795,22 +1900,22 @@ export function LeftPanel() {
       )}
 
       {sectionModal && (
-        <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-xs rounded-lg border border-slate-200 bg-white shadow-xl p-4">
-            <h4 className="text-sm font-semibold text-slate-800">{sectionModal.title}</h4>
+        <div className="absolute inset-0 z-50 bg-[#1f2734]/20 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-xs rounded-lg border border-[#e5e7eb] bg-white shadow-xl p-4">
+            <h4 className="text-sm font-semibold text-[#1f2734]">{sectionModal.title}</h4>
             {sectionModal.mode === 'delete' ? (
-              <p className="mt-2 text-xs text-slate-600">
+              <p className="mt-2 text-xs text-[#6b7280]">
                 Delete this section? Child sections will be moved to the parent level.
               </p>
             ) : (
               <div className="mt-3">
-                <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                <label className="block text-[11px] font-medium text-[#6b7280] uppercase tracking-wider mb-1.5">
                   Section name
                 </label>
                 <input
                   value={sectionModalInput}
                   onChange={(event) => setSectionModalInput(event.target.value)}
-                  className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-8 w-full rounded-md border border-[#d1d5db] px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                   placeholder="e.g. Openings"
                   autoFocus
                 />
@@ -1825,7 +1930,7 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+                className="h-8 px-3 rounded-md border border-[#e5e7eb] text-sm text-[#6b7280] hover:bg-[#f3f4f6]"
               >
                 Cancel
               </button>
@@ -1833,7 +1938,7 @@ export function LeftPanel() {
                 type="button"
                 onClick={submitSectionModal}
                 className={`h-8 px-3 rounded-md text-sm text-white ${
-                  sectionModal.mode === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                  sectionModal.mode === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#1f2734] hover:bg-[#374151]'
                 }`}
               >
                 {sectionModal.confirmText}
@@ -1844,48 +1949,48 @@ export function LeftPanel() {
       )}
 
       {smartViewModal && (
-        <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white shadow-xl p-4">
-            <h4 className="text-sm font-semibold text-slate-800">{smartViewModal.title}</h4>
+        <div className="absolute inset-0 z-50 bg-[#1f2734]/20 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-lg border border-[#e5e7eb] bg-white shadow-xl p-4">
+            <h4 className="text-sm font-semibold text-[#1f2734]">{smartViewModal.title}</h4>
             {smartViewModal.mode === 'delete' ? (
-              <p className="mt-2 text-xs text-slate-600">
+              <p className="mt-2 text-xs text-[#6b7280]">
                 Delete this custom smart view?
               </p>
             ) : (
               <>
                 <div className="mt-3">
-                  <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                  <label className="block text-[11px] font-medium text-[#6b7280] uppercase tracking-wider mb-1.5">
                     Name
                   </label>
                   <input
                     value={smartViewNameInput}
                     onChange={(event) => setSmartViewNameInput(event.target.value)}
-                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="h-8 w-full rounded-md border border-[#d1d5db] px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                     placeholder="e.g. Transfer candidates"
                     autoFocus
                   />
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                  <label className="block text-[11px] font-medium text-[#6b7280] uppercase tracking-wider mb-1.5">
                     Query
                   </label>
                   <input
                     value={smartViewQueryInput}
                     onChange={(event) => setSmartViewQueryInput(event.target.value)}
-                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="h-8 w-full rounded-md border border-[#d1d5db] px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                     placeholder="text match"
                   />
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+                  <label className="block text-[11px] font-medium text-[#6b7280] uppercase tracking-wider mb-1.5">
                     Field
                   </label>
                   <select
                     value={smartViewFieldInput}
                     onChange={(event) => setSmartViewFieldInput(event.target.value as CustomSmartViewField)}
-                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="h-8 w-full rounded-md border border-[#d1d5db] px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
                   >
                     <option value="all">All</option>
                     <option value="sequence">Sequence</option>
@@ -1904,7 +2009,7 @@ export function LeftPanel() {
               <button
                 type="button"
                 onClick={closeSmartViewModal}
-                className="h-8 px-3 rounded-md border border-slate-200 text-sm text-slate-600 hover:bg-slate-100"
+                className="h-8 px-3 rounded-md border border-[#e5e7eb] text-sm text-[#6b7280] hover:bg-[#f3f4f6]"
               >
                 Cancel
               </button>
@@ -1912,7 +2017,7 @@ export function LeftPanel() {
                 type="button"
                 onClick={submitSmartViewModal}
                 className={`h-8 px-3 rounded-md text-sm text-white ${
-                  smartViewModal.mode === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                  smartViewModal.mode === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#1f2734] hover:bg-[#374151]'
                 }`}
               >
                 {smartViewModal.confirmText}

@@ -22,7 +22,7 @@ export const spaceReviewPolicyEnum = pgEnum('space_review_policy', ['none', 'req
 export const spaceMemberRoleEnum = pgEnum('space_member_role', ['owner', 'admin', 'editor', 'member']);
 export const spaceJoinRequestStatusEnum = pgEnum('space_join_request_status', ['pending', 'approved', 'rejected', 'cancelled']);
 export const spaceInviteStatusEnum = pgEnum('space_invite_status', ['pending', 'accepted', 'revoked', 'expired']);
-export const contentFormatEnum = pgEnum('content_format', ['article', 'deal_analysis', 'auction_lesson', 'tournament_recap', 'quiz']);
+export const contentFormatEnum = pgEnum('content_format', ['article', 'deal_analysis', 'auction_lesson', 'tournament_recap', 'quiz', 'exercise']);
 export const contentVisibilityEnum = pgEnum('content_visibility', ['public', 'members_only']);
 export const contentStatusEnum = pgEnum('content_status', ['draft', 'published', 'archived']);
 export const contentLinkTargetEnum = pgEnum('content_link_target', ['system', 'tournament', 'content', 'external']);
@@ -42,10 +42,12 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash'),
   displayName: varchar('display_name', { length: 120 }),
   telegramUsername: varchar('telegram_username', { length: 64 }),
+  bridgesportPlayerId: integer('bridgesport_player_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   emailUnique: uniqueIndex('users_email_unique').on(table.email),
+  bridgesportPlayerIdIdx: index('users_bridgesport_player_id_idx').on(table.bridgesportPlayerId),
 }));
 
 export const spaces = pgTable('spaces', {
@@ -126,6 +128,7 @@ export const contentItems = pgTable('content_items', {
   authorUserId: varchar('author_user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   title: varchar('title', { length: 160 }).notNull(),
   summary: text('summary'),
+  coverImageUrl: text('cover_image_url'),
   format: contentFormatEnum('format').notNull().default('article'),
   visibility: contentVisibilityEnum('visibility').notNull().default('members_only'),
   status: contentStatusEnum('status').notNull().default('draft'),
@@ -161,6 +164,20 @@ export const contentVersions = pgTable('content_versions', {
   createdByIdIdx: index('content_versions_created_by_id_idx').on(table.createdById),
 }));
 
+export const contentComments = pgTable('content_comments', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  authorUserId: varchar('author_user_id', { length: 191 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parentCommentId: varchar('parent_comment_id', { length: 191 }),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemIdx: index('content_comments_item_idx').on(table.contentItemId, table.createdAt),
+  parentIdx: index('content_comments_parent_idx').on(table.parentCommentId),
+  authorIdx: index('content_comments_author_idx').on(table.authorUserId),
+}));
+
 export const contentTags = pgTable('content_tags', {
   id: varchar('id', { length: 191 }).primaryKey(),
   contentItemId: varchar('content_item_id', { length: 191 }).notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
@@ -169,6 +186,23 @@ export const contentTags = pgTable('content_tags', {
 }, (table) => ({
   itemTagUnique: uniqueIndex('content_tags_item_tag_unique').on(table.contentItemId, table.tag),
   tagIdx: index('content_tags_tag_idx').on(table.tag),
+}));
+
+export const libraryResources = pgTable('library_resources', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  title: varchar('title', { length: 300 }).notNull(),
+  url: text('url').notNull(),
+  source: varchar('source', { length: 100 }).notNull(), // bridgeclub.ru, bridgeworld.com, etc.
+  category: varchar('category', { length: 64 }).notNull(), // bidding, defense, play, conventions, books, articles
+  subcategory: varchar('subcategory', { length: 100 }),
+  description: text('description'),
+  author: varchar('author', { length: 200 }),
+  language: varchar('language', { length: 10 }).notNull().default('ru'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  categoryIdx: index('library_resources_category_idx').on(table.category),
+  sourceIdx: index('library_resources_source_idx').on(table.source),
 }));
 
 export const contentLinks = pgTable('content_links', {
@@ -682,6 +716,25 @@ export const bridgesportCalendarTournaments = pgTable('bridgesport_calendar_tour
   cityIdx: index('bridgesport_calendar_tournaments_city_idx').on(table.city),
 }));
 
+export const learningBooks = pgTable('learning_books', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull(),
+  prefix: text('prefix').notNull(),
+  title: text('title').notNull(),
+  author: text('author').notNull(),
+  description: text('description'),
+  difficulty: text('difficulty'),
+  accentColor: text('accent_color').default('#2563eb'),
+  icon: text('icon').default('spade'),
+  coverUrl: text('cover_url'),
+  sortOrder: integer('sort_order').default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  slugUnique: uniqueIndex('learning_books_slug_unique').on(table.slug),
+  sortOrderIdx: index('learning_books_sort_order_idx').on(table.sortOrder),
+}));
+
 export const schema = {
   users,
   spaces,
@@ -722,6 +775,7 @@ export const schema = {
   bridgesportPlayerTournaments,
   bridgesportRatingSnapshots,
   bridgesportCalendarTournaments,
+  learningBooks,
 };
 
 export type ShareRole = (typeof shareRoleEnum.enumValues)[number];

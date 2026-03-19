@@ -31,6 +31,7 @@ import {
   createDraftFromVersion,
   listSystemTimelineForUser,
   createSystemForUser,
+  deleteSystem,
   freezeTournamentBindings,
   freezeTournamentBinding,
   getSystemForUser,
@@ -85,6 +86,7 @@ export interface BiddingRouterDeps {
   assertSystemCapability: typeof assertSystemCapability;
   listSystemsForUser: typeof listSystemsForUser;
   createSystemForUser: typeof createSystemForUser;
+  deleteSystem: typeof deleteSystem;
   getSystemForUser: typeof getSystemForUser;
   updateSystemMetadata: typeof updateSystemMetadata;
   moveSystemToSpace: typeof moveSystemToSpace;
@@ -147,6 +149,7 @@ const defaultDeps: BiddingRouterDeps = {
   assertSystemCapability,
   listSystemsForUser,
   createSystemForUser,
+  deleteSystem,
   getSystemForUser,
   updateSystemMetadata,
   moveSystemToSpace,
@@ -240,6 +243,16 @@ export function createBiddingRouter(overrides: Partial<BiddingRouterDeps> = {}) 
               input.data.targetSpaceId,
             );
             return { moved };
+          } catch (error) {
+            mapServiceError(error);
+          }
+        }),
+      delete: protectedProcedure
+        .input(z.object({ systemId: z.string().min(1) }))
+        .mutation(async ({ ctx, input }) => {
+          try {
+            const result = await deps.deleteSystem(input.systemId, ctx.userId);
+            return { result };
           } catch (error) {
             mapServiceError(error);
           }

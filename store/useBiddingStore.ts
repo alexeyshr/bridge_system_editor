@@ -137,6 +137,77 @@ export interface RootEntryMutationResult {
   error?: string;
 }
 
+// ──── Defense types ────
+
+export type DefenseCategory = 'leads_suit' | 'leads_nt' | 'signals' | 'discards' | 'vs_convention' | 'custom';
+
+export interface LeadHoldingRow {
+  id: string;
+  holding: string;
+  lead: string;
+  notes?: string;
+}
+
+export interface LeadsData {
+  kind: 'leads';
+  against: 'suit' | 'nt';
+  leadStyle: '4th_best' | '3rd_5th' | 'attitude' | 'other';
+  holdings: LeadHoldingRow[];
+}
+
+export interface SignalsData {
+  kind: 'signals';
+  attitude: 'standard' | 'reverse' | 'odd_even';
+  count: 'standard' | 'reverse';
+  suitPreference: 'standard' | 'reverse';
+  smithEcho: boolean;
+  trumpSignals: 'count' | 'suit_preference' | 'none';
+}
+
+export interface DiscardsData {
+  kind: 'discards';
+  method: 'natural' | 'lavinthal' | 'odd_even' | 'revolving' | 'other';
+  firstDiscard: 'attitude' | 'count' | 'suit_preference';
+}
+
+export interface DefenseEntry {
+  id: string;
+  action: string;
+  meaning: string;
+  hcpMin?: number;
+  hcpMax?: number;
+}
+
+export interface VsConventionData {
+  kind: 'vs_convention';
+  opponentConvention: string;
+  entries: DefenseEntry[];
+}
+
+export interface CustomDefenseData {
+  kind: 'custom';
+  entries: DefenseEntry[];
+}
+
+export type DefenseStructuredData = LeadsData | SignalsData | DiscardsData | VsConventionData | CustomDefenseData;
+
+export interface DefenseContext {
+  id: string;
+  title: string;
+  category: DefenseCategory;
+  structured: DefenseStructuredData;
+  notes: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DefenseMutationResult {
+  ok: boolean;
+  contextId?: string;
+  error?: string;
+}
+
 export interface BatchMutationResult {
   ok: boolean;
   updatedCount?: number;
@@ -166,6 +237,9 @@ interface DraftPayload {
   isLeftPanelOpen?: boolean;
   isRightPanelOpen?: boolean;
   treeViewMode?: EditorTreeViewMode;
+  defenseContextsById?: Record<string, DefenseContext>;
+  defenseContextOrder?: string[];
+  activeDefenseContextId?: string | null;
 }
 
 interface EditorHistorySnapshot {
@@ -186,6 +260,9 @@ interface EditorHistorySnapshot {
   leftPrimaryMode: LeftPrimaryMode;
   activeSectionId: string | null;
   activeSmartViewId: string | null;
+  defenseContextsById: Record<string, DefenseContext>;
+  defenseContextOrder: string[];
+  activeDefenseContextId: string | null;
 }
 
 interface ExportSchemaV2 {
@@ -205,6 +282,8 @@ interface ExportSchemaV2 {
   leftPrimaryMode: LeftPrimaryMode;
   activeSectionId: string | null;
   activeSmartViewId: string | null;
+  defenseContextsById: Record<string, DefenseContext>;
+  defenseContextOrder: string[];
 }
 
 interface BiddingState {
@@ -225,6 +304,9 @@ interface BiddingState {
   leftPrimaryMode: LeftPrimaryMode;
   activeSectionId: string | null;
   activeSmartViewId: string | null;
+  defenseContextsById: Record<string, DefenseContext>;
+  defenseContextOrder: string[];
+  activeDefenseContextId: string | null;
   activeSystemId: string | null;
   activeSystemRevision: number | null;
   searchQuery: string;
@@ -321,6 +403,19 @@ interface BiddingState {
   getSmartViews: () => SmartViewDescriptor[];
   evalSmartView: (nodeId: string, smartViewId: string) => boolean;
   getSmartViewCount: (smartViewId: string) => number;
+  // Defense actions
+  createDefenseContext: (category: DefenseCategory, title: string) => DefenseMutationResult;
+  updateDefenseContext: (contextId: string, updates: Partial<Pick<DefenseContext, 'title' | 'notes' | 'order'>>) => DefenseMutationResult;
+  deleteDefenseContext: (contextId: string) => DefenseMutationResult;
+  updateDefenseStructured: (contextId: string, data: DefenseStructuredData) => DefenseMutationResult;
+  addDefenseEntry: (contextId: string) => DefenseMutationResult;
+  updateDefenseEntry: (contextId: string, entryId: string, updates: Partial<DefenseEntry>) => DefenseMutationResult;
+  removeDefenseEntry: (contextId: string, entryId: string) => DefenseMutationResult;
+  addLeadHolding: (contextId: string) => DefenseMutationResult;
+  updateLeadHolding: (contextId: string, rowId: string, updates: Partial<LeadHoldingRow>) => DefenseMutationResult;
+  removeLeadHolding: (contextId: string, rowId: string) => DefenseMutationResult;
+  setActiveDefenseContextId: (contextId: string | null) => void;
+
   undo: () => void;
   redo: () => void;
   flushDraftSave: () => void;
@@ -518,6 +613,9 @@ function createHistorySnapshot(state: BiddingState): EditorHistorySnapshot {
     leftPrimaryMode: state.leftPrimaryMode,
     activeSectionId: state.activeSectionId,
     activeSmartViewId: state.activeSmartViewId,
+    defenseContextsById: state.defenseContextsById,
+    defenseContextOrder: state.defenseContextOrder,
+    activeDefenseContextId: state.activeDefenseContextId,
   });
 }
 
@@ -541,6 +639,9 @@ function applyHistorySnapshot(snapshot: EditorHistorySnapshot): Partial<BiddingS
     leftPrimaryMode: next.leftPrimaryMode,
     activeSectionId: next.activeSectionId,
     activeSmartViewId: next.activeSmartViewId,
+    defenseContextsById: next.defenseContextsById,
+    defenseContextOrder: next.defenseContextOrder,
+    activeDefenseContextId: next.activeDefenseContextId,
   };
 }
 
@@ -1265,6 +1366,8 @@ function normalizeImportedV2Payload(
     leftPrimaryMode,
     activeSectionId,
     activeSmartViewId,
+    defenseContextsById: (input as Record<string, unknown>).defenseContextsById as Record<string, DefenseContext> ?? {},
+    defenseContextOrder: (input as Record<string, unknown>).defenseContextOrder as string[] ?? [],
   };
 }
 
@@ -1650,6 +1753,18 @@ const initialTreeViewMode: EditorTreeViewMode =
   initialDraft?.treeViewMode === 'compact'
     ? 'compact'
     : 'classic';
+const initialDefenseContextsById: Record<string, DefenseContext> =
+  initialDraft?.defenseContextsById && typeof initialDraft.defenseContextsById === 'object'
+    ? initialDraft.defenseContextsById
+    : {};
+const initialDefenseContextOrder: string[] =
+  initialDraft?.defenseContextOrder && Array.isArray(initialDraft.defenseContextOrder)
+    ? initialDraft.defenseContextOrder.filter((id) => !!initialDefenseContextsById[id])
+    : Object.keys(initialDefenseContextsById);
+const initialActiveDefenseContextId: string | null =
+  typeof initialDraft?.activeDefenseContextId === 'string' && initialDefenseContextsById[initialDraft.activeDefenseContextId]
+    ? initialDraft.activeDefenseContextId
+    : null;
 
 export const useBiddingStore = create<BiddingState>((set, get) => {
   const queueDraftSave = () => {
@@ -1687,6 +1802,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         isLeftPanelOpen: state.isLeftPanelOpen,
         isRightPanelOpen: state.isRightPanelOpen,
         treeViewMode: state.treeViewMode,
+        defenseContextsById: state.defenseContextsById,
+        defenseContextOrder: state.defenseContextOrder,
+        activeDefenseContextId: state.activeDefenseContextId,
       });
       set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
       draftSaveTimer = null;
@@ -1726,6 +1844,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       isLeftPanelOpen: state.isLeftPanelOpen,
       isRightPanelOpen: state.isRightPanelOpen,
       treeViewMode: state.treeViewMode,
+      defenseContextsById: state.defenseContextsById,
+      defenseContextOrder: state.defenseContextOrder,
+      activeDefenseContextId: state.activeDefenseContextId,
     });
     set({ isDraftSaving: false, lastDraftSavedAt: savedAt });
   };
@@ -1881,6 +2002,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     leftPrimaryMode: initialLeftPrimaryMode,
     activeSectionId: initialActiveSectionId,
     activeSmartViewId: initialActiveSmartViewId,
+    defenseContextsById: initialDefenseContextsById,
+    defenseContextOrder: initialDefenseContextOrder,
+    activeDefenseContextId: initialActiveDefenseContextId,
     activeSystemId: null,
     activeSystemRevision: null,
     searchQuery: initialSearchQuery,
@@ -1926,6 +2050,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
             leftPrimaryMode: 'roots',
             activeSectionId: null,
             activeSmartViewId: null,
+            defenseContextsById: {},
+            defenseContextOrder: [],
           };
         } else if (isPlainRecord(parsed)) {
           const legacyWrappedNodes = Array.isArray(parsed.data) ? parsed.data : null;
@@ -1949,6 +2075,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
               leftPrimaryMode: 'roots',
               activeSectionId: null,
               activeSmartViewId: null,
+              defenseContextsById: {},
+              defenseContextOrder: [],
             };
           } else {
             payload = normalizeImportedV2Payload(parsed, warnings);
@@ -1993,6 +2121,9 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           activeSectionId: payload.activeSectionId,
           activeSmartViewId: payload.activeSmartViewId,
           leftPrimaryMode: payload.leftPrimaryMode,
+          defenseContextsById: payload.defenseContextsById ?? {},
+          defenseContextOrder: payload.defenseContextOrder ?? [],
+          activeDefenseContextId: null,
           hasUnsavedChanges: true,
           serverSyncError: null,
           lastExportedAt: null,
@@ -2049,6 +2180,8 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
           leftPrimaryMode: state.leftPrimaryMode,
           activeSectionId: state.activeSectionId,
           activeSmartViewId: state.activeSmartViewId,
+          defenseContextsById: state.defenseContextsById,
+          defenseContextOrder: state.defenseContextOrder,
         };
         output = yaml.dump(payload);
       }
@@ -2439,10 +2572,43 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
     }),
 
     setActiveSystem: (systemId: string | null, revision?: number | null) =>
-      set((state) => ({
-        activeSystemId: systemId,
-        activeSystemRevision: revision === undefined ? state.activeSystemRevision : revision,
-      })),
+      set((state) => {
+        // Full reset when deselecting system (e.g. after delete)
+        if (systemId === null) {
+          return {
+            activeSystemId: null,
+            activeSystemRevision: null,
+            nodes: {},
+            selectedNodeId: null,
+            selectedNodeIds: [],
+            rootEntryNodeIds: [],
+            activeRootEntryNodeId: null,
+            sectionsById: {},
+            sectionRootOrder: [],
+            nodeSectionIds: {},
+            subtreeRulesById: {},
+            customSmartViewsById: {},
+            customSmartViewOrder: [],
+            smartViewPinnedById: {},
+            nodeTouchedAtById: {},
+            sectionExpandedById: {},
+            leftPrimaryMode: 'roots' as const,
+            activeSectionId: null,
+            activeSmartViewId: null,
+            hasUnsavedChanges: false,
+            isServerSyncing: false,
+            serverSyncError: null,
+            undoStack: [],
+            redoStack: [],
+            canUndo: false,
+            canRedo: false,
+          };
+        }
+        return {
+          activeSystemId: systemId,
+          activeSystemRevision: revision === undefined ? state.activeSystemRevision : revision,
+        };
+      }),
 
     hydrateFromRemoteSystem: (input) =>
       set((state) => {
@@ -2453,6 +2619,45 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
         }
 
         const selectedNodeId = state.selectedNodeId && remoteNodes[state.selectedNodeId] ? state.selectedNodeId : null;
+
+        // If re-hydrating the SAME system, preserve user-customized state
+        // (root entries, smart views, sections, UI mode, undo history).
+        const isSameSystem = state.activeSystemId === input.systemId;
+
+        if (isSameSystem) {
+          // Keep custom roots that still exist in the remote node set
+          const preservedRootEntryNodeIds = state.rootEntryNodeIds.filter((id) => remoteNodes[id]);
+          // If all custom roots were deleted remotely, fall back to defaults
+          const rootEntryNodeIds =
+            preservedRootEntryNodeIds.length > 0
+              ? preservedRootEntryNodeIds
+              : getDefaultRootEntryNodeIds(remoteNodes);
+          const activeRootEntryNodeId =
+            state.activeRootEntryNodeId && remoteNodes[state.activeRootEntryNodeId]
+              ? state.activeRootEntryNodeId
+              : rootEntryNodeIds[0] ?? null;
+
+          return {
+            nodes: remoteNodes,
+            selectedNodeId,
+            selectedNodeIds: selectedNodeId ? [selectedNodeId] : [],
+            rootEntryNodeIds,
+            activeRootEntryNodeId,
+            // Preserve all user-customized state:
+            // sectionsById, sectionRootOrder, nodeSectionIds, subtreeRulesById — kept
+            // customSmartViewsById, customSmartViewOrder, smartViewPinnedById — kept
+            // leftPrimaryMode, activeSectionId, activeSmartViewId — kept
+            // sectionExpandedById, nodeTouchedAtById — kept
+            activeSystemId: input.systemId,
+            activeSystemRevision: input.revision,
+            hasUnsavedChanges: false,
+            isServerSyncing: false,
+            serverSyncError: null,
+            lastServerSavedAt: new Date().toISOString(),
+          };
+        }
+
+        // Different system — full reset
         const rootEntryNodeIds = getDefaultRootEntryNodeIds(remoteNodes);
         const activeRootEntryNodeId = rootEntryNodeIds[0] ?? null;
 
@@ -3588,6 +3793,226 @@ export const useBiddingStore = create<BiddingState>((set, get) => {
       const state = get();
       const countMap = getSmartViewCountMap(state);
       return countMap[smartViewId] ?? 0;
+    },
+
+    // ──── Defense actions ────
+
+    createDefenseContext: (category: DefenseCategory, title: string) => {
+      const trimmedTitle = title.trim();
+      if (!trimmedTitle) return { ok: false, error: 'Title is required' };
+      const id = `def_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      const defaultStructured = ((): DefenseStructuredData => {
+        switch (category) {
+          case 'leads_suit': return { kind: 'leads', against: 'suit', leadStyle: '4th_best', holdings: [] };
+          case 'leads_nt': return { kind: 'leads', against: 'nt', leadStyle: '3rd_5th', holdings: [] };
+          case 'signals': return { kind: 'signals', attitude: 'standard', count: 'standard', suitPreference: 'standard', smithEcho: false, trumpSignals: 'none' };
+          case 'discards': return { kind: 'discards', method: 'natural', firstDiscard: 'attitude' };
+          case 'vs_convention': return { kind: 'vs_convention', opponentConvention: '', entries: [] };
+          case 'custom': return { kind: 'custom', entries: [] };
+        }
+      })();
+      const ctx: DefenseContext = {
+        id, title: trimmedTitle, category, structured: defaultStructured,
+        notes: '', order: get().defenseContextOrder.length, createdAt: now, updatedAt: now,
+      };
+      set((state) => ({
+        ...withHistoryMutation(state, {
+          defenseContextsById: { ...state.defenseContextsById, [id]: ctx },
+          defenseContextOrder: [...state.defenseContextOrder, id],
+          activeDefenseContextId: id,
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId: id };
+    },
+
+    updateDefenseContext: (contextId, updates) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx) return { ok: false, error: 'Not found' };
+      const updated = { ...ctx, ...updates, updatedAt: new Date().toISOString() };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    deleteDefenseContext: (contextId) => {
+      const state = get();
+      if (!state.defenseContextsById[contextId]) return { ok: false, error: 'Not found' };
+      const { [contextId]: _, ...rest } = state.defenseContextsById;
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: rest,
+          defenseContextOrder: s.defenseContextOrder.filter((id) => id !== contextId),
+          activeDefenseContextId: s.activeDefenseContextId === contextId ? null : s.activeDefenseContextId,
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    updateDefenseStructured: (contextId, data) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx) return { ok: false, error: 'Not found' };
+      const updated = { ...ctx, structured: data, updatedAt: new Date().toISOString() };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    addDefenseEntry: (contextId) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx) return { ok: false, error: 'Not found' };
+      const structured = ctx.structured;
+      if (structured.kind !== 'vs_convention' && structured.kind !== 'custom') return { ok: false, error: 'Wrong type' };
+      const entryId = `de_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const newEntry: DefenseEntry = { id: entryId, action: '', meaning: '' };
+      const updated: DefenseContext = {
+        ...ctx,
+        structured: { ...structured, entries: [...structured.entries, newEntry] },
+        updatedAt: new Date().toISOString(),
+      };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    updateDefenseEntry: (contextId, entryId, updates) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx) return { ok: false, error: 'Not found' };
+      const structured = ctx.structured;
+      if (structured.kind !== 'vs_convention' && structured.kind !== 'custom') return { ok: false, error: 'Wrong type' };
+      const updated: DefenseContext = {
+        ...ctx,
+        structured: {
+          ...structured,
+          entries: structured.entries.map((e) => e.id === entryId ? { ...e, ...updates } : e),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    removeDefenseEntry: (contextId, entryId) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx) return { ok: false, error: 'Not found' };
+      const structured = ctx.structured;
+      if (structured.kind !== 'vs_convention' && structured.kind !== 'custom') return { ok: false, error: 'Wrong type' };
+      const updated: DefenseContext = {
+        ...ctx,
+        structured: {
+          ...structured,
+          entries: structured.entries.filter((e) => e.id !== entryId),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    addLeadHolding: (contextId) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx || ctx.structured.kind !== 'leads') return { ok: false, error: 'Not a leads context' };
+      const rowId = `lh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const newRow: LeadHoldingRow = { id: rowId, holding: '', lead: '' };
+      const updated: DefenseContext = {
+        ...ctx,
+        structured: { ...ctx.structured, holdings: [...ctx.structured.holdings, newRow] },
+        updatedAt: new Date().toISOString(),
+      };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    updateLeadHolding: (contextId, rowId, updates) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx || ctx.structured.kind !== 'leads') return { ok: false, error: 'Not a leads context' };
+      const updated: DefenseContext = {
+        ...ctx,
+        structured: {
+          ...ctx.structured,
+          holdings: ctx.structured.holdings.map((r) => r.id === rowId ? { ...r, ...updates } : r),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    removeLeadHolding: (contextId, rowId) => {
+      const state = get();
+      const ctx = state.defenseContextsById[contextId];
+      if (!ctx || ctx.structured.kind !== 'leads') return { ok: false, error: 'Not a leads context' };
+      const updated: DefenseContext = {
+        ...ctx,
+        structured: {
+          ...ctx.structured,
+          holdings: ctx.structured.holdings.filter((r) => r.id !== rowId),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      set((s) => ({
+        ...withHistoryMutation(s, {
+          defenseContextsById: { ...s.defenseContextsById, [contextId]: updated },
+          hasUnsavedChanges: true,
+        }),
+      }));
+      queueDraftSave();
+      return { ok: true, contextId };
+    },
+
+    setActiveDefenseContextId: (contextId) => {
+      set({ activeDefenseContextId: contextId });
+      queueDraftSave();
     },
 
     undo: () => {

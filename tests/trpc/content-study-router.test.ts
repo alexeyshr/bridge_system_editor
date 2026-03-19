@@ -80,6 +80,12 @@ function createDeps(overrides: Partial<ContentRouterDeps> = {}): ContentRouterDe
     archiveContentItem: async () => {
       throw new Error('not used');
     },
+    unarchiveContentItem: async () => {
+      throw new Error('not used');
+    },
+    hardDeleteContentItem: async () => {
+      throw new Error('not used');
+    },
     getDealStudy: async () => payload,
     upsertDealStudyDraft: async () => payload,
     upsertDealStudyPlaySteps: async () => payload,

@@ -6,9 +6,11 @@ import {
   archiveContentItem,
   createContentItem,
   getContentItem,
+  hardDeleteContentItem,
   listContentFeedForActor,
   listContentItemsForActor,
   publishContentItem,
+  unarchiveContentItem,
   updateContentDraft,
 } from '@/lib/server/content-service';
 import {
@@ -25,9 +27,11 @@ import {
 import {
   archiveContentItemSchema,
   createContentItemSchema,
+  hardDeleteContentItemSchema,
   listContentFeedSchema,
   listContentItemsSchema,
   publishContentItemSchema,
+  unarchiveContentItemSchema,
   updateContentDraftSchema,
 } from '@/lib/validation/content';
 import {
@@ -51,6 +55,8 @@ export interface ContentRouterDeps {
   updateContentDraft: typeof updateContentDraft;
   publishContentItem: typeof publishContentItem;
   archiveContentItem: typeof archiveContentItem;
+  unarchiveContentItem: typeof unarchiveContentItem;
+  hardDeleteContentItem: typeof hardDeleteContentItem;
   getDealStudy: typeof getDealStudy;
   upsertDealStudyDraft: typeof upsertDealStudyDraft;
   upsertDealStudyPlaySteps: typeof upsertDealStudyPlaySteps;
@@ -70,6 +76,8 @@ const defaultDeps: ContentRouterDeps = {
   updateContentDraft,
   publishContentItem,
   archiveContentItem,
+  unarchiveContentItem,
+  hardDeleteContentItem,
   getDealStudy,
   upsertDealStudyDraft,
   upsertDealStudyPlaySteps,
@@ -205,6 +213,44 @@ export function createContentRouter(overrides: Partial<ContentRouterDeps> = {}) 
             ctx.session?.user?.globalRoles,
           );
           return { item };
+        } catch (error) {
+          mapServiceError(error);
+        }
+      }),
+    unarchive: protectedProcedure
+      .input(
+        z.object({
+          contentId: z.string().trim().min(1),
+          data: unarchiveContentItemSchema.optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const item = await deps.unarchiveContentItem(
+            input.contentId,
+            ctx.userId,
+            ctx.session?.user?.globalRoles,
+          );
+          return { item };
+        } catch (error) {
+          mapServiceError(error);
+        }
+      }),
+    hardDelete: protectedProcedure
+      .input(
+        z.object({
+          contentId: z.string().trim().min(1),
+          data: hardDeleteContentItemSchema,
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const result = await deps.hardDeleteContentItem(
+            input.contentId,
+            ctx.userId,
+            ctx.session?.user?.globalRoles,
+          );
+          return result;
         } catch (error) {
           mapServiceError(error);
         }

@@ -8,6 +8,7 @@ import {
   contentVersions,
   spaceMembers,
   spaces,
+  users,
   type ContentFormat,
   type ContentLinkTarget,
   type ContentStatus,
@@ -36,8 +37,10 @@ type ContentRow = {
   id: string;
   spaceId: string;
   authorUserId: string;
+  authorDisplayName: string | null;
   title: string;
   summary: string | null;
+  coverImageUrl: string | null;
   format: ContentFormat;
   visibility: ContentVisibility;
   status: ContentStatus;
@@ -66,8 +69,10 @@ export type ContentItemView = {
   id: string;
   spaceId: string;
   authorUserId: string;
+  authorDisplayName: string | null;
   title: string;
   summary: string | null;
+  coverImageUrl: string | null;
   format: ContentFormat;
   visibility: ContentVisibility;
   status: ContentStatus;
@@ -264,8 +269,10 @@ async function getContentRowForActor(contentId: string, actorUserId: string | nu
         id: contentItems.id,
         spaceId: contentItems.spaceId,
         authorUserId: contentItems.authorUserId,
+        authorDisplayName: users.displayName,
         title: contentItems.title,
         summary: contentItems.summary,
+        coverImageUrl: contentItems.coverImageUrl,
         format: contentItems.format,
         visibility: contentItems.visibility,
         status: contentItems.status,
@@ -282,6 +289,7 @@ async function getContentRowForActor(contentId: string, actorUserId: string | nu
       })
       .from(contentItems)
       .innerJoin(spaces, eq(spaces.id, contentItems.spaceId))
+      .leftJoin(users, eq(users.id, contentItems.authorUserId))
       .where(eq(contentItems.id, contentId))
       .limit(1);
 
@@ -294,8 +302,10 @@ async function getContentRowForActor(contentId: string, actorUserId: string | nu
       id: contentItems.id,
       spaceId: contentItems.spaceId,
       authorUserId: contentItems.authorUserId,
+      authorDisplayName: users.displayName,
       title: contentItems.title,
       summary: contentItems.summary,
+      coverImageUrl: contentItems.coverImageUrl,
       format: contentItems.format,
       visibility: contentItems.visibility,
       status: contentItems.status,
@@ -313,6 +323,7 @@ async function getContentRowForActor(contentId: string, actorUserId: string | nu
     })
     .from(contentItems)
     .innerJoin(spaces, eq(spaces.id, contentItems.spaceId))
+    .leftJoin(users, eq(users.id, contentItems.authorUserId))
     .leftJoin(
       spaceMembers,
       and(eq(spaceMembers.spaceId, spaces.id), eq(spaceMembers.userId, actorUserId)),
@@ -332,8 +343,10 @@ function toContentView(
     id: row.id,
     spaceId: row.spaceId,
     authorUserId: row.authorUserId,
+    authorDisplayName: row.authorDisplayName,
     title: row.title,
     summary: row.summary,
+    coverImageUrl: row.coverImageUrl,
     format: row.format,
     visibility: row.visibility,
     status: row.status,
@@ -354,6 +367,7 @@ export async function createContentItem(
     spaceId: string;
     title: string;
     summary?: string | null;
+    coverImageUrl?: string | null;
     format: ContentFormat;
     visibility: ContentVisibility;
     blocks: ContentBlock[];
@@ -379,6 +393,7 @@ export async function createContentItem(
       authorUserId: userId,
       title: input.title,
       summary: input.summary ?? null,
+      coverImageUrl: input.coverImageUrl ?? null,
       format: input.format,
       visibility: input.visibility,
       status: 'draft',
@@ -428,6 +443,7 @@ export async function updateContentDraft(
   input: {
     title?: string;
     summary?: string | null;
+    coverImageUrl?: string | null;
     format?: ContentFormat;
     visibility?: ContentVisibility;
     blocks?: ContentBlock[];
@@ -453,6 +469,7 @@ export async function updateContentDraft(
       .set({
         title: input.title,
         summary: input.summary,
+        coverImageUrl: input.coverImageUrl,
         format: input.format,
         visibility: input.visibility,
         blocks: input.blocks,
@@ -617,6 +634,54 @@ export async function archiveContentItem(
   return getContentItem(contentId, { userId, globalRoles });
 }
 
+export async function unarchiveContentItem(
+  contentId: string,
+  userId: string,
+  globalRoles?: PortalGlobalRole[],
+): Promise<ContentItemView> {
+  const subject = resolveSubject({ userId, globalRoles });
+  const row = await getContentRowForActor(contentId, userId);
+  if (!row) throw new NotFoundError('Content item not found');
+  if (row.status !== 'archived') {
+    return getContentItem(contentId, { userId, globalRoles });
+  }
+
+  const resource = toResource(row);
+  if (!canSpaceCapability(subject, resource, 'space.content.publish')) {
+    throw new AccessDeniedError();
+  }
+
+  const now = new Date();
+  await db
+    .update(contentItems)
+    .set({
+      status: 'draft',
+      archivedAt: null,
+      updatedAt: now,
+      updatedById: userId,
+    })
+    .where(eq(contentItems.id, contentId));
+
+  return getContentItem(contentId, { userId, globalRoles });
+}
+
+export async function hardDeleteContentItem(
+  contentId: string,
+  userId: string,
+  globalRoles?: PortalGlobalRole[],
+): Promise<{ deleted: true }> {
+  const row = await getContentRowForActor(contentId, userId);
+  if (!row) throw new NotFoundError('Content item not found');
+
+  if (row.authorUserId !== userId) {
+    throw new AccessDeniedError();
+  }
+
+  await db.delete(contentItems).where(eq(contentItems.id, contentId));
+
+  return { deleted: true };
+}
+
 export async function getContentItem(
   contentId: string,
   actor: ContentActorInput,
@@ -644,7 +709,7 @@ export async function listContentItemsForActor(
     limit?: number;
   },
 ): Promise<ContentItemView[]> {
-  const limit = Math.min(Math.max(input?.limit ?? 20, 1), 100);
+  const limit = Math.min(Math.max(input?.limit ?? 20, 1), 500);
   const conditions: SQL<unknown>[] = [];
   if (input?.spaceId) {
     conditions.push(eq(contentItems.spaceId, input.spaceId));
@@ -674,8 +739,10 @@ export async function listContentItemsForActor(
           id: contentItems.id,
           spaceId: contentItems.spaceId,
           authorUserId: contentItems.authorUserId,
+          authorDisplayName: users.displayName,
           title: contentItems.title,
           summary: contentItems.summary,
+          coverImageUrl: contentItems.coverImageUrl,
           format: contentItems.format,
           visibility: contentItems.visibility,
           status: contentItems.status,
@@ -693,6 +760,7 @@ export async function listContentItemsForActor(
         })
         .from(contentItems)
         .innerJoin(spaces, eq(spaces.id, contentItems.spaceId))
+        .leftJoin(users, eq(users.id, contentItems.authorUserId))
         .leftJoin(
           spaceMembers,
           and(eq(spaceMembers.spaceId, spaces.id), eq(spaceMembers.userId, actorUserId)),
@@ -705,8 +773,10 @@ export async function listContentItemsForActor(
           id: contentItems.id,
           spaceId: contentItems.spaceId,
           authorUserId: contentItems.authorUserId,
+          authorDisplayName: users.displayName,
           title: contentItems.title,
           summary: contentItems.summary,
+          coverImageUrl: contentItems.coverImageUrl,
           format: contentItems.format,
           visibility: contentItems.visibility,
           status: contentItems.status,
@@ -723,6 +793,7 @@ export async function listContentItemsForActor(
         })
         .from(contentItems)
         .innerJoin(spaces, eq(spaces.id, contentItems.spaceId))
+        .leftJoin(users, eq(users.id, contentItems.authorUserId))
         .where(whereClause)
         .orderBy(desc(contentItems.updatedAt))
         .limit(limit * 4)

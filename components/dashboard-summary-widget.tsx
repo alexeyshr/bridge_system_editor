@@ -144,9 +144,9 @@ function formatDate(value: string): string {
 
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-[#d8dbe1] bg-white/90 px-2.5 py-2 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7a8394]">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold text-[#1f2734]">{numberFormatter.format(value)}</p>
+    <div className="px-1 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9ca3af]">{label}</p>
+      <p className="mt-0.5 text-xl font-semibold text-[#1f2734]">{numberFormatter.format(value)}</p>
     </div>
   );
 }
@@ -196,7 +196,7 @@ function FeedItem({ item }: { item: FeedEntry }) {
   );
 
   if (!item.href) {
-    return <div className="rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] p-3">{content}</div>;
+    return <div className="border-b border-[#f0f0f0] py-2.5 last:border-b-0">{content}</div>;
   }
 
   return (
@@ -204,7 +204,7 @@ function FeedItem({ item }: { item: FeedEntry }) {
       href={item.href}
       target="_blank"
       rel="noreferrer"
-      className="block rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] p-3 transition-colors hover:bg-[#eef3fb]"
+      className="block border-b border-[#f0f0f0] py-2.5 transition-colors hover:bg-[#f9fafb] last:border-b-0"
     >
       {content}
     </a>
@@ -273,32 +273,32 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
 
   if (loading) {
     return (
-      <section className="w-full max-w-[1320px] space-y-3">
-        <div className="rounded-xl border border-[#d8dbe1] bg-white/75 p-4 shadow-sm backdrop-blur-sm">
-          <div className="h-6 w-52 animate-pulse rounded bg-[#e7eaf1]" />
-          <div className="mt-3 h-14 animate-pulse rounded-lg bg-[#eef1f7]" />
+      <section className="w-full space-y-5 [[data-sidebar-state=collapsed]_&]:mx-auto [[data-sidebar-state=collapsed]_&]:max-w-[1100px]">
+        <div className="border-b border-[#e5e7eb] pb-4">
+          <div className="h-6 w-52 animate-pulse rounded bg-[#f3f4f6]" />
+          <div className="mt-3 h-14 animate-pulse rounded bg-[#f3f4f6]" />
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="h-14 animate-pulse rounded-lg bg-[#e7eaf1]" />
-          <div className="h-14 animate-pulse rounded-lg bg-[#e7eaf1]" />
-          <div className="h-14 animate-pulse rounded-lg bg-[#e7eaf1]" />
-          <div className="h-14 animate-pulse rounded-lg bg-[#e7eaf1]" />
+        <div className="grid gap-0 border-b border-[#e5e7eb] pb-5 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-[#e5e7eb]">
+          <div className="h-14 animate-pulse rounded bg-[#f3f4f6]" />
+          <div className="h-14 animate-pulse rounded bg-[#f3f4f6]" />
+          <div className="h-14 animate-pulse rounded bg-[#f3f4f6]" />
+          <div className="h-14 animate-pulse rounded bg-[#f3f4f6]" />
         </div>
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div className="h-64 animate-pulse rounded-xl bg-[#e7eaf1]" />
-          <div className="h-64 animate-pulse rounded-xl bg-[#e7eaf1]" />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:divide-x xl:divide-[#e5e7eb]">
+          <div className="h-64 animate-pulse rounded bg-[#f3f4f6]" />
+          <div className="h-64 animate-pulse rounded bg-[#f3f4f6] xl:ml-6" />
         </div>
       </section>
     );
   }
 
   return (
-    <section className="w-full max-w-[1320px] space-y-3">
+    <section className="w-full space-y-5 [[data-sidebar-state=collapsed]_&]:mx-auto [[data-sidebar-state=collapsed]_&]:max-w-[1100px]">
       {isGuest ? (
-        <article className="rounded-xl border border-[#d8dbe1] bg-white/82 p-4 shadow-sm backdrop-blur-sm">
+        <article className="border-b border-[#e5e7eb] pb-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex size-7 items-center justify-center rounded-full border border-[#d8dbe1] bg-[#f4f7fd] text-[#2f3f61]">
+              <span className="inline-flex size-7 items-center justify-center rounded-full bg-[#f3f4f6] text-[#2f3f61]">
                 <SparklesIcon className="size-4" />
               </span>
               <div>
@@ -306,7 +306,7 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
                 <p className="text-xs text-[#6e7788]">Start in 3 short steps and discover portal sections.</p>
               </div>
             </div>
-            <span className="rounded-full border border-[#d8dbe1] bg-[#f8f9fc] px-2 py-0.5 text-xs font-medium text-[#5f6a7b]">
+            <span className="rounded-full bg-[#f3f4f6] px-2 py-0.5 text-xs font-medium text-[#6b7280]">
               Starter path: 3 steps
             </span>
           </div>
@@ -316,9 +316,9 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
               <a
                 key={step.id}
                 href={step.href}
-                className="group flex items-start gap-2 rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] px-2.5 py-2 transition-colors hover:bg-[#eef3fb]"
+                className="group flex items-start gap-2 rounded-lg py-2.5 px-3 transition-colors hover:bg-[#f9fafb]"
               >
-                <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-[#cfd5df] bg-white text-xs font-semibold text-[#2f3f61]">
+                <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[#f3f4f6] text-xs font-semibold text-[#374151]">
                   {index + 1}
                 </span>
                 <span className="min-w-0">
@@ -335,7 +335,7 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
         </article>
       ) : null}
 
-      <article className="rounded-xl border border-[#d8dbe1] bg-white/78 p-4 shadow-sm backdrop-blur-sm">
+      <article className="border-b border-[#e5e7eb] pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-[#1f2734]">BridgeSport snapshot</h2>
           {updatedLabel ? <p className="text-xs text-[#6e7788]">Обновлено: {updatedLabel}</p> : null}
@@ -355,39 +355,39 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
         ) : null}
       </article>
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-0 border-b border-[#e5e7eb] pb-5 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-[#e5e7eb]">
         <StatCard label="Игроки" value={stats.totalPlayers} />
         <StatCard label="Турниры" value={stats.totalTournaments} />
         <StatCard label="Ближайшие события" value={stats.upcomingEventsCount} />
         <StatCard label="Записей в топе" value={latestRatingCount} />
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <article className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:divide-x xl:divide-[#e5e7eb]">
+        <article>
           <div className="flex items-center gap-2">
-            <UsersIcon className="size-4 text-[#51617b]" />
-            <h3 className="text-xl font-semibold leading-none tracking-tight text-[#1f2734]">Activity feed</h3>
+            <UsersIcon className="size-4 text-[#6b7280]" />
+            <h3 className="text-sm font-semibold uppercase tracking-[0.05em] text-[#6b7280]">Activity feed</h3>
           </div>
 
-          <div className="mt-3 space-y-2.5">
+          <div className="mt-3 space-y-0">
             {feed.map((item) => (
               <FeedItem key={item.id} item={item} />
             ))}
           </div>
         </article>
 
-        <article className="rounded-xl border border-[#d8dbe1] bg-white/80 p-4 shadow-sm">
+        <article className="xl:pl-6">
           <div className="flex items-center gap-2">
-            <CalendarDaysIcon className="size-4 text-[#51617b]" />
-            <h3 className="text-xl font-semibold leading-none tracking-tight text-[#1f2734]">Quick actions</h3>
+            <CalendarDaysIcon className="size-4 text-[#6b7280]" />
+            <h3 className="text-sm font-semibold uppercase tracking-[0.05em] text-[#6b7280]">Quick actions</h3>
           </div>
 
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-0">
             {quickActions.map((action) => (
               <a
                 key={action.id}
                 href={action.href}
-                className="flex items-center justify-between rounded-lg border border-[#d8dbe1] bg-[#f8f9fc] px-2.5 py-2 transition-colors hover:bg-[#eef3fb]"
+                className="flex items-center justify-between py-2 transition-colors hover:bg-[#f9fafb] -mx-2 px-2 rounded"
               >
                 <span>
                   <span className="block text-sm font-medium text-[#1f2734]">{action.label}</span>
@@ -399,7 +399,7 @@ export function DashboardSummaryWidget({ isGuest = false }: DashboardSummaryWidg
           </div>
 
           {data?.latestRating ? (
-            <div className="mt-3 rounded-lg border border-[#d8dbe1] bg-white px-2.5 py-2">
+            <div className="mt-3 border-t border-[#e5e7eb] pt-3">
               <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#7a8394]">
                 <TrophyIcon className="size-3.5" />
                 Latest rating

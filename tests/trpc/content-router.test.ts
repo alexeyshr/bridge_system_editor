@@ -11,8 +11,10 @@ function createDeps(overrides: Partial<ContentRouterDeps> = {}): ContentRouterDe
     id: 'cnt-1',
     spaceId: 'space-1',
     authorUserId: 'user-1',
+    authorDisplayName: 'Test User',
     title: 'Bridge psychology',
     summary: 'How partnership trust impacts decisions.',
+    coverImageUrl: null,
     format: 'article' as const,
     visibility: 'public' as const,
     status: 'published' as const,
@@ -59,6 +61,12 @@ function createDeps(overrides: Partial<ContentRouterDeps> = {}): ContentRouterDe
       status: 'archived',
       archivedAt: new Date().toISOString(),
     }),
+    unarchiveContentItem: async () => ({
+      ...baseItem,
+      status: 'draft',
+      archivedAt: null,
+    }),
+    hardDeleteContentItem: async () => ({ deleted: true as const }),
     getDealStudy: async () => ({
       content: {
         id: baseItem.id,

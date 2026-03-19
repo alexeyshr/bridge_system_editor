@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
 
 const SAVE_DEBOUNCE_MS = 900;
-const DEFAULT_SYSTEM_TITLE = 'Untitled system';
+
 
 function toSyncPayload(nodes: Record<string, BiddingNode>) {
   return Object.values(nodes).map((node) => ({
@@ -49,7 +49,6 @@ export function useSystemSync() {
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,
   });
-  const createSystemMutation = trpc.bidding.systems.create.useMutation();
   const getSystemQuery = trpc.bidding.systems.get.useQuery(
     { systemId: activeSystemId ?? '' },
     {
@@ -61,14 +60,11 @@ export function useSystemSync() {
   const systemsData = systemsQuery.data;
   const isSystemsSuccess = systemsQuery.isSuccess;
   const refetchSystems = systemsQuery.refetch;
-  const createSystem = createSystemMutation.mutate;
-  const isCreatingSystem = createSystemMutation.isPending;
   const systemData = getSystemQuery.data;
   const refetchSystem = getSystemQuery.refetch;
   const syncNodes = syncNodesMutation.mutateAsync;
   const isSyncPending = syncNodesMutation.isPending;
 
-  const createRequestedRef = useRef(false);
   const lastHydratedRevisionRef = useRef<number | null>(null);
   const lastSyncedNodeIdsRef = useRef<Set<string>>(new Set());
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,39 +90,15 @@ export function useSystemSync() {
       return;
     }
 
-    if (createRequestedRef.current || isCreatingSystem) return;
-
-    createRequestedRef.current = true;
-    createSystem(
-      { title: DEFAULT_SYSTEM_TITLE },
-      {
-        onSuccess: ({ system }) => {
-          setActiveSystem(system.id, system.revision);
-          const nodeCount = Object.keys(useBiddingStore.getState().nodes).length;
-          if (nodeCount > 0) {
-            useBiddingStore.getState().markUnsavedChanges();
-          }
-          void refetchSystems();
-        },
-        onError: () => {
-          markServerSyncError('Failed to create system');
-        },
-        onSettled: () => {
-          createRequestedRef.current = false;
-        },
-      },
-    );
+    // No systems — clear active state, let user create manually via Systems Hub.
+    setActiveSystem(null);
   }, [
     isAuthenticated,
     isSystemsSuccess,
     systemsData,
-    refetchSystems,
     activeSystemId,
     activeSystemRevision,
     setActiveSystem,
-    createSystem,
-    isCreatingSystem,
-    markServerSyncError,
   ]);
 
   // Reset local sync tracking when switching systems.

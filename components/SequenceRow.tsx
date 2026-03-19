@@ -107,7 +107,7 @@ export function SequenceRow({
   const canRedouble = normalizedLastCall === 'X';
   const compactLeftTitle = 'Opener';
   const compactRightTitle = 'Responder';
-  const compactCallTextClass = isOpponentStep ? 'text-slate-500' : getSuitColor(lastCall);
+  const compactCallTextClass = isOpponentStep ? 'text-[#6b7280]' : getSuitColor(lastCall);
   const showRowActions = isHovered || isSelected || isMultiSelected || isAddFormOpen || isSectionAssignOpen || isDeleteDialogOpen || isQuickAddOpen;
   const isRootEntry = rootEntryNodeIds.includes(node.id);
   const actorMarkerLabel = isOpponentStep ? 'OPP' : (isOpenerLaneTurn ? 'OUR-O' : 'OUR-R');
@@ -269,8 +269,8 @@ export function SequenceRow({
 
   return (
     <div 
-      className={`flex flex-col md:flex-row md:items-center px-4 py-2 md:py-1.5 border-b border-slate-100 cursor-pointer text-sm transition-colors group ${
-        (isSelected || isMultiSelected) ? 'bg-blue-50' : 'hover:bg-slate-50'
+      className={`flex flex-col md:flex-row md:items-center px-4 py-2 md:py-1.5 border-b border-[#f0f0f0] cursor-pointer text-sm transition-colors group ${
+        (isSelected || isMultiSelected) ? 'bg-[#1f2734]/5' : 'hover:bg-[#fafbfc]'
       }`}
       onClick={handleRowClick}
       onMouseEnter={() => setIsHovered(true)}
@@ -278,7 +278,7 @@ export function SequenceRow({
     >
       {/* Sequence Column */}
       <div className="flex-1 min-w-[200px] md:min-w-[300px] flex items-center font-mono text-[13px]">
-        <div style={{ width: `${depth * 20}px` }} className="shrink-0 border-l border-slate-200 h-full ml-2" />
+        <div style={{ width: `${depth * 20}px` }} className="shrink-0 border-l border-[#e5e7eb] h-full ml-2" />
 
         {batchModeEnabled && (
           <input
@@ -288,13 +288,13 @@ export function SequenceRow({
               toggleNodeSelection(node.id);
             }}
             onClick={(event) => event.stopPropagation()}
-            className="mr-1.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-            title="Select for batch actions"
+            className="mr-1.5 h-3.5 w-3.5 rounded border-[#d1d5db] text-[#1f2734] focus:ring-[#6b7280]/20"
+            data-tooltip="Select for batch actions"
           />
         )}
         
         <button 
-          className={`w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 shrink-0 ${hasChildren ? 'text-slate-500' : 'opacity-0 cursor-default'}`}
+          className={`w-5 h-5 flex items-center justify-center rounded hover:bg-[#e5e7eb] shrink-0 ${hasChildren ? 'text-[#6b7280]' : 'opacity-0 cursor-default'}`}
           onClick={hasChildren ? handleToggleExpand : undefined}
         >
           {hasChildren && (node.isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />)}
@@ -302,11 +302,11 @@ export function SequenceRow({
 
         {viewMode === 'compact' ? (
           <div className="flex items-center gap-1.5 ml-1">
-            {depth > 0 && <span className="text-slate-300">→</span>}
+            {depth > 0 && <span className="text-[#d1d5db]">→</span>}
             {isOpponentStep ? (
               <span
-                className="min-w-[84px] h-5 px-1.5 rounded-md border border-slate-300 bg-slate-100 text-[10px] font-semibold text-slate-500 flex items-center justify-center"
-                title="Opponent"
+                className="min-w-[84px] h-5 px-1.5 rounded-md border border-[#d1d5db] bg-[#f3f4f6] text-[10px] font-semibold text-[#6b7280] flex items-center justify-center"
+                data-tooltip="Opponent"
               >
                 ({formatCall(lastCall)})
               </span>
@@ -315,20 +315,20 @@ export function SequenceRow({
                 <span
                   className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
                     isOpenerLaneTurn
-                      ? `${compactCallTextClass} border-slate-300 bg-white`
-                      : 'text-slate-300 border-slate-200 bg-slate-50'
+                      ? `${compactCallTextClass} border-[#d1d5db] bg-white`
+                      : 'text-[#d1d5db] border-[#e5e7eb] bg-[#fafbfc]'
                   }`}
-                  title={compactLeftTitle}
+                  data-tooltip={compactLeftTitle}
                 >
                   {isOpenerLaneTurn ? formatCall(lastCall) : '·'}
                 </span>
                 <span
                   className={`min-w-[40px] h-5 px-1 rounded-md border text-[10px] font-semibold flex items-center justify-center ${
                     !isOpenerLaneTurn
-                      ? `${compactCallTextClass} border-slate-300 bg-slate-100`
-                      : 'text-slate-300 border-slate-200 bg-slate-50'
+                      ? `${compactCallTextClass} border-[#d1d5db] bg-[#f3f4f6]`
+                      : 'text-[#d1d5db] border-[#e5e7eb] bg-[#fafbfc]'
                   }`}
-                  title={compactRightTitle}
+                  data-tooltip={compactRightTitle}
                 >
                   {!isOpenerLaneTurn ? formatCall(lastCall) : '·'}
                 </span>
@@ -337,13 +337,13 @@ export function SequenceRow({
             {node.meaning?.alert && (
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500 ml-0.5" />
             )}
-            <span className="ml-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1 py-0.5 leading-none">
+            <span className="ml-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#6b7280] bg-[#f3f4f6] border border-[#e5e7eb] rounded px-1 py-0.5 leading-none">
               {actorMarkerLabel}
             </span>
             {childrenCount > 0 && (
               <span 
-                className="ml-0.5 text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full leading-none"
-                title={`${childrenCount} continuation${childrenCount > 1 ? 's' : ''}`}
+                className="ml-0.5 text-[9px] font-bold text-[#9ca3af] bg-[#f3f4f6] px-1.5 py-0.5 rounded-full leading-none"
+                data-tooltip={`${childrenCount} continuation${childrenCount > 1 ? 's' : ''}`}
               >
                 {childrenCount}
               </span>
@@ -351,11 +351,11 @@ export function SequenceRow({
           </div>
         ) : (
           <div className="flex items-center gap-1.5 ml-1">
-            {depth > 0 && <span className="text-slate-400">→</span>}
-            <span className={`font-semibold ${lastStep.actor === 'opp' ? 'text-slate-500' : getSuitColor(lastCall)}`}>
+            {depth > 0 && <span className="text-[#9ca3af]">→</span>}
+            <span className={`font-semibold ${lastStep.actor === 'opp' ? 'text-[#6b7280]' : getSuitColor(lastCall)}`}>
               {lastStep.actor === 'opp' ? `(${formatCall(lastCall)})` : formatCall(lastCall)}
             </span>
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1 py-0.5 leading-none">
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-[#6b7280] bg-[#f3f4f6] border border-[#e5e7eb] rounded px-1 py-0.5 leading-none">
               {actorMarkerLabel}
             </span>
             {node.meaning?.alert && (
@@ -363,8 +363,8 @@ export function SequenceRow({
             )}
             {childrenCount > 0 && (
               <span 
-                className="ml-1 text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full leading-none"
-                title={`${childrenCount} continuation${childrenCount > 1 ? 's' : ''}`}
+                className="ml-1 text-[9px] font-bold text-[#9ca3af] bg-[#f3f4f6] px-1.5 py-0.5 rounded-full leading-none"
+                data-tooltip={`${childrenCount} continuation${childrenCount > 1 ? 's' : ''}`}
               >
                 {childrenCount}
               </span>
@@ -379,23 +379,23 @@ export function SequenceRow({
           }`}
         >
           <button 
-            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
+            className="p-1 text-[#9ca3af] hover:text-[#1f2734] hover:bg-[#1f2734]/10 rounded"
             onClick={handleOpenAddForm}
-            title="Add continuation"
+            data-tooltip="Add continuation"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
           <button
-            className="px-1.5 h-5 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded"
+            className="px-1.5 h-5 text-[10px] font-semibold text-[#1f2734] bg-[#1f2734]/5 border border-[#1f2734]/20 hover:bg-[#1f2734]/10 rounded"
             onClick={handleOpenQuickAdd}
-            title="Quick add inline"
+            data-tooltip="Quick add inline"
           >
             Quick
           </button>
           <button 
-            className={`p-1 rounded ${node.isBookmarked ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-100'}`}
+            className={`p-1 rounded ${node.isBookmarked ? 'text-[#1f2734]' : 'text-[#9ca3af] hover:text-[#1f2734] hover:bg-[#1f2734]/10'}`}
             onClick={handleToggleBookmark}
-            title="Bookmark"
+            data-tooltip="Bookmark"
           >
             <Bookmark className="w-3.5 h-3.5" />
           </button>
@@ -403,24 +403,24 @@ export function SequenceRow({
             className={`p-1 rounded ${
               isRootEntry
                 ? 'text-indigo-600 bg-indigo-100'
-                : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-100'
+                : 'text-[#9ca3af] hover:text-indigo-600 hover:bg-indigo-100'
             }`}
             onClick={handleToggleRootEntry}
-            title={isRootEntry ? 'Remove from roots' : 'Add to roots'}
+            data-tooltip={isRootEntry ? 'Remove from roots' : 'Add to roots'}
           >
             {isRootEntry ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
           </button>
           <button
-            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded"
+            className="p-1 text-[#9ca3af] hover:text-[#1f2734] hover:bg-[#1f2734]/10 rounded"
             onClick={handleOpenSectionAssign}
-            title="Assign sections"
+            data-tooltip="Assign sections"
           >
             <FolderInput className="w-3.5 h-3.5" />
           </button>
           <button 
-            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded"
+            className="p-1 text-[#9ca3af] hover:text-red-600 hover:bg-red-100 rounded"
             onClick={handleDelete}
-            title="Delete"
+            data-tooltip="Delete"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -433,7 +433,7 @@ export function SequenceRow({
             event.preventDefault();
             submitQuickAdd();
           }}
-          className="mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[340px] rounded-md border border-blue-200 bg-blue-50/70 px-2 py-1.5"
+          className="mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[340px] rounded-md border border-[#1f2734]/20 bg-[#1f2734]/5/70 px-2 py-1.5"
           onClick={(event) => event.stopPropagation()}
         >
           <div className="flex items-center gap-1 mb-1">
@@ -442,8 +442,8 @@ export function SequenceRow({
               onClick={() => setQuickAddActor('our')}
               className={`h-6 px-2 text-[10px] rounded border ${
                 quickAddActor === 'our'
-                  ? 'border-blue-300 bg-white text-blue-700'
-                  : 'border-slate-200 bg-slate-100 text-slate-500'
+                  ? 'border-[#1f2734]/20 bg-white text-[#1f2734]'
+                  : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#6b7280]'
               }`}
             >
               Our
@@ -453,8 +453,8 @@ export function SequenceRow({
               onClick={() => setQuickAddActor('opp')}
               className={`h-6 px-2 text-[10px] rounded border ${
                 quickAddActor === 'opp'
-                  ? 'border-blue-300 bg-white text-blue-700'
-                  : 'border-slate-200 bg-slate-100 text-slate-500'
+                  ? 'border-[#1f2734]/20 bg-white text-[#1f2734]'
+                  : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#6b7280]'
               }`}
             >
               Opp
@@ -468,11 +468,11 @@ export function SequenceRow({
                 if (quickAddError) setQuickAddError('');
               }}
               placeholder="Quick add: 2H, 3NT, Pass"
-              className="min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-[#e5e7eb] rounded focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
             />
             <button
               type="submit"
-              className="h-6 px-2 text-[10px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded"
+              className="h-6 px-2 text-[10px] font-semibold text-white bg-[#1f2734] hover:bg-[#374151] rounded"
             >
               Add
             </button>
@@ -484,7 +484,7 @@ export function SequenceRow({
                 setQuickAddActor('our');
                 setQuickAddError('');
               }}
-              className="h-6 px-2 text-[10px] text-slate-600 border border-slate-200 bg-white hover:bg-slate-100 rounded"
+              className="h-6 px-2 text-[10px] text-[#6b7280] border border-[#e5e7eb] bg-white hover:bg-[#f3f4f6] rounded"
             >
               Close
             </button>
@@ -497,25 +497,25 @@ export function SequenceRow({
 
       {isAddFormOpen && (
         <div
-          className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[250px] rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-slate-50 p-2.5"
+          className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[250px] rounded-lg border border-[#1f2734]/20 bg-gradient-to-r from-[#fafbfc] to-white p-2.5"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">
-            Add continuation after <span className={`${lastStep.actor === 'opp' ? 'text-slate-500' : getSuitColor(lastCall)} font-bold`}>
+          <div className="text-[9px] uppercase tracking-wider text-[#6b7280] mb-1.5 font-semibold">
+            Add continuation after <span className={`${lastStep.actor === 'opp' ? 'text-[#6b7280]' : getSuitColor(lastCall)} font-bold`}>
               {lastStep.actor === 'opp' ? `(${formatCall(lastCall)})` : formatCall(lastCall)}
             </span>
           </div>
-          <div className="mb-2 font-mono text-[11px] text-slate-700 break-all">
+          <div className="mb-2 font-mono text-[11px] text-[#374151] break-all">
             {sequencePathLabel}
           </div>
-          <div className="mb-1.5 inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5">
+          <div className="mb-1.5 inline-flex rounded-md border border-[#e5e7eb] bg-[#f3f4f6] p-0.5">
             <button
               type="button"
               onClick={() => setContinuationActor('our')}
               className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                 continuationActor === 'our'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white text-[#1f2734] shadow-sm'
+                  : 'text-[#6b7280] hover:text-[#374151]'
               }`}
             >
               Our call
@@ -525,8 +525,8 @@ export function SequenceRow({
               onClick={() => setContinuationActor('opp')}
               className={`h-6 px-2 text-[10px] font-medium rounded transition-colors ${
                 continuationActor === 'opp'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white text-[#1f2734] shadow-sm'
+                  : 'text-[#6b7280] hover:text-[#374151]'
               }`}
             >
               Opponent call
@@ -534,7 +534,7 @@ export function SequenceRow({
           </div>
 
           <div className="mb-1.5">
-            <div className="text-[9px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider">Bids 1C - 7NT</div>
+            <div className="text-[9px] text-[#6b7280] mb-0.5 font-medium uppercase tracking-wider">Bids 1C - 7NT</div>
             <div className="grid grid-cols-5 gap-1">
               {ALL_BID_CALLS.map((call) => {
                 const callStatus = getContinuationStatus(call, continuationActor);
@@ -551,12 +551,12 @@ export function SequenceRow({
                     }}
                     className={`h-6 px-1 rounded-md text-[10px] border transition-colors ${
                       isSelectedCall
-                        ? 'border-blue-300 bg-blue-100 text-blue-700'
+                        ? 'border-[#1f2734]/20 bg-[#1f2734]/10 text-[#1f2734]'
                         : isAvailable
-                          ? `border-slate-200 bg-white hover:border-slate-300 ${getSuitColor(call)}`
-                          : 'border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed opacity-60'
+                          ? `border-[#e5e7eb] bg-white hover:border-[#d1d5db] ${getSuitColor(call)}`
+                          : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#d1d5db] cursor-not-allowed opacity-60'
                     }`}
-                    title={
+                    data-tooltip={
                       isAvailable
                         ? `Add ${formatCall(call)}`
                         : callStatus.message
@@ -585,12 +585,12 @@ export function SequenceRow({
                   }}
                   className={`h-6 px-2 rounded-md text-[10px] border transition-colors ${
                     isSelectedCall
-                      ? 'border-blue-300 bg-blue-100 text-blue-700'
+                      ? 'border-[#1f2734]/20 bg-[#1f2734]/10 text-[#1f2734]'
                       : isAvailable
-                        ? 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                        : 'border-slate-200 bg-slate-100 text-slate-300 cursor-not-allowed opacity-60'
+                        ? 'border-[#e5e7eb] bg-white hover:border-[#d1d5db] text-[#374151]'
+                        : 'border-[#e5e7eb] bg-[#f3f4f6] text-[#d1d5db] cursor-not-allowed opacity-60'
                   }`}
-                  title={isAvailable ? `Add ${formatCall(call)}` : callStatus.message}
+                  data-tooltip={isAvailable ? `Add ${formatCall(call)}` : callStatus.message}
                 >
                   {formatCall(call)}
                 </button>
@@ -622,7 +622,7 @@ export function SequenceRow({
                 }
               }}
               placeholder="e.g. 2H, 2NT, 3C"
-              className="min-w-0 h-7 px-2 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 h-7 px-2 text-[11px] bg-white border border-[#e5e7eb] rounded-md focus:outline-none focus:ring-2 focus:ring-[#6b7280]/20"
             />
             <button
               type="button"
@@ -632,13 +632,13 @@ export function SequenceRow({
                 setContinuationActor('our');
                 setContinuationError('');
               }}
-              className="h-7 px-2.5 shrink-0 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-md transition-colors"
+              className="h-7 px-2.5 shrink-0 text-[11px] font-medium text-[#6b7280] hover:text-[#1f2734] bg-white border border-[#e5e7eb] hover:bg-[#f3f4f6] rounded-md transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="h-7 px-3 shrink-0 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+              className="h-7 px-3 shrink-0 text-[11px] font-semibold text-white bg-[#1f2734] hover:bg-[#374151] rounded-md transition-colors"
             >
               Add
             </button>
@@ -666,17 +666,17 @@ export function SequenceRow({
 
       {isSectionAssignOpen && (
         <div
-          className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[300px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm"
+          className="mt-2 md:mt-1 ml-8 md:ml-10 mr-2 md:mr-0 w-full max-w-[300px] rounded-lg border border-[#e5e7eb] bg-white p-2.5 shadow-sm"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center justify-between">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6b7280]">
               Assign Sections
             </div>
             <button
               type="button"
               onClick={() => setIsSectionAssignOpen(false)}
-              className="h-6 px-2 rounded-md border border-slate-200 text-[10px] text-slate-600 hover:bg-slate-100"
+              className="h-6 px-2 rounded-md border border-[#e5e7eb] text-[10px] text-[#6b7280] hover:bg-[#f3f4f6]"
             >
               Close
             </button>
@@ -686,19 +686,19 @@ export function SequenceRow({
       )}
 
       {/* Mobile Details Row */}
-      <div className="flex md:hidden items-center gap-2 mt-1.5 pl-8 text-xs text-slate-500 overflow-hidden">
+      <div className="flex md:hidden items-center gap-2 mt-1.5 pl-8 text-xs text-[#6b7280] overflow-hidden">
         {node.meaning?.hcp?.min !== undefined && (
-           <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+           <span className="font-mono bg-[#f3f4f6] px-1.5 py-0.5 rounded shrink-0">
              {node.meaning.hcp.min}{node.meaning.hcp.max ? `–${node.meaning.hcp.max}` : '+'} HCP
            </span>
         )}
         {node.meaning?.forcing && (
           <span className={`px-1.5 py-0.5 rounded font-semibold shrink-0 ${
-            node.meaning.forcing === 'NF' ? 'bg-slate-100 text-slate-600' :
-            node.meaning.forcing === '1RF' ? 'bg-blue-100 text-blue-700' :
+            node.meaning.forcing === 'NF' ? 'bg-[#f3f4f6] text-[#6b7280]' :
+            node.meaning.forcing === '1RF' ? 'bg-[#1f2734]/10 text-[#1f2734]' :
             node.meaning.forcing === 'GF' ? 'bg-red-100 text-red-700' :
             node.meaning.forcing === 'INV' ? 'bg-amber-100 text-amber-700' :
-            'bg-slate-100 text-slate-600'
+            'bg-[#f3f4f6] text-[#6b7280]'
           }`}>
             {node.meaning.forcing}
           </span>
@@ -710,7 +710,7 @@ export function SequenceRow({
 
       {/* Desktop Columns */}
       {/* HCP Column */}
-      <div className="hidden md:block w-24 text-center shrink-0 text-slate-600 font-mono text-xs">
+      <div className="hidden md:block w-24 text-center shrink-0 text-[#6b7280] font-mono text-xs">
         {node.meaning?.hcp?.min !== undefined && node.meaning?.hcp?.max !== undefined ? (
           <>{node.meaning.hcp.min}{node.meaning.hcp.max ? `–${node.meaning.hcp.max}` : '+'}</>
         ) : '-'}
@@ -720,28 +720,28 @@ export function SequenceRow({
       <div className="hidden md:flex w-24 text-center shrink-0 flex-col items-center justify-center gap-0.5">
         {node.meaning?.forcing && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-            node.meaning.forcing === 'NF' ? 'bg-slate-100 text-slate-600' :
-            node.meaning.forcing === '1RF' ? 'bg-blue-100 text-blue-700' :
+            node.meaning.forcing === 'NF' ? 'bg-[#f3f4f6] text-[#6b7280]' :
+            node.meaning.forcing === '1RF' ? 'bg-[#1f2734]/10 text-[#1f2734]' :
             node.meaning.forcing === 'GF' ? 'bg-red-100 text-red-700' :
             node.meaning.forcing === 'INV' ? 'bg-amber-100 text-amber-700' :
-            'bg-slate-100 text-slate-600'
+            'bg-[#f3f4f6] text-[#6b7280]'
           }`}>
             {node.meaning.forcing}
           </span>
         )}
         {node.meaning?.type && (
-          <span className="text-[10px] text-slate-500 uppercase tracking-wider">
+          <span className="text-[10px] text-[#6b7280] uppercase tracking-wider">
             {node.meaning.type}
           </span>
         )}
       </div>
 
       {/* Notes Column */}
-      <div className="hidden md:block w-64 shrink-0 text-slate-600 truncate text-xs pr-4">
+      <div className="hidden md:block w-64 shrink-0 text-[#6b7280] truncate text-xs pr-4">
         {node.meaning?.shows && node.meaning.shows.length > 0 ? (
-          <span className="font-medium text-slate-700">{node.meaning.shows[0]}</span>
+          <span className="font-medium text-[#374151]">{node.meaning.shows[0]}</span>
         ) : (
-          node.meaning?.notes || <span className="text-slate-300 italic">No notes</span>
+          node.meaning?.notes || <span className="text-[#d1d5db] italic">No notes</span>
         )}
       </div>
 
@@ -757,44 +757,44 @@ export function SequenceRow({
             });
           }}
           onClick={(e) => e.stopPropagation()}
-          className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+          className="w-3.5 h-3.5 text-[#1f2734] rounded border-[#d1d5db] focus:ring-[#6b7280]/20"
         />
       </div>
 
       {isDeleteDialogOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-[#1f2734]/20 backdrop-blur-[1px] flex items-center justify-center p-4"
           onClick={() => setIsDeleteDialogOpen(false)}
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Delete sequence confirmation"
-            className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl"
+            className="w-full max-w-md rounded-xl border border-[#e5e7eb] bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-4 py-3 border-b border-slate-100">
-              <div className="text-sm font-semibold text-slate-900">{deleteIntentMeta.title}</div>
-              <div className="text-xs text-slate-500 mt-0.5">
+            <div className="px-4 py-3 border-b border-[#f0f0f0]">
+              <div className="text-sm font-semibold text-[#1f2734]">{deleteIntentMeta.title}</div>
+              <div className="text-xs text-[#6b7280] mt-0.5">
                 {seq.map((step, i) => (
                   <span key={`${node.id}-delete-${i}`} className="inline-flex items-center">
-                    <span className={step.actor === 'opp' ? 'text-slate-500' : getSuitColor(step.call)}>
+                    <span className={step.actor === 'opp' ? 'text-[#6b7280]' : getSuitColor(step.call)}>
                       {step.actor === 'opp' ? `(${formatCall(step.call)})` : formatCall(step.call)}
                     </span>
-                    {i < seq.length - 1 && <span className="mx-1 text-slate-400">-</span>}
+                    {i < seq.length - 1 && <span className="mx-1 text-[#9ca3af]">-</span>}
                   </span>
                 ))}
               </div>
             </div>
-            <div className="px-4 py-3 text-sm text-slate-600">
+            <div className="px-4 py-3 text-sm text-[#6b7280]">
               This will permanently remove this call
               {descendantsCount > 0 ? ` and ${descendantsCount} continuation${descendantsCount > 1 ? 's' : ''}` : ''}.
             </div>
-            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <div className="px-4 py-3 border-t border-[#f0f0f0] flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={cancelDelete}
-                className="h-8 px-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
+                className="h-8 px-3 text-sm font-medium text-[#374151] bg-white border border-[#e5e7eb] hover:bg-[#fafbfc] rounded-md transition-colors"
               >
                 Cancel
               </button>

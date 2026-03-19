@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { DashboardFaviconToggle } from "@/components/dashboard-favicon-toggle"
+import { DashboardSettingsPlayerPanel } from "@/components/dashboard-settings-player-panel"
 import { DashboardSettingsTelegramPanel } from "@/components/dashboard-settings-telegram-panel"
 import { TopbarGlobalSearch } from "@/components/topbar-global-search"
 import { TopbarNotifications } from "@/components/topbar-notifications"
@@ -74,6 +75,7 @@ export default function DashboardSettingsPage() {
         <main className="relative flex-1 overflow-auto p-4 md:p-6">
           <div className="mx-auto max-w-3xl">
             <DashboardSettingsTelegramPanel isGuest={isGuest} isAuthLoading={isAuthLoading} />
+            <DashboardSettingsPlayerPanel isGuest={isGuest} isAuthLoading={isAuthLoading} />
           </div>
         </main>
       </SidebarInset>

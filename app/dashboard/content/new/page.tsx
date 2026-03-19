@@ -29,9 +29,9 @@ export default function NewContentPage() {
       ]}
     >
       {isGuest ? (
-        <div className="mx-auto max-w-4xl rounded-xl border border-[#d8dbe1] bg-white/82 p-4 shadow-sm">
+        <div className="border-b border-[#e5e7eb] pb-5">
           <p className="text-base font-medium text-[#1f2734]">Sign in to create content drafts.</p>
-          <a href="/auth/signin?callbackUrl=/dashboard/content/new" className="mt-2 inline-flex text-sm font-medium text-[#2f466d] hover:underline">
+          <a href="/auth/signin?callbackUrl=/dashboard/content/new" className="mt-2 inline-flex text-sm font-medium text-[#1f2734] underline decoration-[#9ca3af] underline-offset-2 transition hover:decoration-[#1f2734]">
             Go to sign in
           </a>
         </div>

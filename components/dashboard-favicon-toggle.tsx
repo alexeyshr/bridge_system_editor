@@ -11,8 +11,7 @@ export function DashboardFaviconToggle({ className }: { className?: string }) {
     <button
       type="button"
       onClick={toggleSidebar}
-      aria-label={actionLabel}
-      title={actionLabel}
+      data-tooltip={actionLabel}
       className={cn(
         "inline-flex size-9 items-center justify-center rounded-md bg-transparent transition-colors hover:bg-[#eef2f7]/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9aa5bb]",
         className

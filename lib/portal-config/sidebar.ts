@@ -28,15 +28,14 @@ export type SidebarGroupConfig = {
 
 export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
-    id: "reading",
-    label: "Reading",
+    id: "main",
+    label: "Main",
     items: [
       { title: "Frontpage", url: "/dashboard", icon: "home", requires: ["feed.read"] },
       { title: "Content", url: "/dashboard/content", icon: "newspaper", requires: ["feed.read"] },
-      { title: "Latest", url: "#", icon: "newspaper", requires: ["feed.read"] },
+      { title: "Learning", url: "/dashboard/learning", icon: "book", requires: ["feed.read"] },
+      { title: "Library", url: "/dashboard/library", icon: "search", requires: ["feed.read"] },
       { title: "Spaces", url: "/dashboard/spaces", icon: "message", requires: ["feed.read"] },
-      { title: "Discussions", url: "#", icon: "message", requires: ["discussion.read"] },
-      { title: "Sequences", url: "#", icon: "book", requires: ["lesson.read"] },
     ],
   },
   {
@@ -44,7 +43,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     label: "Tournaments",
     items: [
       { title: "Calendar", url: "/dashboard/tournaments/calendar", icon: "calendar", requires: ["feed.read"] },
-      { title: "Results", url: "/dashboard/tournaments/results", icon: "newspaper", requires: ["feed.read"] },
+      { title: "Results", url: "/dashboard/tournaments/results", icon: "chart", requires: ["feed.read"] },
     ],
   },
   {
@@ -57,11 +56,10 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     ],
   },
   {
-    id: "education",
-    label: "Education",
+    id: "instruments",
+    label: "Instruments",
     items: [
-      { title: "Learning tracks", url: "#", icon: "book", requires: ["lesson.read"] },
-      { title: "Course studio", url: "#", icon: "flask", requires: ["lesson.manage"] },
+      { title: "Deal Studio", url: "/dashboard/instruments/deal-studio", icon: "flask", requires: ["feed.read"] },
     ],
   },
   {
@@ -69,15 +67,6 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     label: "Operations",
     items: [
       { title: "Tournament desk", url: "/dashboard/tournaments/demo", icon: "shield", requires: ["tournament.read"] },
-      { title: "Moderation", url: "#", icon: "shield", requires: ["discussion.moderate"] },
-      { title: "Tools", url: "#", icon: "wrench", requires: ["system.manage"] },
-    ],
-  },
-  {
-    id: "administration",
-    label: "Administration",
-    items: [
-      { title: "System settings", url: "#", icon: "wrench", requires: ["system.manage"] },
     ],
   },
 ]
